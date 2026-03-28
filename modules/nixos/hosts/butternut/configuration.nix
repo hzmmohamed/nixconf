@@ -81,6 +81,8 @@
 
     boot.plymouth.enable = true;
 
+    time.timeZone = "Africa/Cairo";
+
     networking = {
       hostName = "butternut";
       networkmanager.enable = true;

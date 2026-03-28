@@ -44,7 +44,7 @@
       };
 
       clock = {
-        format = "{:%I:%M:%S %p} ";
+        format = "{:%H:%M:%S} ";
         interval = 1;
         rotate = 270;
         tooltip-format = "<tt>{calendar}</tt>";

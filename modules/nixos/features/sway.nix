@@ -141,8 +141,15 @@
           "Escape" = "mode default";
         };
 
+        fonts = {
+          names = [self.fonts.monospace];
+          size = self.fonts.size * 1.0;
+        };
+
         bars = [];
 
+        # Catppuccin Latte window decoration colors
+        # (darkman does not switch these — they are build-time only)
         colors = let
           cat = self.catppuccin;
         in {
@@ -150,30 +157,38 @@
             border = cat.lavender;
             background = cat.base;
             text = cat.text;
-            indicator = cat.lavender;
+            indicator = cat.mauve;
             childBorder = cat.lavender;
           };
           focusedInactive = {
-            border = cat.overlay0;
-            background = cat.base;
-            text = cat.text;
-            indicator = cat.overlay0;
-            childBorder = cat.overlay0;
+            border = cat.surface1;
+            background = cat.mantle;
+            text = cat.subtext0;
+            indicator = cat.surface1;
+            childBorder = cat.surface1;
           };
           unfocused = {
-            border = cat.overlay0;
-            background = cat.base;
-            text = cat.subtext1;
-            indicator = cat.overlay0;
-            childBorder = cat.overlay0;
+            border = cat.surface0;
+            background = cat.mantle;
+            text = cat.overlay0;
+            indicator = cat.surface0;
+            childBorder = cat.surface0;
           };
           urgent = {
-            border = cat.peach;
+            border = cat.red;
             background = cat.base;
-            text = cat.peach;
-            indicator = cat.peach;
-            childBorder = cat.peach;
+            text = cat.red;
+            indicator = cat.red;
+            childBorder = cat.red;
           };
+          placeholder = {
+            border = cat.crust;
+            background = cat.crust;
+            text = cat.text;
+            indicator = cat.crust;
+            childBorder = cat.crust;
+          };
+          background = cat.base;
         };
 
         startup = [
