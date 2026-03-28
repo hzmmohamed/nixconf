@@ -39,6 +39,10 @@
       self.nixosModules.zellij
       self.nixosModules.yazi
       self.nixosModules.design
+      self.nixosModules.shared-zotero
+
+      self.nixosModules.sops
+      self.nixosModules.syncthing
 
       self.nixosModules.powersave
 

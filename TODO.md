@@ -16,8 +16,8 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Arabic keyboard layout (US + Arabic, XKB switching) — configured in sway module
 - [x] SSH server module (OpenSSH on port 7654, already in butternut)
 - [x] Tailscale VPN with SSH
-- [ ] Secrets management (sops-nix for Syncthing certs, SSH keys, etc.)
-- [ ] Syncthing (unified config between hosts, sops-managed certs)
+- [x] Secrets management (sops-nix, age encryption, centralized in `secrets/`)
+- [x] Syncthing (device IDs, sops-managed certs, folders owned by feature modules)
 - [ ] GPG + SSH agent integration
 
 ## Desktop Essentials
@@ -34,7 +34,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 - [x] Obsidian (note-taking)
 - [x] LibreOffice
-- [ ] Zotero (reference manager + plugins)
+- [x] Zotero (reference manager, synced via Syncthing)
 - [x] Typst (document typesetting)
 - [x] Element Desktop (Matrix client)
 
