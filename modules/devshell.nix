@@ -16,12 +16,21 @@
         nix-diff
         nix-output-monitor
 
+        # secrets
+        sops
+        age
+
         # general
         git
       ];
 
       shellHook = ''
         echo "nixconf devshell"
+        echo ""
+        echo "  sops secrets/<host>/<name>.yaml   — edit/create secrets"
+        echo "  nix flake show                    — list all outputs"
+        echo "  nix build .#nixosConfigurations.<host>.config.system.build.toplevel — build a host"
+        echo ""
       '';
     };
   };
