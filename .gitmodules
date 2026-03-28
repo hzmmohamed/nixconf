@@ -1,0 +1,3 @@
+[submodule ".repos/old-config"]
+	path = .repos/old-config
+	url = git@github.com:hzmmohamed/config.git

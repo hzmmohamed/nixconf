@@ -9,6 +9,9 @@
       wrapperModules = inputs.nixpkgs.lib.mkOption {
         default = {};
       };
+      diskoConfigurations = inputs.nixpkgs.lib.mkOption {
+        default = {};
+      };
     };
   };
 
