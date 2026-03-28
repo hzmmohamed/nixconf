@@ -14,7 +14,7 @@
 
       self.nixosModules.sway
       self.nixosModules.swayidle
-      self.nixosModules.cliphist
+      self.nixosModules.clipse
       self.nixosModules.gammastep
       self.nixosModules.waybar
 

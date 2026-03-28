@@ -22,7 +22,7 @@
 
       self.nixosModules.sway
       self.nixosModules.swayidle
-      self.nixosModules.cliphist
+      self.nixosModules.clipse
       self.nixosModules.gammastep
       self.nixosModules.waybar
 
@@ -113,9 +113,14 @@
     programs.nix-ld.enable = true;
     programs.wayvnc.enable = true;
 
-    # Cliphist keybinding for sway
-    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.keybindings = {
-      "Mod4+v" = "exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy";
+    # Clipse keybinding for sway
+    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway = {
+      config.keybindings = {
+        "Mod4+v" = "exec ${lib.getExe pkgs.foot} --app-id clipse -e clipse";
+      };
+      extraConfig = ''
+        for_window [app_id="clipse"] floating enable, resize set 622 652
+      '';
     };
 
     hardware.graphics.enable = true;

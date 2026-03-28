@@ -73,7 +73,7 @@
 
           # Core actions
           "${mod}+Return" = "exec ${terminal}";
-          "${mod}+Shift+c" = "kill";
+          "${mod}+Shift+q" = "kill";
           "${mod}+space" = "exec wofi --show drun";
           "${mod}+f" = "fullscreen toggle";
           "${mod}+Shift+f" = "floating toggle";
