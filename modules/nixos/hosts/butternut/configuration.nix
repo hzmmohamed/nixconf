@@ -9,15 +9,20 @@
     ];
   };
 
-  flake.nixosModules.hostButternut = {pkgs, ...}: {
+  flake.nixosModules.hostButternut = {pkgs, lib, ...}: {
     imports = [
       self.nixosModules.base
       self.nixosModules.general
       self.nixosModules.desktop
 
+      self.nixosModules.sway
+      self.nixosModules.swayidle
+      self.nixosModules.cliphist
+      self.nixosModules.gammastep
+      self.nixosModules.waybar
+
       self.nixosModules.discord
       self.nixosModules.gimp
-      self.nixosModules.hyprland
       self.nixosModules.telegram
       self.nixosModules.youtube-music
 
@@ -71,9 +76,13 @@
 
     networking.firewall.allowedTCPPorts = [2222];
 
-    programs.niri.enable = true;
     programs.nix-ld.enable = true;
     programs.wayvnc.enable = true;
+
+    # Cliphist keybinding for sway
+    home.programs.sway.extraConfig = lib.mkAfter ''
+      bindsym Mod4+v exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy
+    '';
 
     xdg.portal.extraPortals = [pkgs.xdg-desktop-portal-gtk];
     xdg.portal.enable = true;

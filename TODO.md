@@ -12,7 +12,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Core Workflow
 
-- [ ] Arabic keyboard layout (US + Arabic, XKB switching)
+- [x] Arabic keyboard layout (US + Arabic, XKB switching) — configured in sway module
 - [ ] SSH server module (OpenSSH on custom port, or Tailscale SSH — pick one)
 - [ ] Tailscale VPN (replace ZeroTier)
 - [ ] Secrets management (sops-nix for Syncthing certs, SSH keys, etc.)
@@ -21,9 +21,10 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Desktop Essentials
 
-- [ ] Screen lock / idle management (swayidle + swaylock or equivalent)
-- [ ] Clipboard history (cliphist + wl-clipboard)
-- [ ] Blue light filter (gammastep / wlsunset)
+- [x] Sway WM (migrated from old config, with waybar, hjem config generation)
+- [x] Screen lock / idle management (swayidle + swaylock)
+- [x] Clipboard history (cliphist + wl-clipboard)
+- [x] Blue light filter (gammastep)
 - [ ] Bitwarden / rbw (password manager CLI + browser extensions)
 
 ## Productivity Apps
@@ -63,7 +64,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 - [ ] Firefox extensions (Bitwarden, Tree Style Tab, Zotero connector)
 - [ ] Additional fonts (Noto CJK, Noto Emoji, Roboto, Victor Mono)
-- [ ] Touchpad config for laptop hosts (dwt, tap-to-click, middle emulation)
+- [x] Touchpad config for laptop hosts (dwt, tap-to-click, middle emulation) — in sway module
 - [ ] Doas (sudo replacement) — decide if wanted
 - [ ] Polkit configuration
 

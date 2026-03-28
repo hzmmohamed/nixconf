@@ -12,9 +12,13 @@
       self.nixosModules.general
       self.nixosModules.desktop
 
+      self.nixosModules.sway
+      self.nixosModules.swayidle
+      self.nixosModules.cliphist
+      self.nixosModules.waybar
+
       self.nixosModules.discord
       self.nixosModules.gimp
-      self.nixosModules.hyprland
       self.nixosModules.telegram
       self.nixosModules.youtube-music
 
@@ -45,7 +49,6 @@
         users.users.yurii.initialPassword = lib.mkForce "test";
 
         hardware.graphics.enable = true;
-        programs.niri.enable = true;
 
         system.stateVersion = "23.05";
       })
