@@ -31,6 +31,14 @@
       self.nixosModules.docker
       self.nixosModules.media
       self.nixosModules.adb
+      self.nixosModules.tailscale
+      self.nixosModules.vscode
+      self.nixosModules.k8s
+      self.nixosModules.aws
+      self.nixosModules.atuin
+      self.nixosModules.zellij
+      self.nixosModules.yazi
+      self.nixosModules.design
 
       self.nixosModules.powersave
 
@@ -77,6 +85,12 @@
           KbdInteractiveAuthentication = true;
           PermitRootLogin = "no";
         };
+      };
+
+      nix-serve = {
+        enable = true;
+        package = pkgs.nix-serve-ng;
+        openFirewall = true;
       };
     };
 

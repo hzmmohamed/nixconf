@@ -14,8 +14,8 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 ## Core Workflow
 
 - [x] Arabic keyboard layout (US + Arabic, XKB switching) — configured in sway module
-- [ ] SSH server module (OpenSSH on custom port, or Tailscale SSH — pick one)
-- [ ] Tailscale VPN (replace ZeroTier)
+- [x] SSH server module (OpenSSH on port 7654, already in butternut)
+- [x] Tailscale VPN with SSH
 - [ ] Secrets management (sops-nix for Syncthing certs, SSH keys, etc.)
 - [ ] Syncthing (unified config between hosts, sops-managed certs)
 - [ ] GPG + SSH agent integration
@@ -40,27 +40,27 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Development Tools
 
-- [ ] VSCode / VSCodium (with extensions: Python, Go, Nix, Git, Jupyter)
+- [x] VSCode / VSCodium (with extensions, Catppuccin theme, settings via hjem)
 - [x] Docker Compose + lazydocker + dive
-- [ ] Kubernetes tools (kubectl, helm, kubectx, k9s, lens, kind, stern, eksctl)
-- [ ] AWS tools (aws-vault, awscli2)
+- [x] Kubernetes tools (kubectl, helm, kubectx, k9s, kind, stern, eksctl)
+- [x] AWS tools (aws-vault, awscli2)
 - [x] ADB (Android Debug Bridge)
 - [ ] Node.js tooling
-- [ ] Shell history sync (Atuin)
-- [ ] Zellij (terminal multiplexer)
+- [x] Shell history sync (Atuin)
+- [x] Zellij (terminal multiplexer)
 
 ## Shell & Terminal
 
 - [x] Fish aliases/abbreviations (rm/cp/mv interactive, git/k8s/systemctl abbrevs)
 - [ ] Starship prompt (or keep custom Fish prompt — decide)
-- [ ] Yazi file manager (with image/PDF preview)
+- [x] Yazi file manager (with image/PDF preview, TOML config via hjem)
 
 ## Specialized Suites (as needed)
 
 - [ ] Music production (Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, musnix)
 - [ ] AI tools (Ollama + CUDA, Whisper.cpp)
 - [ ] CAD / Maker tools (FreeCAD, OpenSCAD)
-- [ ] Design tools (Inkscape, Blender, FontForge, Figma)
+- [x] Design tools (Inkscape, Blender, FontForge, font-manager)
 - [x] Media tools (MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl)
 
 ## Settings to Migrate (for existing modules)
@@ -74,7 +74,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 ## Host-Specific
 
 - [x] butternut: asusd (ASUS laptop daemon)
-- [ ] butternut: nix-serve-ng (binary cache)
+- [x] butternut: nix-serve-ng (binary cache)
 - [x] butternut: wayvnc
 - [x] butternut: nix-ld with libraries
 - [ ] Desktop vs CLI-only toggle (module to disable desktop entirely)
