@@ -10,6 +10,7 @@
   };
 
   flake.nixosModules.hostButternut = {
+    config,
     pkgs,
     lib,
     ...
@@ -114,16 +115,16 @@
     programs.wayvnc.enable = true;
 
     # Cliphist keybinding for sway
-    home.programs.sway.extraConfig = lib.mkAfter ''
-      bindsym Mod4+v exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy
-    '';
+    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.keybindings = {
+      "Mod4+v" = "exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy";
+    };
 
     hardware.graphics.enable = true;
 
     services.greetd = {
       enable = true;
       settings.default_session = {
-        command = "${lib.getExe pkgs.greetd.tuigreet} --time --remember-session --sessions /run/current-system/sw/share/wayland-sessions";
+        command = "${lib.getExe pkgs.tuigreet} --time --remember-session --sessions /run/current-system/sw/share/wayland-sessions";
         user = "greeter";
       };
     };

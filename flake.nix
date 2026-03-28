@@ -20,8 +20,8 @@
     wrappers.url = "github:Lassulus/wrappers";
     wrapper-modules.url = "github:BirdeeHub/nix-wrapper-modules";
 
-    hjem = {
-      url = "github:feel-co/hjem";
+    home-manager = {
+      url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

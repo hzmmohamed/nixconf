@@ -53,10 +53,10 @@
       # };
     };
 
-    hjem.users.${user} = {
-      files.".config/openxr/1/active_runtime.json".source = "${pkgs.wivrn}/share/openxr/1/openxr_wivrn.json";
+    home-manager.users.${user}.home.file = {
+      ".config/openxr/1/active_runtime.json".source = "${pkgs.wivrn}/share/openxr/1/openxr_wivrn.json";
 
-      files.".config/openvr/openvrpaths.vrpath".text = let
+      ".config/openvr/openvrpaths.vrpath".text = let
         steam = "/home/${user}/.local/share/Steam";
       in
         builtins.toJSON {

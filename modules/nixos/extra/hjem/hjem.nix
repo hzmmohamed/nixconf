@@ -3,18 +3,20 @@
     user = config.preferences.user.name;
   in {
     imports = [
-      inputs.hjem.nixosModules.default
+      inputs.home-manager.nixosModules.home-manager
     ];
 
-    config = {
-      hjem = {
-        users."${user}" = {
-          enable = true;
-          directory = "/home/${user}";
-          user = "${user}";
-        };
+    home-manager = {
+      useGlobalPkgs = true;
+      useUserPackages = true;
+      backupFileExtension = "backup";
 
-        clobberByDefault = true;
+      users.${user} = {
+        home = {
+          username = user;
+          homeDirectory = "/home/${user}";
+          stateVersion = config.system.stateVersion;
+        };
       };
     };
   };

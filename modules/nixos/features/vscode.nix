@@ -1,4 +1,4 @@
-{self, ...}: {
+{...}: {
   flake.nixosModules.vscode = {
     config,
     pkgs,
@@ -36,6 +36,6 @@
   in {
     environment.systemPackages = [vscodium];
 
-    hjem.users.${user}.files.".config/VSCodium/User/settings.json".text = settings;
+    home-manager.users.${user}.home.file.".config/VSCodium/User/settings.json".text = settings;
   };
 }

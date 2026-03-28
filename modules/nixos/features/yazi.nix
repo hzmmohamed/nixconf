@@ -5,9 +5,17 @@
     ...
   }: let
     user = config.preferences.user.name;
-    yaziConfig = (pkgs.formats.toml {}).generate "yazi.toml" {
-      log.enabled = false;
-      manager = {
+  in {
+    environment.systemPackages = with pkgs; [
+      yazi
+      imagemagick
+      poppler-utils
+    ];
+
+    home-manager.users.${user}.programs.yazi = {
+      enable = true;
+      settings.log.enabled = false;
+      settings.manager = {
         show_hidden = false;
         show_symlink = true;
         linemode = "mtime";
@@ -16,13 +24,5 @@
         sort_reverse = true;
       };
     };
-  in {
-    environment.systemPackages = with pkgs; [
-      yazi
-      imagemagick
-      poppler-utils
-    ];
-
-    hjem.users.${user}.files.".config/yazi/yazi.toml".source = yaziConfig;
   };
 }

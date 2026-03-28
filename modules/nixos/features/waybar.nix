@@ -317,7 +317,7 @@
       '')
     ];
 
-    hjem.users.${user}.files = {
+    home-manager.users.${user}.home.file = {
       ".config/waybar/config".text = waybarConfig;
       ".config/waybar/style.css".text = waybarStyle;
     };
