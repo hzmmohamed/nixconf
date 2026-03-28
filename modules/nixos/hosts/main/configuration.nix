@@ -78,16 +78,15 @@
     programs.alvr.enable = true;
     programs.alvr.openFirewall = true;
 
-    environment.systemPackages = with pkgs; [
-      winetricks
-      glib
-
-      bs-manager
-
-      zerotierone
-
-      android-tools
-    ];
+    environment.systemPackages =
+      (with pkgs; [
+        winetricks
+        glib
+        bs-manager
+        zerotierone
+        android-tools
+      ])
+      ++ [self.packages.${pkgs.system}.noctalia-shell];
 
     xdg.portal.extraPortals = [pkgs.xdg-desktop-portal-gtk];
     xdg.portal.enable = true;
@@ -95,6 +94,21 @@
     hardware.graphics.enable = true;
 
     programs.niri.enable = true;
+    programs.niri.package = self.packages.${pkgs.system}.niri;
+    preferences.autostart = [self.packages.${pkgs.system}.noctalia-shell];
+
+    time.timeZone = "Europe/Kyiv";
+    i18n.extraLocaleSettings = {
+      LC_ADDRESS = "uk_UA.UTF-8";
+      LC_IDENTIFICATION = "uk_UA.UTF-8";
+      LC_MEASUREMENT = "uk_UA.UTF-8";
+      LC_MONETARY = "uk_UA.UTF-8";
+      LC_NAME = "uk_UA.UTF-8";
+      LC_NUMERIC = "uk_UA.UTF-8";
+      LC_PAPER = "uk_UA.UTF-8";
+      LC_TELEPHONE = "uk_UA.UTF-8";
+      LC_TIME = "uk_UA.UTF-8";
+    };
 
     networking.firewall.enable = false;
     programs.appimage.enable = true;

@@ -24,7 +24,9 @@
 
       self.nixosModules.powersave
 
-      ({pkgs, lib, modulesPath, ...}: {
+      ({pkgs, lib, config, modulesPath, ...}: let
+        user = config.preferences.user.name;
+      in {
         imports = [
           (modulesPath + "/profiles/qemu-guest.nix")
         ];
@@ -45,8 +47,19 @@
         };
 
         # Override hashedPasswordFile from general.nix — no /persist in VM
-        users.users.yurii.hashedPasswordFile = lib.mkForce null;
-        users.users.yurii.initialPassword = lib.mkForce "test";
+        users.users.${user} = {
+          hashedPasswordFile = lib.mkForce null;
+          initialPassword = lib.mkForce "test";
+        };
+
+        # Auto-login into Sway
+        services.greetd = {
+          enable = true;
+          settings.default_session = {
+            command = "${pkgs.sway}/bin/sway";
+            inherit user;
+          };
+        };
 
         hardware.graphics.enable = true;
 

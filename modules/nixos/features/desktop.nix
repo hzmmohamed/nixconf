@@ -11,16 +11,9 @@
       self.nixosModules.chromium
     ];
 
-    programs.niri.enable = true;
-    programs.niri.package = selfpkgs.niri;
-
-    # preferences.autostart = [selfpkgs.quickshellWrapped];
-    preferences.autostart = [selfpkgs.noctalia-shell];
-
     environment.systemPackages = [
       selfpkgs.terminal
       pkgs.pcmanfm
-      selfpkgs.noctalia-shell
     ];
 
     fonts.packages = with pkgs; [
@@ -37,19 +30,7 @@
       monospace = ["JetBrainsMono Nerd Font"];
     };
 
-    time.timeZone = "Europe/Kyiv";
     i18n.defaultLocale = "en_US.UTF-8";
-    i18n.extraLocaleSettings = {
-      LC_ADDRESS = "uk_UA.UTF-8";
-      LC_IDENTIFICATION = "uk_UA.UTF-8";
-      LC_MEASUREMENT = "uk_UA.UTF-8";
-      LC_MONETARY = "uk_UA.UTF-8";
-      LC_NAME = "uk_UA.UTF-8";
-      LC_NUMERIC = "uk_UA.UTF-8";
-      LC_PAPER = "uk_UA.UTF-8";
-      LC_TELEPHONE = "uk_UA.UTF-8";
-      LC_TIME = "uk_UA.UTF-8";
-    };
 
     services.upower.enable = true;
 
@@ -61,9 +42,9 @@
       bluetooth.enable = true;
       bluetooth.powerOnBoot = true;
 
-      opengl = {
+      graphics = {
         enable = true;
-        driSupport32Bit = true;
+        enable32Bit = true;
       };
     };
   };

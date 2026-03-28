@@ -36,6 +36,21 @@
 
     programs.niri.enable = true;
     programs.niri.package = self.packages.${pkgs.system}.niri;
+    preferences.autostart = [self.packages.${pkgs.system}.noctalia-shell];
+    environment.systemPackages = [self.packages.${pkgs.system}.noctalia-shell];
+
+    time.timeZone = "Europe/Kyiv";
+    i18n.extraLocaleSettings = {
+      LC_ADDRESS = "uk_UA.UTF-8";
+      LC_IDENTIFICATION = "uk_UA.UTF-8";
+      LC_MEASUREMENT = "uk_UA.UTF-8";
+      LC_MONETARY = "uk_UA.UTF-8";
+      LC_NAME = "uk_UA.UTF-8";
+      LC_NUMERIC = "uk_UA.UTF-8";
+      LC_PAPER = "uk_UA.UTF-8";
+      LC_TELEPHONE = "uk_UA.UTF-8";
+      LC_TIME = "uk_UA.UTF-8";
+    };
 
     boot.kernelPackages = pkgs.linuxPackages_latest;
 
