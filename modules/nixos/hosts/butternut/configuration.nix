@@ -25,6 +25,8 @@
       self.nixosModules.clipse
       self.nixosModules.gammastep
       self.nixosModules.waybar
+      self.nixosModules.darkman
+      self.nixosModules.wofi
 
       self.nixosModules.discord
       self.nixosModules.gimp
@@ -117,6 +119,7 @@
     home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway = {
       config.keybindings = {
         "Mod4+v" = "exec ${lib.getExe pkgs.foot} --app-id clipse -e clipse";
+        "Mod4+Shift+t" = "exec ${lib.getExe pkgs.darkman} toggle";
       };
       extraConfig = ''
         for_window [app_id="clipse"] floating enable, resize set 622 652

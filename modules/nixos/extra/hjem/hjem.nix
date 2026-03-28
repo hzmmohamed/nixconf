@@ -4,6 +4,7 @@
   in {
     imports = [
       inputs.home-manager.nixosModules.home-manager
+      inputs.catppuccin.nixosModules.catppuccin
     ];
 
     home-manager = {
@@ -12,6 +13,8 @@
       backupFileExtension = "backup";
 
       users.${user} = {
+        imports = [inputs.catppuccin.homeModules.catppuccin];
+
         home = {
           username = user;
           homeDirectory = "/home/${user}";

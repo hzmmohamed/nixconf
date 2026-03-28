@@ -6,7 +6,17 @@
     ...
   }: let
     user = config.preferences.user.name;
-    cat = self.catppuccin;
+    latte = self.catppuccin;
+    mocha = self.catppuccinMocha;
+
+    mkColorsCss = cat: ''
+      @define-color cat-text ${cat.text};
+      @define-color cat-base ${cat.base};
+      @define-color cat-mantle ${cat.mantle};
+      @define-color cat-lavender ${cat.lavender};
+      @define-color cat-surface0 ${cat.surface0};
+      @define-color cat-overlay0 ${cat.overlay0};
+    '';
 
     waybarConfig = builtins.toJSON {
       layer = "top";
@@ -136,8 +146,10 @@
     };
 
     waybarStyle = ''
+      @import url("catppuccin-colors.css");
+
       * {
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       window#waybar {
@@ -151,25 +163,25 @@
 
       .modules-left {
         border-radius: 10px;
-        background: alpha(${cat.base}, .8);
+        background: alpha(@cat-base, .8);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
       }
 
       .modules-center {
         border-radius: 10px;
-        background: alpha(${cat.base}, .8);
+        background: alpha(@cat-base, .8);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
       }
 
       .modules-right {
         border-radius: 10px;
-        background: alpha(${cat.base}, .8);
+        background: alpha(@cat-base, .8);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
       }
 
       tooltip {
-        background: ${cat.base};
-        color: ${cat.lavender};
+        background: @cat-base;
+        color: @cat-lavender;
       }
 
       #clock:hover,
@@ -181,23 +193,23 @@
       #memory:hover,
       #temperature:hover {
         transition: all .3s ease;
-        color: ${cat.text};
-        background: alpha(${cat.base}, .9);
+        color: @cat-text;
+        background: alpha(@cat-base, .9);
       }
 
       #custom-notification {
         transition: all .3s ease;
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       #clock {
-        color: ${cat.text};
+        color: @cat-text;
         transition: all .3s ease;
       }
 
       #workspaces button {
         all: unset;
-        color: alpha(${cat.text}, .4);
+        color: alpha(@cat-text, .4);
         transition: all .2s ease;
       }
 
@@ -209,7 +221,7 @@
       }
 
       #workspaces button.active {
-        color: ${cat.lavender};
+        color: @cat-lavender;
         border: none;
         text-shadow: 0px 0px 2px rgba(0, 0, 0, .5);
       }
@@ -228,24 +240,24 @@
       }
 
       #workspaces button.empty.active {
-        color: ${cat.text};
+        color: @cat-text;
         border: none;
         text-shadow: 0px 0px 2px rgba(0, 0, 0, .5);
       }
 
       #bluetooth {
         transition: all .3s ease;
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       #network {
         transition: all .3s ease;
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       #battery {
         transition: all .3s ease;
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       #battery.charging {
@@ -267,7 +279,7 @@
 
       @keyframes blink {
         to {
-          color: ${cat.base};
+          color: @cat-base;
         }
       }
 
@@ -276,7 +288,7 @@
       }
 
       #custom-expand {
-        color: alpha(${cat.text}, .2);
+        color: alpha(@cat-text, .2);
         text-shadow: 0px 0px 2px rgba(0, 0, 0, .7);
         transition: all .3s ease;
       }
@@ -288,7 +300,7 @@
 
       #cpu, #memory, #temperature {
         transition: all .3s ease;
-        color: ${cat.text};
+        color: @cat-text;
       }
 
       #custom-endpoint {
@@ -320,6 +332,8 @@
     home-manager.users.${user}.home.file = {
       ".config/waybar/config".text = waybarConfig;
       ".config/waybar/style.css".text = waybarStyle;
+      ".config/waybar/catppuccin-latte.css".text = mkColorsCss latte;
+      ".config/waybar/catppuccin-mocha.css".text = mkColorsCss mocha;
     };
   };
 }

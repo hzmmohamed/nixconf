@@ -1,65 +1,44 @@
-{
+{...}: {
   flake.nixosModules.gtk = {
     pkgs,
     lib,
+    config,
     ...
   }: let
-    theme-name = "Gruvbox-Green-Dark-Medium";
-    theme-package = pkgs.gruvbox-gtk-theme.override {
-      colorVariants = ["dark"];
-      sizeVariants = ["standard"];
-      themeVariants = ["green"];
-      tweakVariants = ["medium" "macos"];
-    };
-
-    icon-theme-package = pkgs.gruvbox-plus-icons;
-    icon-theme-name = "Gruvbox-Plus-Dark";
-
-    gtksettings = ''
-      [Settings]
-      gtk-icon-theme-name = ${icon-theme-name}
-      gtk-theme-name = ${theme-name}
-    '';
+    user = config.preferences.user.name;
+    lightTheme = "catppuccin-latte-lavender-standard+default";
   in {
-    environment = {
-      etc = {
-        "xdg/gtk-3.0/settings.ini".text = gtksettings;
-        "xdg/gtk-4.0/settings.ini".text = gtksettings;
-      };
-    };
-
-    environment.variables = {
-      GTK_THEME = theme-name;
-    };
-
-    programs = {
-      dconf = {
-        enable = lib.mkDefault true;
-        profiles = {
-          user = {
-            databases = [
-              {
-                lockAll = false;
-                settings = {
-                  "org/gnome/desktop/interface" = {
-                    gtk-theme = theme-name;
-                    icon-theme = icon-theme-name;
-                    color-scheme = "prefer-dark";
-                  };
-                };
-              }
-            ];
+    programs.dconf = {
+      enable = lib.mkDefault true;
+      profiles.user.databases = [
+        {
+          lockAll = false;
+          settings."org/gnome/desktop/interface" = {
+            gtk-theme = lightTheme;
+            color-scheme = "prefer-light";
           };
-        };
-      };
+        }
+      ];
     };
 
     environment.systemPackages = [
-      theme-package
-      icon-theme-package
-
+      (pkgs.catppuccin-gtk.override {
+        variant = "latte";
+        accents = ["lavender"];
+      })
+      (pkgs.catppuccin-gtk.override {
+        variant = "mocha";
+        accents = ["lavender"];
+      })
       pkgs.gtk3
       pkgs.gtk4
     ];
+
+    home-manager.users.${user}.gtk = {
+      enable = true;
+      theme = {
+        name = lightTheme;
+      };
+    };
   };
 }
