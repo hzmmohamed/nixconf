@@ -22,7 +22,9 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Desktop Essentials
 
-- [x] Sway WM (migrated from old config, with waybar, hjem config generation)
+- [x] Sway WM (migrated from old config, hjem config generation, XDG portals, greetd)
+- [x] Waybar (replicated from old config with Catppuccin Latte theme, right-side vertical bar)
+- [x] Login manager (greetd + tuigreet with session picker on butternut, auto-login on VM)
 - [x] Screen lock / idle management (swayidle + swaylock)
 - [x] Clipboard history (cliphist + wl-clipboard)
 - [x] Blue light filter (gammastep)
@@ -71,8 +73,8 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Host-Specific
 
-- [ ] butternut: asusd (ASUS laptop daemon)
+- [x] butternut: asusd (ASUS laptop daemon)
 - [ ] butternut: nix-serve-ng (binary cache)
-- [ ] butternut: wayvnc
-- [ ] butternut: nix-ld with libraries
+- [x] butternut: wayvnc
+- [x] butternut: nix-ld with libraries
 - [ ] Desktop vs CLI-only toggle (module to disable desktop entirely)

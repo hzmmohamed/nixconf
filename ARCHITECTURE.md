@@ -35,7 +35,7 @@ config. Hosts compose both.
 | File | Exports | Purpose |
 |------|---------|---------|
 | `user.nix` | `flake.user` | Username and home path. Change it here, it cascades everywhere. |
-| `theme.nix` | `flake.theme`, `flake.themeNoHash` | Gruvbox color palette used by terminal, bar, WM, etc. |
+| `theme.nix` | `flake.theme`, `flake.themeNoHash`, `flake.catppuccin` | Color palettes: Gruvbox (niri/hyprland desktop), Catppuccin Latte (sway desktop). |
 | `flake-parts.nix` | systems, options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
 | `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling. |
 | `vm.nix` | `nixosConfigurations.butternut-vm` | QEMU VM for testing. Auto-logs into Sway via greetd. |
@@ -61,12 +61,12 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 |--------|-------------|---------|
 | `general` | Creates user, sets shell, persistence dirs | `extra_hjem`, `gtk`, `nix` |
 | `desktop` | WM-agnostic desktop base: fonts, polkit, bluetooth, graphics, pipewire, browsers | `gtk`, `wallpaper`, `pipewire`, `firefox`, `chromium` |
-| `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, session vars | `extra_hjem_sway` |
+| `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, XDG portals (wlr+gtk), env import for systemd/dbus | `extra_hjem_sway` |
 | `hyprland` | Hyprland WM: keybinds, animations, monitors, dwindle layout | (uses `home.programs.hyprland` consumed by hjem) |
-| `waybar` | Status bar: workspaces, clock, CPU/mem/battery, Gruvbox CSS | |
-| `swayidle` | Screen lock (swaylock) + idle timeout + DPMS | |
+| `waybar` | Right-side vertical status bar with Catppuccin Latte theme: rotated clock, persistent workspaces, expandable CPU/mem/temp drawer, battery | |
+| `swayidle` | Screen lock (swaylock) + idle timeout (5min lock, 10min DPMS off) | |
 | `cliphist` | Clipboard history daemon (wl-paste + cliphist) | |
-| `gammastep` | Blue light filter | |
+| `gammastep` | Blue light filter (Cairo coordinates) | |
 | `gaming` | Steam, Lutris, Heroic, Proton GE, DXVK, MangoHUD | |
 | `vr` | WiVRn, OpenXR, xrizer, OpenVR paths | |
 | `pipewire` | Audio: PipeWire + ALSA + PulseAudio + JACK + DeepFilter | |
@@ -101,7 +101,7 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 |------|----|----------|------------------|
 | **main** | Hyprland + Niri | AMD CPU/GPU, NVMe, btrfs | Gaming, VR, impermanence, WiFi hotspot, OBS |
 | **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
-| **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC |
+| **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet |
 
 ### `modules/wrappedPrograms/` — standalone packages
 
@@ -151,8 +151,10 @@ and optionally `flake.wrapperModules.*`.
   modules get it via `config.preferences.user.name`. Wrapped programs get it via
   `self.user`. Never hardcode a username.
 
-- **One theme, one place.** `modules/theme.nix` defines `flake.theme`. All
-  colors reference it. Never hardcode hex values.
+- **Themes live in one place.** `modules/theme.nix` defines `flake.theme`
+  (Gruvbox, used by niri/hyprland hosts) and `flake.catppuccin` (Catppuccin
+  Latte, used by sway hosts). Modules reference `self.theme` or
+  `self.catppuccin`. Never hardcode hex values.
 
 - **Feature modules are independent.** A feature module should not import another
   feature module (except `desktop` which aggregates shared desktop basics). Hosts
