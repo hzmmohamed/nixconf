@@ -81,6 +81,22 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `gtk` | GTK/icon theme (Gruvbox) | |
 | `nix` | direnv, nix-index, flakes, nix-ld, formatters | |
 | `wallpaper` | swww daemon with wallpaper image | |
+| `sops` | Enables sops-nix with age key path | `inputs.sops-nix` |
+| `syncthing` | Syncthing service with device IDs, reads certs from sops secrets | |
+| `shared-zotero` | Zotero + Syncthing folders + sops secrets (see below) | |
+| `rbw` | Bitwarden CLI (rbw) with pinentry | |
+| `office` | Obsidian, LibreOffice, Typst, Element Desktop, zathura | |
+| `docker` | Docker daemon + compose + lazydocker + dive | |
+| `media` | MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl | |
+| `adb` | Android Debug Bridge | |
+| `tailscale` | Tailscale VPN with SSH, firewall rules | |
+| `vscode` | VSCodium with extensions, Catppuccin theme, settings via hjem | |
+| `k8s` | kubectl, helm, kubectx, k9s, kind, stern, eksctl | |
+| `aws` | AWS CLI + aws-vault | |
+| `atuin` | Shell history sync with vim keybindings, config via hjem | |
+| `zellij` | Terminal multiplexer | |
+| `yazi` | File manager with image/PDF preview, config via hjem | |
+| `design` | Inkscape, Blender, FontForge, font-manager | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -126,6 +142,62 @@ and optionally `flake.wrapperModules.*`.
 | `wlr-which-key/` | (library) | Which-key menu generator, used by niri |
 | `quickshell/` | `quickshellWrapped` | Quickshell with zoxide |
 
+### `secrets/` — encrypted secrets
+
+Secrets are managed with [sops-nix](https://github.com/Mic92/sops-nix) and
+age encryption. The private key lives at `~/.config/sops/age/keys.txt` on
+each host (not in the repo).
+
+```
+secrets/
+├── README.md               (documents each file and its usage)
+└── butternut/
+    └── syncthing.yaml       (syncthing key/cert for butternut)
+```
+
+Convention: `secrets/<hostname>/<service>.yaml`. The `.sops.yaml` at the repo
+root matches `secrets/**/*.yaml` with the primary age key.
+
+### Shared feature pattern: `shared-zotero.nix`
+
+Some features need cross-host infrastructure (syncthing, sops secrets) to
+work. Rather than scattering this wiring across host configs, the feature
+module owns it all.
+
+```
+shared-zotero.nix
+    |
+    +--> installs Zotero
+    +--> reads config.networking.hostName → "butternut"
+    +--> declares sops.secrets from secrets/butternut/syncthing.yaml
+    +--> declares syncthing folders (zotero-db, zotero-attachments)
+```
+
+**How it resolves per-host:** The module constructs the sopsFile path
+dynamically from `config.networking.hostName`:
+
+```nix
+secretsFile = ../../.. + "/secrets/${hostname}/syncthing.yaml";
+```
+
+Each host has its own encrypted file with its own syncthing cert/key. The
+module doesn't know or care which host it's on — it just follows the naming
+convention.
+
+**To add a new host to the Zotero share:**
+1. Create `secrets/<hostname>/syncthing.yaml` with that host's syncthing
+   cert/key (use `sops` to encrypt)
+2. Import `shared-zotero`, `syncthing`, and `sops` in the host config
+3. Done — the module wires everything from the hostname
+
+**To disable sharing** (Zotero without sync):
+```nix
+preferences.zotero.sharing = false;
+```
+
+This pattern can be reused for other shared resources that need per-host
+secrets and syncthing folders.
+
 ## Data flow: how a host configuration is built
 
 ```
@@ -170,6 +242,15 @@ and optionally `flake.wrapperModules.*`.
 - **hjem, not home-manager.** User-level file generation uses
   [hjem](https://github.com/feel-co/hjem), not home-manager. Config files are
   written via `hjem.users.<name>.files`.
+
+- **Features own their infrastructure.** When a feature needs syncthing
+  folders or sops secrets, it declares them itself (like `shared-zotero.nix`
+  does). Host configs should not contain syncthing folder definitions or
+  sops secret declarations that belong to a feature.
+
+- **Secrets follow `secrets/<hostname>/`** convention. Feature modules
+  resolve the right file via `config.networking.hostName`. Never hardcode
+  a hostname in a sopsFile path.
 
 - **Files must be git-tracked.** Nix flakes only see git-tracked files. New
   modules must be `git add`'ed before they're visible to `nix build`/`nix eval`.
