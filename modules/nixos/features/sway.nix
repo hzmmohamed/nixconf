@@ -28,6 +28,8 @@
         terminal = terminal;
         menu = "wofi --show drun";
 
+        # Keyboard: US + Arabic with Shift+Super toggle, CapsLock as Escape
+        # Touchpad: tap-to-click, disable-while-typing
         input = {
           "type:keyboard" = {
             xkb_layout = "us,ara";
@@ -43,6 +45,7 @@
 
         gaps.inner = 8;
 
+        # Pixel borders only, no title bars (zellij/waybar handle identification)
         window = {
           border = 4;
           titlebar = false;
@@ -52,6 +55,8 @@
 
         focus.followMouse = "yes";
 
+        # mkOptionDefault merges with sway's built-in defaults rather than replacing.
+        # Host configs can add more keybindings with mkOptionDefault too.
         keybindings = lib.mkOptionDefault {
           # Navigation
           "${mod}+Left" = "focus left";
@@ -141,11 +146,13 @@
           "Escape" = "mode default";
         };
 
+        # Title bar font (visible if titlebar is ever re-enabled)
         fonts = {
           names = [self.fonts.monospace];
-          size = self.fonts.size * 1.0;
+          size = self.fonts.size * 0.8;
         };
 
+        # Disable sway's built-in bar — waybar is used instead
         bars = [];
 
         # Catppuccin Latte window decoration colors
@@ -191,6 +198,8 @@
           background = cat.base;
         };
 
+        # Export Wayland env vars into systemd and dbus so child services
+        # (waybar, clipse, darkman, etc.) can access the compositor.
         startup = [
           {
             command = "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP";
@@ -198,6 +207,8 @@
           }
         ];
 
+        # Map monitor preferences to sway outputs.
+        # Disabled monitors get an explicit disable directive.
         output =
           lib.mapAttrs (
             _name: m:
@@ -213,11 +224,13 @@
           config.preferences.monitors;
       };
 
+      # Per-app window rules (floating dialogs, sizing overrides)
       extraConfig = ''
         for_window [app_id="clipse"] floating enable, move position center, resize set 80ppt 80ppt
       '';
     };
 
+    # Sway companion utilities — clipboard, screenshots, launcher, media keys
     environment.systemPackages = with pkgs; [
       wl-clipboard
       grim
@@ -227,8 +240,11 @@
       brightnessctl
     ];
 
+    # Required for brightnessctl without root
     users.users.${user}.extraGroups = ["video"];
 
+    # XDG portal for screen sharing, file chooser dialogs, etc.
+    # wlr portal handles screen capture; gtk portal handles file dialogs.
     xdg.portal = {
       enable = true;
       wlr.enable = true;
@@ -238,6 +254,7 @@
       };
     };
 
+    # Force Wayland for Qt, Firefox, and Electron apps
     environment.sessionVariables = {
       QT_QPA_PLATFORM = "wayland";
       QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";

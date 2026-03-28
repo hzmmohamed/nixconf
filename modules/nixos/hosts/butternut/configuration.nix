@@ -29,6 +29,7 @@
       self.nixosModules.mako
       self.nixosModules.blueman
       self.nixosModules.wofi-emoji
+      self.nixosModules.bibata-cursor
 
       self.nixosModules.discord
       self.nixosModules.gimp
@@ -82,6 +83,8 @@
     boot.plymouth.enable = true;
 
     time.timeZone = "Africa/Cairo";
+
+    preferences.bibata-cursor.enable = true;
 
     networking = {
       hostName = "butternut";
