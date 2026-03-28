@@ -2,6 +2,7 @@
   flake.nixosModules.general = {
     pkgs,
     config,
+    lib,
     ...
   }: {
     imports = [
@@ -16,8 +17,7 @@
       extraGroups = ["wheel" "networkmanager"];
       shell = self.packages.${pkgs.system}.environment;
 
-      hashedPasswordFile = "/persist/passwd";
-      initialPassword = "12345";
+      initialPassword = lib.mkDefault "12345";
     };
 
     persistance.data.directories = [

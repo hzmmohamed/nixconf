@@ -1,9 +1,5 @@
 {...}: {
-  flake.nixosModules.ai-server = {
-    config,
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.ai-server = {pkgs, ...}: {
     # --- llama-swap ---
     # OpenAI-compatible proxy that auto-loads/unloads llama.cpp models on demand.
     environment.etc."llama-swap/config.yaml".text = ''
@@ -75,14 +71,23 @@
             - "embeddinggemma:300m"
     '';
 
+    users.users.llama-swap = {
+      isSystemUser = true;
+      group = "llama-swap";
+      home = "/var/lib/llama-swap";
+      createHome = true;
+    };
+    users.groups.llama-swap = {};
+
     systemd.services.llama-swap = {
       description = "llama-swap - OpenAI compatible proxy with automatic model swapping";
       after = ["network.target"];
       wantedBy = ["multi-user.target"];
       serviceConfig = {
         Type = "simple";
-        User = config.preferences.user.name;
-        Group = "users";
+        User = "llama-swap";
+        Group = "llama-swap";
+        StateDirectory = "llama-swap";
         ExecStart = "${pkgs.llama-swap}/bin/llama-swap --config /etc/llama-swap/config.yaml --listen 0.0.0.0:9292 --watch-config";
         Restart = "always";
         RestartSec = 10;
