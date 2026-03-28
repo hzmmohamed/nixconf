@@ -1,5 +1,6 @@
 {self, ...}: {
   flake.nixosModules.desktop = {pkgs, ...}: let
+    fonts = self.fonts;
     selfpkgs = self.packages."${pkgs.system}";
   in {
     imports = [
@@ -42,7 +43,7 @@
     fonts.fontconfig.defaultFonts = {
       serif = ["Ubuntu Sans"];
       sansSerif = ["Ubuntu Sans"];
-      monospace = ["JetBrainsMono Nerd Font"];
+      monospace = [fonts.monospace];
     };
 
     i18n.defaultLocale = "en_US.UTF-8";

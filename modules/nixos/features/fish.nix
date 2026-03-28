@@ -37,6 +37,13 @@
           if type -q direnv
               direnv hook fish | source
           end
+
+          # Auto-start zellij for interactive terminals, but not when:
+          # - already inside zellij
+          # - running inside a non-interactive context (e.g. IDE terminal, scripts)
+          if status is-interactive; and not set -q ZELLIJ; and not set -q INSIDE_EMACS; and not set -q VSCODE_PID
+              exec zellij
+          end
         '';
       };
 

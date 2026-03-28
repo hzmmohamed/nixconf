@@ -16,6 +16,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Arabic keyboard layout (US + Arabic, XKB switching) — configured in sway module
 - [x] SSH server module (OpenSSH on port 7654, already in butternut)
 - [x] Tailscale VPN with SSH
+- [ ] Tailscale auth keys for automatic login (especially on peacelily)
 - [x] Secrets management (sops-nix, age encryption, centralized in `secrets/`)
 - [x] Syncthing (device IDs, sops-managed certs, folders owned by feature modules)
 - [x] GPG + SSH agent integration
@@ -29,6 +30,10 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Clipboard history (cliphist + wl-clipboard)
 - [x] Blue light filter (gammastep)
 - [x] Bitwarden / rbw (password manager CLI)
+- [ ] Notification daemon (sway-compatible, themed)
+- [ ] Bluetooth controls
+- [ ] PulseAudio volume control (pavucontrol)
+- [ ] swww + wallpaper switcher
 
 ## Productivity Apps
 

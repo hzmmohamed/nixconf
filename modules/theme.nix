@@ -84,8 +84,13 @@
     mantle = "#181825";
     crust = "#11111b";
   };
+  fonts = {
+    monospace = "JetBrainsMono Nerd Font";
+    size = 12;
+    barSize = 12;
+  };
 in {
   flake = {
-    inherit theme themeNoHash catppuccin catppuccinMocha;
+    inherit theme themeNoHash catppuccin catppuccinMocha fonts;
   };
 }

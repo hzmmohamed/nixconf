@@ -9,6 +9,8 @@
     user = config.preferences.user.name;
     terminal = lib.getExe self.packages.${pkgs.system}.terminal;
   in {
+    imports = [self.nixosModules.wofi-theme];
+
     programs.sway = {
       enable = true;
       wrapperFeatures.gtk = true;
@@ -139,6 +141,41 @@
           "Escape" = "mode default";
         };
 
+        bars = [];
+
+        colors = let
+          cat = self.catppuccin;
+        in {
+          focused = {
+            border = cat.lavender;
+            background = cat.base;
+            text = cat.text;
+            indicator = cat.lavender;
+            childBorder = cat.lavender;
+          };
+          focusedInactive = {
+            border = cat.overlay0;
+            background = cat.base;
+            text = cat.text;
+            indicator = cat.overlay0;
+            childBorder = cat.overlay0;
+          };
+          unfocused = {
+            border = cat.overlay0;
+            background = cat.base;
+            text = cat.subtext1;
+            indicator = cat.overlay0;
+            childBorder = cat.overlay0;
+          };
+          urgent = {
+            border = cat.peach;
+            background = cat.base;
+            text = cat.peach;
+            indicator = cat.peach;
+            childBorder = cat.peach;
+          };
+        };
+
         startup = [
           {
             command = "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP";
@@ -160,6 +197,10 @@
           )
           config.preferences.monitors;
       };
+
+      extraConfig = ''
+        for_window [app_id="clipse"] floating enable, move position center, resize set 80ppt 80ppt
+      '';
     };
 
     environment.systemPackages = with pkgs; [

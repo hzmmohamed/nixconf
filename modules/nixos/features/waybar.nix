@@ -157,8 +157,8 @@
       }
 
       * {
-        font-size: 12px;
-        font-family: "JetBrainsMono Nerd Font";
+        font-size: ${toString self.fonts.barSize}px;
+        font-family: "${self.fonts.monospace}";
       }
 
       .modules-left {

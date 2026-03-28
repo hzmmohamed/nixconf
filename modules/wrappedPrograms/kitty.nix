@@ -17,8 +17,8 @@
       settings = {
         enable_audio_bell = "no";
 
-        font_size = 15;
-        font_family = "JetBrainsMono Nerd Font";
+        font_size = self.fonts.size;
+        font_family = self.fonts.monospace;
 
         cursor_text_color = "background";
 
@@ -27,21 +27,16 @@
 
         cursor_trail = 3;
 
-        include = "current-theme.conf";
+        include = "~/.config/kitty/current-theme.conf";
+
+        remember_window_size = "no";
+        initial_window_width = 800;
+        initial_window_height = 600;
 
         map = [
-          "alt+1 goto_tab 1"
-          "alt+2 goto_tab 2"
-          "alt+3 goto_tab 3"
-          "alt+4 goto_tab 4"
-          "alt+5 goto_tab 5"
-          "alt+6 goto_tab 6"
-          "alt+7 goto_tab 7"
-          "alt+8 goto_tab 8"
-          "alt+9 goto_tab 9"
-          "ctrl+shift+w close_tab"
-          "ctrl+t new_tab_with_cwd"
-          "ctrl+shift+t new_tab"
+          "ctrl+shift+equal change_font_size all +1.0"
+          "ctrl+shift+minus change_font_size all -1.0"
+          "ctrl+shift+0 change_font_size all 0"
         ];
       };
     };

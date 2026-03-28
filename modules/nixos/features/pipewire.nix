@@ -1,5 +1,6 @@
-{
+{...}: {
   flake.nixosModules.pipewire = {pkgs, ...}: {
+    environment.systemPackages = [pkgs.pavucontrol];
     preferences.keymap = {
       "SUPER + v".exec = ''${pkgs.alsa-utils}/bin/amixer sset Capture toggle'';
       "SUPER + d"."s".package = pkgs.pwvucontrol;

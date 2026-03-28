@@ -18,7 +18,7 @@
       self.nixosModules.gammastep
       self.nixosModules.waybar
       self.nixosModules.darkman
-      self.nixosModules.wofi
+      self.nixosModules.mako
 
       self.nixosModules.powersave
 

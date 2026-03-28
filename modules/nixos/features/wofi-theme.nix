@@ -1,13 +1,13 @@
 {self, ...}: {
-  flake.nixosModules.wofi = {config, ...}: let
+  flake.nixosModules.wofi-theme = {config, ...}: let
     user = config.preferences.user.name;
     latte = self.catppuccin;
     mocha = self.catppuccinMocha;
 
     mkWofiCss = cat: ''
       * {
-        font-family: 'JetBrainsMono Nerd Font', monospace;
-        font-size: 16px;
+        font-family: '${self.fonts.monospace}', monospace;
+        font-size: ${toString self.fonts.size}px;
       }
 
       window {

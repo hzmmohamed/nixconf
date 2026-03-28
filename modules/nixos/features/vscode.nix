@@ -1,4 +1,4 @@
-{...}: {
+{self, ...}: {
   flake.nixosModules.vscode = {
     config,
     pkgs,
@@ -16,6 +16,7 @@
       editorconfig.editorconfig
       catppuccin.catppuccin-vsc
       catppuccin.catppuccin-vsc-icons
+      anthropic.claude-code
     ];
 
     vscodium = pkgs.vscode-with-extensions.override {
@@ -23,19 +24,33 @@
       vscodeExtensions = extensions;
     };
 
-    settings = builtins.toJSON {
+    userSettings = {
       "workbench.sideBar.location" = "right";
       "workbench.colorTheme" = "Catppuccin Latte";
       "workbench.startupEditor" = "none";
       "files.autoSave" = "afterDelay";
       "files.autoSaveDelay" = 1000;
       "editor.wordWrap" = "on";
-      "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
+      "editor.fontFamily" = "'${self.fonts.monospace}', 'monospace', monospace";
+      "editor.fontSize" = self.fonts.size;
       "nix.serverPath" = "nil";
     };
+
+    settingsPath = "/home/${user}/.config/VSCodium/User";
   in {
     environment.systemPackages = [vscodium];
 
-    home-manager.users.${user}.home.file.".config/VSCodium/User/settings.json".text = settings;
+    # Write settings.json as a mutable file (not a nix store symlink) so
+    # darkman can sed the colorTheme value at runtime for light/dark switching.
+    # Re-written on each nixos-rebuild from the Nix-defined defaults above.
+    home-manager.users.${user}.home.activation.vscodiumSettings = {
+      after = ["writeBoundary"];
+      before = [];
+      data = ''
+        mkdir -p ${settingsPath}
+        cat ${pkgs.writeText "vscodium-settings" (builtins.toJSON userSettings)} \
+          | ${pkgs.jq}/bin/jq --monochrome-output > ${settingsPath}/settings.json
+      '';
+    };
   };
 }
