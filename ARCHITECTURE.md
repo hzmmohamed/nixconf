@@ -21,6 +21,7 @@ flake.nix
               +--> modules/nixos/extra/      (integration layers: hjem, impermanence)
               +--> modules/nixos/hosts/      (per-host configurations)
               |
+              +--> modules/vms/             (purpose-built test VMs)
               +--> modules/wrappedPrograms/  (per-system packages built with the wrappers library)
 ```
 
@@ -37,8 +38,7 @@ config. Hosts compose both.
 | `user.nix` | `flake.user` | Username and home path. Change it here, it cascades everywhere. |
 | `theme.nix` | `flake.theme`, `flake.themeNoHash`, `flake.catppuccin` | Color palettes: Gruvbox (niri/hyprland desktop), Catppuccin Latte (sway desktop). |
 | `flake-parts.nix` | systems, options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
-| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling. |
-| `vm.nix` | `nixosConfigurations.butternut-vm` | QEMU VM for testing. Auto-logs into Sway via greetd. |
+| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age. |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -118,6 +118,18 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 | **main** | Hyprland + Niri | AMD CPU/GPU, NVMe, btrfs | Gaming, VR, impermanence, WiFi hotspot, OBS |
 | **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
 | **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet |
+
+### `modules/vms/` — test VMs
+
+Purpose-built QEMU VMs for testing specific aspects. Each VM includes
+only the modules needed for its test — not a replica of any host.
+
+| File | nixosConfiguration | Purpose |
+|------|-------------------|---------|
+| `desktop-test.nix` | `desktop-vm` | Sway + waybar + desktop essentials. Auto-login, no secrets. |
+
+Network test VMs (butternut+maple pair for syncthing/tailscale/SSH) will
+be added as separate files when needed.
 
 ### `modules/wrappedPrograms/` — standalone packages
 
