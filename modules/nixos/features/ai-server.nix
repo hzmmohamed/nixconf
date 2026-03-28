@@ -1,5 +1,9 @@
 {...}: {
-  flake.nixosModules.ai-server = {pkgs, ...}: {
+  flake.nixosModules.ai-server = {
+    pkgs,
+    config,
+    ...
+  }: {
     # --- llama-swap ---
     # OpenAI-compatible proxy that auto-loads/unloads llama.cpp models on demand.
     environment.etc."llama-swap/config.yaml".text = ''
@@ -146,9 +150,66 @@
       };
     };
 
+    # --- LibreChat secrets ---
+    sops.secrets."librechat_creds_key" = {
+      sopsFile = ../../../secrets/shared/librechat.yaml;
+    };
+    sops.secrets."librechat_creds_iv" = {
+      sopsFile = ../../../secrets/shared/librechat.yaml;
+    };
+    sops.secrets."librechat_jwt_secret" = {
+      sopsFile = ../../../secrets/shared/librechat.yaml;
+    };
+    sops.secrets."librechat_jwt_refresh_secret" = {
+      sopsFile = ../../../secrets/shared/librechat.yaml;
+    };
+
+    # --- LibreChat ---
+    services.librechat = {
+      enable = true;
+      openFirewall = true;
+      enableLocalDB = true;
+      credentials = {
+        CREDS_KEY = config.sops.secrets."librechat_creds_key".path;
+        CREDS_IV = config.sops.secrets."librechat_creds_iv".path;
+        JWT_SECRET = config.sops.secrets."librechat_jwt_secret".path;
+        JWT_REFRESH_SECRET = config.sops.secrets."librechat_jwt_refresh_secret".path;
+      };
+      env = {
+        HOST = "0.0.0.0";
+        ALLOW_REGISTRATION = true;
+        ALLOW_SOCIAL_LOGIN = false;
+      };
+      settings = {
+        version = "1.2.1";
+        cache = true;
+        endpoints = {
+          custom = [
+            {
+              name = "peacelily";
+              apiKey = "sk-no-key-required";
+              baseURL = "http://localhost:9292/v1";
+              models = {
+                default = [
+                  "qwen3.5:9b"
+                  "qwen3.5:9b-nothinker"
+                  "qwen3.5:35b-a3b"
+                  "qwen3.5:4b"
+                ];
+              };
+              titleConvo = true;
+              titleModel = "qwen3.5:4b";
+              modelDisplayLabel = "Peacelily";
+            }
+          ];
+        };
+      };
+    };
+
     # --- Firewall ---
     networking.firewall.allowedTCPPorts = [
       9292 # llama-swap
+      3080 # librechat
       10200 # piper TTS
       10300 # whisper STT
       10400 # openwakeword
