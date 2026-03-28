@@ -11,7 +11,7 @@
   }: {
     options.terminal = lib.mkOption {
       type = lib.types.str;
-      default = "kitty";
+      default = lib.getExe self.packages.${config.pkgs.stdenv.hostPlatform.system}.terminal;
     };
     config = {
       settings = let
@@ -116,6 +116,104 @@
             '';
           });
 
+          "Mod+Shift+Slash".spawn-sh = self.mkWhichKeyExe config.pkgs [
+            {
+              key = "ret";
+              desc = "Terminal";
+              cmd = "";
+            }
+            {
+              key = "q";
+              desc = "Close window";
+              cmd = "";
+            }
+            {
+              key = "f";
+              desc = "Maximize";
+              cmd = "";
+            }
+            {
+              key = "g";
+              desc = "Fullscreen";
+              cmd = "";
+            }
+            {
+              key = "S-f";
+              desc = "Float";
+              cmd = "";
+            }
+            {
+              key = "c";
+              desc = "Center";
+              cmd = "";
+            }
+            {
+              key = "h/l";
+              desc = "Focus left/right";
+              cmd = "";
+            }
+            {
+              key = "j/k";
+              desc = "Focus down/up";
+              cmd = "";
+            }
+            {
+              key = "S-hjkl";
+              desc = "Move window";
+              cmd = "";
+            }
+            {
+              key = "C-hl";
+              desc = "Column width";
+              cmd = "";
+            }
+            {
+              key = "C-jk";
+              desc = "Window height";
+              cmd = "";
+            }
+            {
+              key = "1-0";
+              desc = "Workspace";
+              cmd = "";
+            }
+            {
+              key = "S-1-0";
+              desc = "Move to workspace";
+              cmd = "";
+            }
+            {
+              key = "s";
+              desc = "Launcher";
+              cmd = "";
+            }
+            {
+              key = "d";
+              desc = "Quick menu";
+              cmd = "";
+            }
+            {
+              key = "C-s";
+              desc = "Screenshot (full)";
+              cmd = "";
+            }
+            {
+              key = "S-s";
+              desc = "Screenshot (area)";
+              cmd = "";
+            }
+            {
+              key = "S-e";
+              desc = "Edit screenshot";
+              cmd = "";
+            }
+            {
+              key = "S-?";
+              desc = "This help";
+              cmd = "";
+            }
+          ];
+
           "Mod+d".spawn-sh = self.mkWhichKeyExe config.pkgs [
             {
               key = "b";
@@ -182,13 +280,7 @@
         xwayland-satellite.path =
           lib.getExe config.pkgs.xwayland-satellite;
 
-        spawn-at-startup = [
-          noctaliaExe
-          (lib.getExe (
-            pkgs.writeShellScriptBin "wallpaper"
-            "${lib.getExe pkgs.swaybg} -i ${./../nixos/features/wallpaper/gruvbox-mountain-village.png} -m fill"
-          ))
-        ];
+        spawn-at-startup = [];
       };
     };
   };

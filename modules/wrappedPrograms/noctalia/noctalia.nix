@@ -1,4 +1,8 @@
-{inputs, self, ...}: {
+{
+  inputs,
+  self,
+  ...
+}: {
   perSystem = {pkgs, ...}: {
     packages = {
       noctalia-shell = inputs.wrapper-modules.wrappers.noctalia-shell.wrap {
@@ -454,8 +458,7 @@
             wifiDetailsViewMode = "grid";
           };
           wallpaper = {
-            # bye bye
-            enabled = false;
+            enabled = true;
           };
         };
       };
