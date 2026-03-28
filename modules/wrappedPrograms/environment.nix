@@ -58,7 +58,7 @@
         pkgs.zoxide
         pkgs.dust
         pkgs.ripgrep
-        pkgs.neofetch
+        pkgs.fastfetch
         pkgs.tree-sitter
         pkgs.imagemagick
         pkgs.imv

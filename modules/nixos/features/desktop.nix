@@ -49,6 +49,12 @@
 
     services.upower.enable = true;
 
+    # Disable VT switching (Ctrl+Alt+F1-F12) — prevents accidentally
+    # leaving the compositor session, especially problematic in nested/VM setups.
+    services.logind.settings.Login.NAutoVTs = 0;
+    systemd.services."getty@".enable = false;
+    systemd.services."autovt@".enable = false;
+
     security.polkit.enable = true;
 
     hardware = {

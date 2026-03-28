@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nix build:*)",
+      "Bash(nix eval:*)",
+      "Bash(nix flake:*)",
+      "Bash(nix develop:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(alejandra:*)",
+      "Bash(statix:*)",
+      "Bash(deadnix:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(sops:*)"
+    ]
+  }
+}

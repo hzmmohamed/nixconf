@@ -5,26 +5,32 @@
     ...
   }: {
     devShells.default = pkgs.mkShell {
-      packages = with pkgs; [
-        # nix tools
-        nil
-        nixd
-        statix
-        alejandra
-        deadnix
-        nix-tree
-        nix-diff
-        nix-output-monitor
+      packages =
+        (with pkgs; [
+          # nix tools
+          nil
+          nixd
+          statix
+          alejandra
+          deadnix
+          nix-tree
+          nix-diff
+          nix-output-monitor
 
-        # secrets
-        sops
-        age
+          # secrets
+          sops
+          age
 
-        # general
-        git
-      ];
+          # general
+          git
+        ])
+        ++ [
+          inputs.claude-code.packages.${system}.claude-code-bun
+        ];
 
       shellHook = ''
+        alias claude=claude-bun
+
         # Install pre-commit hook for formatting
         if [ -d .git ]; then
           cat > .git/hooks/pre-commit << 'HOOK'
