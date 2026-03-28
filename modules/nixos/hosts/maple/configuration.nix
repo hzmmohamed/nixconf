@@ -3,23 +3,21 @@
   self,
   ...
 }: {
-  flake.nixosConfigurations.butternut = inputs.nixpkgs.lib.nixosSystem {
+  flake.nixosConfigurations.maple = inputs.nixpkgs.lib.nixosSystem {
     modules = [
-      self.nixosModules.hostButternut
+      self.nixosModules.hostMaple
     ];
   };
 
-  flake.nixosModules.hostButternut = {pkgs, lib, ...}: {
+  flake.nixosModules.hostMaple = {pkgs, lib, ...}: {
     imports = [
       self.nixosModules.base
       self.nixosModules.general
       self.nixosModules.desktop
 
-      self.nixosModules.sway
-      self.nixosModules.swayidle
-      self.nixosModules.cliphist
-      self.nixosModules.gammastep
-      self.nixosModules.waybar
+      # Switch between WMs by changing this one line:
+      # self.nixosModules.sway        # Sway + waybar (Catppuccin)
+      self.nixosModules.niri-desktop   # Niri + Noctalia (Gruvbox)
 
       self.nixosModules.discord
       self.nixosModules.gimp
@@ -43,8 +41,6 @@
       self.nixosModules.gpg
       self.nixosModules.nodejs
       self.nixosModules.cad
-      self.nixosModules.ai
-      self.nixosModules.music
       self.nixosModules.doas
 
       self.nixosModules.sops
@@ -54,7 +50,7 @@
 
       # disko
       inputs.disko.nixosModules.disko
-      self.diskoConfigurations.hostButternut
+      self.diskoConfigurations.hostMaple
     ];
 
     boot = {
@@ -64,14 +60,13 @@
       loader.systemd-boot.configurationLimit = 5;
       loader.efi.canTouchEfiVariables = true;
 
-      kernelParams = ["quiet" "i915.force_probe=46a6"];
-      kernelModules = ["kvm-intel"];
+      kernelParams = ["quiet"];
     };
 
     boot.plymouth.enable = true;
 
     networking = {
-      hostName = "butternut";
+      hostName = "maple";
       networkmanager.enable = true;
     };
 
@@ -81,11 +76,6 @@
       flatpak.enable = true;
       udisks2.enable = true;
       printing.enable = true;
-
-      asusd = {
-        enable = true;
-        enableUserService = true;
-      };
 
       openssh = {
         enable = true;
@@ -104,26 +94,12 @@
       };
     };
 
-    networking.firewall.allowedTCPPorts = [2222];
-
     programs.nix-ld.enable = true;
-    programs.wayvnc.enable = true;
-
-    # Cliphist keybinding for sway
-    home.programs.sway.extraConfig = lib.mkAfter ''
-      bindsym Mod4+v exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy
-    '';
 
     hardware.graphics.enable = true;
 
-    services.greetd = {
-      enable = true;
-      settings.default_session = {
-        command = "${lib.getExe pkgs.greetd.tuigreet} --time --remember-session --sessions ${pkgs.sway}/share/wayland-sessions";
-        user = "greeter";
-      };
-    };
+    time.timeZone = "Africa/Cairo";
 
-    system.stateVersion = "23.05";
+    system.stateVersion = "24.11";
   };
 }

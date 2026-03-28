@@ -13,11 +13,9 @@
       pkgs.writeText "fishy-fishy"
       # fish
       ''
-        function fish_prompt
-            string join "" -- (set_color red) "[" (set_color yellow) $USER (set_color green) "@" (set_color blue) $hostname (set_color magenta) " " $(prompt_pwd) (set_color red) ']' (set_color normal) "\$ "
-        end
-
         set fish_greeting
+
+        ${lib.getExe pkgs.starship} init fish | source
 
         # Aliases
         alias rm "rm -i"
@@ -55,6 +53,7 @@
       package = pkgs.fish;
       runtimeInputs = [
         pkgs.zoxide
+        pkgs.starship
       ];
       flags = {
         "-C" = "source ${fishConf}";

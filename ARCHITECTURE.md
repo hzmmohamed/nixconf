@@ -97,6 +97,13 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `zellij` | Terminal multiplexer | |
 | `yazi` | File manager with image/PDF preview, config via hjem | |
 | `design` | Inkscape, Blender, FontForge, font-manager | |
+| `niri-desktop` | Niri + Noctalia shell: compositor, bar, launcher, notifications | |
+| `doas` | Replaces sudo with doas (passwordless, keepEnv) | |
+| `gpg` | GnuPG agent with SSH support, pinentry | |
+| `nodejs` | Node.js, npm, pnpm | |
+| `cad` | FreeCAD, OpenSCAD | |
+| `ai` | Ollama service, whisper-cpp | |
+| `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -118,6 +125,13 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 | **main** | Hyprland + Niri | AMD CPU/GPU, NVMe, btrfs | Gaming, VR, impermanence, WiFi hotspot, OBS |
 | **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
 | **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet |
+| **maple** | Niri + Noctalia | Intel, LUKS ext4 | Workstation, SSH server, nix-serve-ng |
+
+**Switching WMs:** Hosts choose their window manager by importing one line:
+```nix
+self.nixosModules.sway          # Sway + waybar (Catppuccin)
+self.nixosModules.niri-desktop  # Niri + Noctalia (Gruvbox)
+```
 
 ### `modules/vms/` — test VMs
 

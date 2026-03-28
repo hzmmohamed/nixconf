@@ -52,7 +52,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 ## Shell & Terminal
 
 - [x] Fish aliases/abbreviations (rm/cp/mv interactive, git/k8s/systemctl abbrevs)
-- [ ] Starship prompt (or keep custom Fish prompt — decide)
+- [x] Starship prompt (integrated into fish wrapper)
 - [x] Yazi file manager (with image/PDF preview, TOML config via hjem)
 
 ## Specialized Suites (as needed)
@@ -68,8 +68,8 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] Firefox extensions (Bitwarden, Tree Style Tab, Zotero connector)
 - [x] Additional fonts (Noto CJK, Noto Emoji, Roboto, Victor Mono, FiraCode NF, etc.)
 - [x] Touchpad config for laptop hosts (dwt, tap-to-click, middle emulation) — in sway module
-- [ ] Doas (sudo replacement) — decide if wanted
-- [ ] Polkit configuration
+- [x] Doas (sudo replacement, passwordless, keepEnv, `sudo` aliased to `doas`)
+- [x] Polkit (already in desktop.nix)
 
 ## Host-Specific
 
