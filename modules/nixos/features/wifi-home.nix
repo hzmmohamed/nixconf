@@ -1,11 +1,11 @@
 {...}: {
   flake.nixosModules.wifi-home = {config, ...}: {
-    sops.secrets."wifi/env" = {
+    sops.secrets."wifi_env" = {
       sopsFile = ../../../secrets/shared/wifi.yaml;
     };
 
     networking.networkmanager.ensureProfiles.environmentFiles = [
-      config.sops.secrets."wifi/env".path
+      config.sops.secrets."wifi_env".path
     ];
 
     networking.networkmanager.ensureProfiles.profiles.home = {
