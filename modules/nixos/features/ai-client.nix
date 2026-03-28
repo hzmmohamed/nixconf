@@ -17,7 +17,7 @@
     ];
 
     environment.systemPackages = with pkgs; [
-      openai-whisper-cpp
+      whisper-cpp
     ];
   };
 }

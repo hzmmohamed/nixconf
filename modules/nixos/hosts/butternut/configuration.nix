@@ -25,8 +25,6 @@
       self.nixosModules.gammastep
       self.nixosModules.waybar
 
-      self.nixosModules.niri-desktop
-
       self.nixosModules.discord
       self.nixosModules.gimp
       self.nixosModules.telegram
