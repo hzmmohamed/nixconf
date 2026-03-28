@@ -167,7 +167,7 @@
     # --- LibreChat ---
     services.librechat = {
       enable = true;
-      openFirewall = true;
+      openFirewall = false; # handled in firewall below (upstream module has a bug with cfg.port)
       enableLocalDB = true;
       credentials = {
         CREDS_KEY = config.sops.secrets."librechat_creds_key".path;
