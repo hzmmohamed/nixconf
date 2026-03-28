@@ -18,6 +18,25 @@
         end
 
         set fish_greeting
+
+        # Aliases
+        alias rm "rm -i"
+        alias cp "cp -i"
+        alias mv "mv -i"
+        alias mkdir "mkdir -p"
+
+        # Abbreviations
+        abbr -a g git
+        abbr -a o open
+        abbr -a lg lazygit
+        abbr -a kc kubectl
+        abbr -a kx kubectx
+        abbr -a cl clear
+        abbr -a yz yazi
+        abbr -a zj zellij
+        abbr -a jtl journalctl
+        abbr -a stl systemctl
+
         fish_vi_key_bindings
 
         ${lib.getExe pkgs.zoxide} init fish | source

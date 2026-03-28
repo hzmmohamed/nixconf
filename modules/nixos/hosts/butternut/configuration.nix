@@ -26,6 +26,12 @@
       self.nixosModules.telegram
       self.nixosModules.youtube-music
 
+      self.nixosModules.rbw
+      self.nixosModules.office
+      self.nixosModules.docker
+      self.nixosModules.media
+      self.nixosModules.adb
+
       self.nixosModules.powersave
 
       # disko

@@ -9,7 +9,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Create VM export for testing
 - [x] Change default user to `meshmoss` (single source of truth in `modules/user.nix`)
 - [x] Update git config (email: hzmmohamed@gmail.com, name from user.nix)
-- [ ] Git enhancements (delta diffs, LFS, auto-setup-remote, rebase-on-pull)
+- [x] Git enhancements (delta diffs, LFS, auto-setup-remote, rebase-on-pull)
 
 ## Core Workflow
 
@@ -28,30 +28,30 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Screen lock / idle management (swayidle + swaylock)
 - [x] Clipboard history (cliphist + wl-clipboard)
 - [x] Blue light filter (gammastep)
-- [ ] Bitwarden / rbw (password manager CLI + browser extensions)
+- [x] Bitwarden / rbw (password manager CLI)
 
 ## Productivity Apps
 
-- [ ] Obsidian (note-taking)
-- [ ] LibreOffice
+- [x] Obsidian (note-taking)
+- [x] LibreOffice
 - [ ] Zotero (reference manager + plugins)
-- [ ] Typst (document typesetting)
-- [ ] Element Desktop (Matrix client)
+- [x] Typst (document typesetting)
+- [x] Element Desktop (Matrix client)
 
 ## Development Tools
 
 - [ ] VSCode / VSCodium (with extensions: Python, Go, Nix, Git, Jupyter)
-- [ ] Docker Compose + lazydocker + dive
+- [x] Docker Compose + lazydocker + dive
 - [ ] Kubernetes tools (kubectl, helm, kubectx, k9s, lens, kind, stern, eksctl)
 - [ ] AWS tools (aws-vault, awscli2)
-- [ ] ADB (Android Debug Bridge)
+- [x] ADB (Android Debug Bridge)
 - [ ] Node.js tooling
 - [ ] Shell history sync (Atuin)
 - [ ] Zellij (terminal multiplexer)
 
 ## Shell & Terminal
 
-- [ ] Fish aliases/abbreviations (rm/cp/mv interactive, git/k8s/systemctl abbrevs)
+- [x] Fish aliases/abbreviations (rm/cp/mv interactive, git/k8s/systemctl abbrevs)
 - [ ] Starship prompt (or keep custom Fish prompt — decide)
 - [ ] Yazi file manager (with image/PDF preview)
 
@@ -61,12 +61,12 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] AI tools (Ollama + CUDA, Whisper.cpp)
 - [ ] CAD / Maker tools (FreeCAD, OpenSCAD)
 - [ ] Design tools (Inkscape, Blender, FontForge, Figma)
-- [ ] Media tools (MPV, VLC, HandBrake, DigiKAM)
+- [x] Media tools (MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl)
 
 ## Settings to Migrate (for existing modules)
 
 - [ ] Firefox extensions (Bitwarden, Tree Style Tab, Zotero connector)
-- [ ] Additional fonts (Noto CJK, Noto Emoji, Roboto, Victor Mono)
+- [x] Additional fonts (Noto CJK, Noto Emoji, Roboto, Victor Mono, FiraCode NF, etc.)
 - [x] Touchpad config for laptop hosts (dwt, tap-to-click, middle emulation) — in sway module
 - [ ] Doas (sudo replacement) — decide if wanted
 - [ ] Polkit configuration

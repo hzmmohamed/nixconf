@@ -18,11 +18,26 @@
 
     fonts.packages = with pkgs; [
       nerd-fonts.jetbrains-mono
+      nerd-fonts.fira-code
+      nerd-fonts.droid-sans-mono
       ubuntu-sans
       cm_unicode
       corefonts
       unifont
+      noto-fonts
+      noto-fonts-cjk-sans
+      noto-fonts-cjk-serif
+      noto-fonts-color-emoji
+      font-awesome
+      roboto
+      roboto-mono
+      victor-mono
+      jetbrains-mono
+      open-sans
+      meslo-lgs-nf
     ];
+
+    environment.variables.LOG_ICONS = "true";
 
     fonts.fontconfig.defaultFonts = {
       serif = ["Ubuntu Sans"];
