@@ -91,10 +91,10 @@
       "bindsym --locked XF86AudioPrev" = "exec playerctl previous";
 
       # Brightness
-      "bindsym XF86MonBrightnessUp" = "exec light -A 5";
-      "bindsym XF86MonBrightnessDown" = "exec light -U 5";
-      "bindsym Shift+XF86MonBrightnessUp" = "exec light -A 1";
-      "bindsym Shift+XF86MonBrightnessDown" = "exec light -U 1";
+      "bindsym XF86MonBrightnessUp" = "exec brightnessctl set 5%+";
+      "bindsym XF86MonBrightnessDown" = "exec brightnessctl set 5%-";
+      "bindsym Shift+XF86MonBrightnessUp" = "exec brightnessctl set 1%+";
+      "bindsym Shift+XF86MonBrightnessDown" = "exec brightnessctl set 1%-";
 
       # Resize mode
       "mode \"resize\"" = {
@@ -138,11 +138,10 @@
       slurp
       wofi
       playerctl
+      brightnessctl
     ];
 
     users.users.${config.preferences.user.name}.extraGroups = ["video"];
-
-    programs.light.enable = true;
 
     xdg.portal = {
       enable = true;

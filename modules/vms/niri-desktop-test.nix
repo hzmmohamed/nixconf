@@ -59,10 +59,6 @@
 
         hardware.graphics.enable = true;
 
-        # vmVariant re-evaluates and loses the wrapped niri passthru;
-        # override its session package to avoid the providedSessions check.
-        virtualisation.vmVariant.programs.niri.package = lib.mkForce pkgs.niri;
-
         system.stateVersion = "23.05";
       })
     ];

@@ -2,7 +2,6 @@
   # Niri + Noctalia desktop environment.
   # Can coexist with the sway module — greetd shows both as session options.
   flake.nixosModules.niri-desktop = {
-    config,
     lib,
     pkgs,
     ...
@@ -10,7 +9,6 @@
     selfpkgs = self.packages.${pkgs.system};
   in {
     programs.niri.enable = true;
-    programs.niri.package = selfpkgs.niri;
 
     preferences.autostart = [selfpkgs.noctalia-shell];
 

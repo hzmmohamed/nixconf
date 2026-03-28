@@ -9,7 +9,11 @@
     ];
   };
 
-  flake.nixosModules.hostButternut = {pkgs, lib, ...}: {
+  flake.nixosModules.hostButternut = {
+    pkgs,
+    lib,
+    ...
+  }: {
     imports = [
       self.nixosModules.base
       self.nixosModules.general
@@ -64,6 +68,8 @@
 
       loader.systemd-boot.enable = true;
       loader.systemd-boot.configurationLimit = 5;
+      loader.systemd-boot.editor = false;
+      loader.systemd-boot.consoleMode = "auto";
       loader.efi.canTouchEfiVariables = true;
 
       kernelParams = ["quiet" "i915.force_probe=46a6"];
@@ -84,10 +90,7 @@
       udisks2.enable = true;
       printing.enable = true;
 
-      asusd = {
-        enable = true;
-        enableUserService = true;
-      };
+      asusd.enable = true;
 
       openssh = {
         enable = true;
