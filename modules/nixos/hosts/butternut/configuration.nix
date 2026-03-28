@@ -29,7 +29,6 @@
       self.nixosModules.discord
       self.nixosModules.gimp
       self.nixosModules.telegram
-      self.nixosModules.youtube-music
 
       self.nixosModules.rbw
       self.nixosModules.office
