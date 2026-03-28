@@ -144,6 +144,15 @@
 
     programs.light.enable = true;
 
+    xdg.portal = {
+      enable = true;
+      wlr.enable = true;
+      extraPortals = [pkgs.xdg-desktop-portal-gtk];
+      config.sway = {
+        default = lib.mkForce ["wlr" "gtk"];
+      };
+    };
+
     environment.sessionVariables = {
       QT_QPA_PLATFORM = "wayland";
       QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
@@ -152,5 +161,9 @@
       XDG_CURRENT_DESKTOP = "sway";
       NIXOS_OZONE_WL = "1";
     };
+
+    # Ensure portals start after sway sets up the display
+    systemd.user.services.xdg-desktop-portal.after = ["graphical-session.target"];
+    systemd.user.services.xdg-desktop-portal-gtk.after = ["graphical-session.target"];
   };
 }

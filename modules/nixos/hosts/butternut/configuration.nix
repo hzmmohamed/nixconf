@@ -84,9 +84,6 @@
       bindsym Mod4+v exec cliphist list | wofi -S dmenu | cliphist decode | wl-copy
     '';
 
-    xdg.portal.extraPortals = [pkgs.xdg-desktop-portal-gtk];
-    xdg.portal.enable = true;
-
     hardware.graphics.enable = true;
 
     services.greetd = {
