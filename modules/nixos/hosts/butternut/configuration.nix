@@ -21,6 +21,8 @@
       self.nixosModules.gammastep
       self.nixosModules.waybar
 
+      self.nixosModules.niri-desktop
+
       self.nixosModules.discord
       self.nixosModules.gimp
       self.nixosModules.telegram
@@ -119,7 +121,7 @@
     services.greetd = {
       enable = true;
       settings.default_session = {
-        command = "${lib.getExe pkgs.greetd.tuigreet} --time --remember-session --sessions ${pkgs.sway}/share/wayland-sessions";
+        command = "${lib.getExe pkgs.greetd.tuigreet} --time --remember-session --sessions /run/current-system/sw/share/wayland-sessions";
         user = "greeter";
       };
     };
