@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.adb = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.adb = {pkgs, ...}: {
     environment.systemPackages = [pkgs.android-tools];
   };
 }

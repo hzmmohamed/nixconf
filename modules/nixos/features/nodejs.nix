@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.nodejs = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.nodejs = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       nodejs
       nodePackages.npm

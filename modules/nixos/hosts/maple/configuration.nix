@@ -9,7 +9,7 @@
     ];
   };
 
-  flake.nixosModules.hostMaple = {pkgs, lib, ...}: {
+  flake.nixosModules.hostMaple = {pkgs, ...}: {
     imports = [
       self.nixosModules.base
       self.nixosModules.general
@@ -17,7 +17,7 @@
 
       # Switch between WMs by changing this one line:
       # self.nixosModules.sway        # Sway + waybar (Catppuccin)
-      self.nixosModules.niri-desktop   # Niri + Noctalia (Gruvbox)
+      self.nixosModules.niri-desktop # Niri + Noctalia (Gruvbox)
 
       self.nixosModules.discord
       self.nixosModules.gimp

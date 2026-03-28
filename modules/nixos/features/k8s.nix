@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.k8s = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.k8s = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       kubectl
       kubernetes-helm

@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.cliphist = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.cliphist = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       cliphist
       wl-clipboard

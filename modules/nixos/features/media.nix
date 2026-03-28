@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.media = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.media = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       mpv
       vlc

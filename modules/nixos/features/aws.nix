@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.aws = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.aws = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       awscli2
       aws-vault

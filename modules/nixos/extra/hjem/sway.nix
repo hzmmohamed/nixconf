@@ -1,7 +1,4 @@
-{
-  lib,
-  ...
-}: let
+{lib, ...}: let
   # Sway config generator: converts Nix attrs to sway config syntax
   # key = "value"       → key value
   # section = { ... }   → section { ... }
@@ -16,7 +13,10 @@
       if lib.isAttrs value
       then ''
         ${indent}${name} {
-        ${toSwayConfig {attrs = value; indentLevel = indentLevel + 1;}}${indent}}
+        ${toSwayConfig {
+          attrs = value;
+          indentLevel = indentLevel + 1;
+        }}${indent}}
       ''
       else if lib.isList value
       then lib.concatMapStringsSep "" (v: renderValue name v) value

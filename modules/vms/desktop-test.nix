@@ -20,7 +20,13 @@
 
       self.nixosModules.powersave
 
-      ({pkgs, lib, config, modulesPath, ...}: let
+      ({
+        pkgs,
+        lib,
+        config,
+        modulesPath,
+        ...
+      }: let
         user = config.preferences.user.name;
       in {
         imports = [

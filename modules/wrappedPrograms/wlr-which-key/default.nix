@@ -4,7 +4,6 @@
   lib,
   ...
 }: let
-
   mkWhichKey = pkgs: menu:
     (self.wrapperModules.which-key.apply {
       inherit pkgs;

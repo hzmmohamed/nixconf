@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.doas = {
-    config,
-    ...
-  }: let
+  flake.nixosModules.doas = {config, ...}: let
     user = config.preferences.user.name;
   in {
     security.sudo.enable = false;

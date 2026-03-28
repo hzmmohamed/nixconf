@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.syncthing = {
-    config,
-    ...
-  }: let
+  flake.nixosModules.syncthing = {config, ...}: let
     user = config.preferences.user.name;
     group = config.users.users.${user}.group;
   in {

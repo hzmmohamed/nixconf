@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.design = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.design = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       inkscape
       blender

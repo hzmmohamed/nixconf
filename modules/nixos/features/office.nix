@@ -1,8 +1,5 @@
 {...}: {
-  flake.nixosModules.office = {
-    pkgs,
-    ...
-  }: {
+  flake.nixosModules.office = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       obsidian
       libreoffice

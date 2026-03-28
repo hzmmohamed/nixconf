@@ -1,4 +1,8 @@
-{inputs, self, ...}: {
+{
+  inputs,
+  self,
+  ...
+}: {
   perSystem = {pkgs, ...}: {
     packages.nh = inputs.wrappers.lib.wrapPackage {
       inherit pkgs;
