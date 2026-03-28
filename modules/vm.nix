@@ -8,21 +8,8 @@
   # Run with:   ./result/bin/run-butternut-vm-vm
   flake.nixosConfigurations.butternut-vm = inputs.nixpkgs.lib.nixosSystem {
     modules = [
-      self.nixosModules.base
-      self.nixosModules.general
-      self.nixosModules.desktop
-
-      self.nixosModules.sway
-      self.nixosModules.swayidle
-      self.nixosModules.cliphist
-      self.nixosModules.waybar
-
-      self.nixosModules.discord
-      self.nixosModules.gimp
-      self.nixosModules.telegram
-      self.nixosModules.youtube-music
-
-      self.nixosModules.powersave
+      # Import the full butternut host module
+      self.nixosModules.hostButternut
 
       ({pkgs, lib, config, modulesPath, ...}: let
         user = config.preferences.user.name;
@@ -31,29 +18,37 @@
           (modulesPath + "/profiles/qemu-guest.nix")
         ];
 
-        nixpkgs.hostPlatform = "x86_64-linux";
+        # VM overrides
+        disabledModules = [];
+        nixpkgs.hostPlatform = lib.mkForce "x86_64-linux";
+        networking.hostName = lib.mkForce "butternut-vm";
 
-        networking.hostName = "butternut-vm";
-        networking.networkmanager.enable = true;
+        # Replace butternut's boot config
+        boot.loader.systemd-boot.enable = lib.mkForce true;
+        boot.loader.efi.canTouchEfiVariables = lib.mkForce true;
+        boot.kernelPackages = lib.mkForce pkgs.linuxPackages_latest;
+        boot.kernelParams = lib.mkForce ["quiet"];
+        boot.kernelModules = lib.mkForce [];
+        boot.plymouth.enable = lib.mkForce false;
+        boot.initrd.availableKernelModules = lib.mkForce ["virtio_pci" "virtio_blk" "virtio_net"];
 
-        boot.loader.systemd-boot.enable = true;
-        boot.loader.efi.canTouchEfiVariables = true;
-        boot.kernelPackages = pkgs.linuxPackages_latest;
-
-        # VM needs a simple filesystem, not disko/LUKS
-        fileSystems."/" = {
-          device = "/dev/disk/by-label/nixos";
-          fsType = "ext4";
+        # VM filesystem instead of disko/LUKS
+        disko.devices = lib.mkForce {};
+        fileSystems = lib.mkForce {
+          "/" = {
+            device = "/dev/disk/by-label/nixos";
+            fsType = "ext4";
+          };
         };
 
-        # Override hashedPasswordFile from general.nix — no /persist in VM
+        # No /persist in VM
         users.users.${user} = {
           hashedPasswordFile = lib.mkForce null;
           initialPassword = lib.mkForce "test";
         };
 
         # Auto-login for quick VM testing (butternut uses tuigreet instead)
-        services.greetd = {
+        services.greetd = lib.mkForce {
           enable = true;
           settings.default_session = {
             command = "${pkgs.sway}/bin/sway";
@@ -61,9 +56,12 @@
           };
         };
 
-        hardware.graphics.enable = true;
+        # Disable hardware-specific services
+        hardware.cpu.intel.updateMicrocode = lib.mkForce false;
+        services.asusd.enable = lib.mkForce false;
+        services.asusd.enableUserService = lib.mkForce false;
 
-        system.stateVersion = "23.05";
+        system.stateVersion = lib.mkForce "23.05";
       })
     ];
   };
