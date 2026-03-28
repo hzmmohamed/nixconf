@@ -40,6 +40,11 @@
       self.nixosModules.yazi
       self.nixosModules.design
       self.nixosModules.shared-zotero
+      self.nixosModules.gpg
+      self.nixosModules.nodejs
+      self.nixosModules.cad
+      self.nixosModules.ai
+      self.nixosModules.music
 
       self.nixosModules.sops
       self.nixosModules.syncthing

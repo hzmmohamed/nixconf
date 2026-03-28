@@ -18,7 +18,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Tailscale VPN with SSH
 - [x] Secrets management (sops-nix, age encryption, centralized in `secrets/`)
 - [x] Syncthing (device IDs, sops-managed certs, folders owned by feature modules)
-- [ ] GPG + SSH agent integration
+- [x] GPG + SSH agent integration
 
 ## Desktop Essentials
 
@@ -45,7 +45,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Kubernetes tools (kubectl, helm, kubectx, k9s, kind, stern, eksctl)
 - [x] AWS tools (aws-vault, awscli2)
 - [x] ADB (Android Debug Bridge)
-- [ ] Node.js tooling
+- [x] Node.js tooling (nodejs, npm, pnpm)
 - [x] Shell history sync (Atuin)
 - [x] Zellij (terminal multiplexer)
 
@@ -57,9 +57,9 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Specialized Suites (as needed)
 
-- [ ] Music production (Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, musnix)
-- [ ] AI tools (Ollama + CUDA, Whisper.cpp)
-- [ ] CAD / Maker tools (FreeCAD, OpenSCAD)
+- [x] Music production (Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths)
+- [x] AI tools (Ollama, Whisper.cpp)
+- [x] CAD / Maker tools (FreeCAD, OpenSCAD)
 - [x] Design tools (Inkscape, Blender, FontForge, font-manager)
 - [x] Media tools (MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl)
 
