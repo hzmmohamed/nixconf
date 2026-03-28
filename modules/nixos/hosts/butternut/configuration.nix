@@ -48,7 +48,6 @@
       self.nixosModules.nodejs
       self.nixosModules.cad
       self.nixosModules.ai
-      self.nixosModules.ai-client
       self.nixosModules.music
       self.nixosModules.doas
 
