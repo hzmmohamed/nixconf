@@ -4,14 +4,14 @@
     system,
     ...
   }: {
-    devShells.default = pkgs.mkShell {
+    # Devenv development shell
+    devenv.shells.default = {
       packages =
         (with pkgs; [
           # nix tools
           nil
           nixd
           statix
-          alejandra
           deadnix
           nix-tree
           nix-diff
@@ -28,30 +28,28 @@
           inputs.claude-code.packages.${system}.claude-code-bun
         ];
 
-      shellHook = ''
+      enterShell = ''
         alias claude=claude-bun
-
-        # Install pre-commit hook for formatting
-        if [ -d .git ]; then
-          cat > .git/hooks/pre-commit << 'HOOK'
-        #!/usr/bin/env bash
-        # Format staged .nix files with alejandra
-        staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.nix')
-        if [ -n "$staged" ]; then
-          echo "$staged" | xargs alejandra -q
-          echo "$staged" | xargs git add
-        fi
-        HOOK
-          chmod +x .git/hooks/pre-commit
-        fi
 
         echo "nixconf devshell"
         echo ""
         echo "  sops secrets/<host>/<name>.yaml   — edit/create secrets"
         echo "  nix flake show                    — list all outputs"
         echo "  nix build .#nixosConfigurations.<host>.config.system.build.toplevel — build a host"
+        echo "  treefmt                           — format all files"
         echo ""
       '';
+
+      git-hooks.hooks = {
+        alejandra.enable = true;
+        deadnix.enable = true;
+      };
+    };
+
+    # Treefmt configuration
+    treefmt.config = {
+      projectRootFile = "flake.nix";
+      programs.alejandra.enable = true;
     };
   };
 }

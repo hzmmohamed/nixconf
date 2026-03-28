@@ -1,7 +1,8 @@
 {inputs, ...}: {
   imports = [
-    # currently unused
     inputs.flake-parts.flakeModules.modules
+    inputs.devenv.flakeModule
+    inputs.treefmt-nix.flakeModule
   ];
 
   options = {

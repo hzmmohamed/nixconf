@@ -33,6 +33,9 @@
     };
 
     claude-code.url = "github:sadjow/claude-code-nix";
+
+    devenv.url = "github:cachix/devenv";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake {inherit inputs;} (inputs.import-tree ./modules);

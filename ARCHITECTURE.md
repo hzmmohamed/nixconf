@@ -38,7 +38,7 @@ config. Hosts compose both.
 | `user.nix` | `flake.user` | Username and home path. Change it here, it cascades everywhere. |
 | `theme.nix` | `flake.theme`, `flake.themeNoHash`, `flake.catppuccin` | Color palettes: Gruvbox (niri/hyprland desktop), Catppuccin Latte (sway desktop). |
 | `flake-parts.nix` | systems, options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
-| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age. |
+| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age, claude-code-bun. |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -60,7 +60,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | Module | What it does | Imports |
 |--------|-------------|---------|
 | `general` | Creates user, sets shell, persistence dirs | `extra_hjem`, `gtk`, `nix` |
-| `desktop` | WM-agnostic desktop base: fonts, polkit, bluetooth, graphics, pipewire, browsers | `gtk`, `wallpaper`, `pipewire`, `firefox`, `chromium` |
+| `desktop` | WM-agnostic desktop base: fonts, polkit, bluetooth, graphics, pipewire, browsers, VT switching disabled (NAutoVTs=0) | `gtk`, `wallpaper`, `pipewire`, `firefox`, `chromium` |
 | `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, XDG portals (wlr+gtk), env import for systemd/dbus | `extra_hjem_sway` |
 | `hyprland` | Hyprland WM: keybinds, animations, monitors, dwindle layout | (uses `home.programs.hyprland` consumed by hjem) |
 | `waybar` | Right-side vertical status bar with Catppuccin Latte theme: rotated clock, persistent workspaces, expandable CPU/mem/temp drawer, battery | |
@@ -80,7 +80,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `gimp` | GIMP 3 | |
 | `gtk` | GTK/icon theme (Gruvbox) | |
 | `nix` | direnv, nix-index, flakes, nix-ld, formatters | |
-| `wallpaper` | swww daemon with wallpaper image | |
+| `wallpaper` | swww daemon with wallpaper image (used by sway/hyprland; niri uses noctalia wallpaper management) | |
 | `sops` | Enables sops-nix with age key path | `inputs.sops-nix` |
 | `syncthing` | Syncthing service with device IDs, reads certs from sops secrets | |
 | `shared-zotero` | Zotero + Syncthing folders + sops secrets (see below) | |
@@ -97,7 +97,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `zellij` | Terminal multiplexer | |
 | `yazi` | File manager with image/PDF preview, config via hjem | |
 | `design` | Inkscape, Blender, FontForge, font-manager | |
-| `niri-desktop` | Niri + Noctalia shell: compositor, bar, launcher, notifications | |
+| `niri-desktop` | Niri + Noctalia shell: wrapped niri config via NIRI_CONFIG env, noctalia-shell as systemd user service (Restart=always), wallpaper via noctalia | |
 | `doas` | Replaces sudo with doas (passwordless, keepEnv) | |
 | `gpg` | GnuPG agent with SSH support, pinentry | |
 | `nodejs` | Node.js, npm, pnpm | |
@@ -141,6 +141,7 @@ only the modules needed for its test — not a replica of any host.
 | File | nixosConfiguration | Purpose |
 |------|-------------------|---------|
 | `desktop-test.nix` | `desktop-vm` | Sway + waybar + desktop essentials. Auto-login, no secrets. |
+| `niri-desktop-test.nix` | `niri-desktop-vm` | Niri + Noctalia desktop. Requires `QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on"` for GPU acceleration (niri needs DRM/KMS, bochs VGA won't work). |
 
 Network test VMs (butternut+maple pair for syncthing/tailscale/SSH) will
 be added as separate files when needed.
@@ -158,8 +159,8 @@ and optionally `flake.wrapperModules.*`.
 | `fish.nix` | `fish` | Fish shell with prompt, zoxide, direnv, vi keys |
 | `kitty.nix` | `kitty` | Kitty terminal with Gruvbox colors, cursor trail |
 | `neovim/` | `neovim`, `neovimDynamic`, `devMode` | Neovim with LSP, treesitter, blink-cmp, custom VJXL language |
-| `niri.nix` | `niri` | Niri compositor with keybinds, which-key menus |
-| `noctalia/` | `noctalia-shell` | Desktop shell: bar, launcher, notifications, OSD, screen recorder |
+| `niri.nix` | `niri` | Niri compositor with keybinds, which-key menus, hotkeys help (Mod+Shift+?), default terminal from wrapped package |
+| `noctalia/` | `noctalia-shell` | Desktop shell: bar, launcher, notifications, OSD, screen recorder, wallpaper management |
 | `git.nix` | `git` | Git with author name/email from `self.user` |
 | `jj.nix` | `jujutsu`, `jjui` | Jujutsu VCS + TUI with user config |
 | `nh.nix` | `nh` | Nix helper with flake path |
