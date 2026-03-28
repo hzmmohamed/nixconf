@@ -1,6 +1,6 @@
 {...}: {
   flake.user = {
-    name = "meshmoss";
-    home = "/home/meshmoss";
+    name = "hfahmi";
+    home = "/home/hfahmi";
   };
 }

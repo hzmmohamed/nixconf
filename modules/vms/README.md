@@ -8,7 +8,7 @@ Each VM is purpose-built — include only what's needed for the test.
 ### `desktop-test.nix` → `nixosConfigurations.desktop-vm`
 
 Tests the Sway desktop experience: window manager, waybar, swayidle,
-cliphist, gammastep. Auto-logs in via greetd (user: meshmoss, password: test).
+cliphist, gammastep. Auto-logs in via greetd (user: hfahmi, password: test).
 
 ```bash
 nix build .#nixosConfigurations.desktop-vm.config.system.build.vm

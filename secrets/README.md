@@ -4,7 +4,7 @@ Encrypted with [sops-nix](https://github.com/Mic92/sops-nix) using age encryptio
 
 ## Age key
 
-The private key must exist at `/home/meshmoss/.config/sops/age/keys.txt` on each host.
+The private key must exist at `/home/hfahmi/.config/sops/age/keys.txt` on each host.
 It is NOT stored in this repo.
 
 ## Secret files
