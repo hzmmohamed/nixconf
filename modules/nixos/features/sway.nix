@@ -162,8 +162,7 @@
       NIXOS_OZONE_WL = "1";
     };
 
-    # Ensure portals start after sway sets up the display
-    systemd.user.services.xdg-desktop-portal.after = ["graphical-session.target"];
-    systemd.user.services.xdg-desktop-portal-gtk.after = ["graphical-session.target"];
+    # Import sway's environment into systemd/dbus so portals can find the display
+    home.programs.sway.settings."exec_always" = "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP";
   };
 }
