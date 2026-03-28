@@ -17,6 +17,8 @@
       self.nixosModules.nvidia
       self.nixosModules.ai-server
 
+      self.nixosModules.sops
+      self.nixosModules.wifi-home
       self.nixosModules.tailscale
       self.nixosModules.doas
 

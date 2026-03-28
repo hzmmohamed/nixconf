@@ -54,6 +54,7 @@
       self.nixosModules.doas
 
       self.nixosModules.sops
+      self.nixosModules.wifi-home
       self.nixosModules.syncthing
 
       self.nixosModules.powersave
