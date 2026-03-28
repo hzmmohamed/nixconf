@@ -7,8 +7,9 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Create butternut host (Intel, ASUS laptop, systemd-boot, LUKS)
 - [x] Create devShell for development
 - [x] Create VM export for testing
-- [ ] Change default user from `yurii` to `hfahmi`
-- [ ] Update git config (email, delta diffs, LFS, auto-setup-remote, rebase-on-pull)
+- [x] Change default user to `meshmoss` (single source of truth in `modules/user.nix`)
+- [x] Update git config (email: hzmmohamed@gmail.com, name from user.nix)
+- [ ] Git enhancements (delta diffs, LFS, auto-setup-remote, rebase-on-pull)
 
 ## Core Workflow
 
