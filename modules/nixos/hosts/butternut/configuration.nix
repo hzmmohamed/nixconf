@@ -89,6 +89,14 @@
 
     hardware.graphics.enable = true;
 
+    services.greetd = {
+      enable = true;
+      settings.default_session = {
+        command = "${lib.getExe pkgs.greetd.tuigreet} --time --remember-session --sessions ${pkgs.sway}/share/wayland-sessions";
+        user = "greeter";
+      };
+    };
+
     system.stateVersion = "23.05";
   };
 }

@@ -52,7 +52,7 @@
           initialPassword = lib.mkForce "test";
         };
 
-        # Auto-login into Sway
+        # Auto-login for quick VM testing (butternut uses tuigreet instead)
         services.greetd = {
           enable = true;
           settings.default_session = {
