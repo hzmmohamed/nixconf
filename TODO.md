@@ -88,3 +88,4 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] butternut: nix-ld with libraries
 - [ ] Desktop vs CLI-only toggle (module to disable desktop entirely)
 - [ ] Neovim Catppuccin colorscheme + darkman integration (Latte/Mocha switching)
+- [ ] Ungoogled Chromium extension support (see https://gist.github.com/MaximilianGaedig/acbce27522c997e9666bd93cef77492d)
