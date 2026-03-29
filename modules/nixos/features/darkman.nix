@@ -54,6 +54,18 @@
               's/theme "catppuccin-mocha"/theme "catppuccin-latte"/g' \
               "$HOME/.config/zellij/config.kdl" 2>/dev/null || true
           '';
+
+          foot-theme = ''
+            ${pkgs.coreutils}/bin/ln -sf \
+              "$HOME/.config/foot/catppuccin-latte.ini" \
+              "$HOME/.config/foot/colors.ini"
+          '';
+
+          btop-theme = ''
+            ${pkgs.gnused}/bin/sed -i \
+              's/color_theme = "catppuccin_mocha"/color_theme = "catppuccin_latte"/g' \
+              "$HOME/.config/btop/btop.conf" 2>/dev/null || true
+          '';
         };
 
         darkModeScripts = {
@@ -92,6 +104,18 @@
               's/theme "catppuccin-latte"/theme "catppuccin-mocha"/g' \
               "$HOME/.config/zellij/config.kdl" 2>/dev/null || true
           '';
+
+          foot-theme = ''
+            ${pkgs.coreutils}/bin/ln -sf \
+              "$HOME/.config/foot/catppuccin-mocha.ini" \
+              "$HOME/.config/foot/colors.ini"
+          '';
+
+          btop-theme = ''
+            ${pkgs.gnused}/bin/sed -i \
+              's/color_theme = "catppuccin_latte"/color_theme = "catppuccin_mocha"/g' \
+              "$HOME/.config/btop/btop.conf" 2>/dev/null || true
+          '';
         };
       };
 
@@ -117,6 +141,12 @@
           [ -f "$HOME/.config/kitty/current-theme.conf" ] || \
             ${pkgs.kitty}/bin/kitten themes --dump-theme "Catppuccin Latte" \
               > "$HOME/.config/kitty/current-theme.conf" 2>/dev/null || true
+
+          # Foot: default to latte
+          [ -L "$HOME/.config/foot/colors.ini" ] || \
+            ${pkgs.coreutils}/bin/ln -sf \
+              "$HOME/.config/foot/catppuccin-latte.ini" \
+              "$HOME/.config/foot/colors.ini"
         '';
       };
     };

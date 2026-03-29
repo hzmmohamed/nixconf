@@ -26,6 +26,8 @@
       self.nixosModules.gammastep
       self.nixosModules.waybar
       self.nixosModules.darkman
+      self.nixosModules.foot
+      self.nixosModules.btop
       self.nixosModules.mako
       self.nixosModules.blueman
       self.nixosModules.wofi-emoji
