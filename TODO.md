@@ -16,7 +16,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Arabic keyboard layout (US + Arabic, XKB switching) — configured in sway module
 - [x] SSH server module (OpenSSH on port 7654, already in butternut)
 - [x] Tailscale VPN with SSH
-- [ ] Tailscale auth keys for automatic login (especially on peacelily)
+- [x] Tailscale auth keys for automatic login (especially on peacelily)
 - [x] Secrets management (sops-nix, age encryption, centralized in `secrets/`)
 - [x] Syncthing (device IDs, sops-managed certs, folders owned by feature modules)
 - [x] GPG + SSH agent integration
@@ -27,13 +27,17 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Waybar (replicated from old config with Catppuccin Latte theme, right-side vertical bar)
 - [x] Login manager (greetd + tuigreet with session picker on butternut, auto-login on VM)
 - [x] Screen lock / idle management (swayidle + swaylock)
-- [x] Clipboard history (cliphist + wl-clipboard)
-- [x] Blue light filter (gammastep)
+- [x] Clipboard history (clipse, systemd service with Catppuccin theme)
+- [x] Blue light filter (gammastep) — BUG: geoclue error, using manual lat/lng as workaround
 - [x] Bitwarden / rbw (password manager CLI)
-- [ ] Notification daemon (sway-compatible, themed)
-- [ ] Bluetooth controls
+- [x] Notification daemon (mako, sway-compatible, Catppuccin themed)
+- [x] Bluetooth controls (blueman + nm-applet)
 - [ ] PulseAudio volume control (pavucontrol)
-- [ ] swww + wallpaper switcher
+- [x] swww + wallpaper switcher (swww + waypaper, autostart via preferences.autostart)
+- [x] Darkman light/dark mode switching (Catppuccin Latte/Mocha, auto by time + Mod4+Shift+t toggle) — BUG: GTK theme not switching (dconf write may not be picked up by running apps)
+- [x] Bibata cursor theme (opt-in module)
+- [x] Wofi Catppuccin theming (light/dark via darkman symlink swap)
+- [x] Wofi emoji picker (custom wrapper with larger font)
 
 ## Productivity Apps
 
@@ -45,7 +49,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 
 ## Development Tools
 
-- [x] VSCode / VSCodium (with extensions, Catppuccin theme, settings via hjem)
+- [x] VSCode / VSCodium (with extensions, Catppuccin theme, mutable settings.json for darkman)
 - [x] Docker Compose + lazydocker + dive
 - [x] Kubernetes tools (kubectl, helm, kubectx, k9s, kind, stern, eksctl)
 - [x] AWS tools (aws-vault, awscli2)

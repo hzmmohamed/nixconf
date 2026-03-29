@@ -200,12 +200,18 @@
 
         # Export Wayland env vars into systemd and dbus so child services
         # (waybar, clipse, darkman, etc.) can access the compositor.
-        startup = [
-          {
-            command = "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP";
-            always = true;
-          }
-        ];
+        # Then run each preferences.autostart entry as an exec command.
+        startup =
+          [
+            {
+              command = "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP";
+              always = true;
+            }
+          ]
+          ++ map (entry: {
+            command = lib.getExe entry;
+          })
+          config.preferences.autostart;
 
         # Map monitor preferences to sway outputs.
         # Disabled monitors get an explicit disable directive.
