@@ -36,6 +36,11 @@
 
     claude-code.url = "github:sadjow/claude-code-nix";
 
+    reticulum-flake = {
+      url = "git+https://codeberg.org/adingbatponder/reticulum_nixos_flake.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     devenv.url = "github:cachix/devenv";
     treefmt-nix.url = "github:numtide/treefmt-nix";
   };
