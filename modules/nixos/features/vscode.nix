@@ -17,6 +17,7 @@
       catppuccin.catppuccin-vsc
       catppuccin.catppuccin-vsc-icons
       anthropic.claude-code
+      mhutchie.git-graph
     ];
 
     vscodium = pkgs.vscode-with-extensions.override {
