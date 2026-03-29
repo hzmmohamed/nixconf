@@ -143,6 +143,7 @@
               > "$HOME/.config/kitty/current-theme.conf" 2>/dev/null || true
 
           # Foot: default to latte
+          mkdir -p "$HOME/.config/foot"
           [ -L "$HOME/.config/foot/colors.ini" ] || \
             ${pkgs.coreutils}/bin/ln -sf \
               "$HOME/.config/foot/catppuccin-latte.ini" \
