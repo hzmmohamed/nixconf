@@ -3,6 +3,11 @@
     services.tailscale = {
       enable = true;
       extraUpFlags = ["--ssh"];
+      authKeyFile = config.sops.secrets."tailscale_authkey".path;
+    };
+
+    sops.secrets."tailscale_authkey" = {
+      sopsFile = ../../../secrets/shared/tailscale.yaml;
     };
 
     networking.firewall = {
