@@ -38,6 +38,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Bibata cursor theme (opt-in module)
 - [x] Wofi Catppuccin theming (light/dark via darkman symlink swap)
 - [x] Wofi emoji picker (custom wrapper with larger font)
+- [ ] KDE Connect
 
 ## Productivity Apps
 
@@ -89,3 +90,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] Desktop vs CLI-only toggle (module to disable desktop entirely)
 - [ ] Neovim Catppuccin colorscheme + darkman integration (Latte/Mocha switching)
 - [ ] Ungoogled Chromium extension support (see https://gist.github.com/MaximilianGaedig/acbce27522c997e9666bd93cef77492d)
+- [x] Email setup: Thunderbird GUI with OAuth2 + gnome-keyring PAM integration
+- [ ] aerc TUI email client with xoauth2 token flow (Gmail + O365 via gnome-keyring)
+- [ ] Media player widget (waybar/sway) integrated with Spotify (playerctl/MPRIS)
+- [ ] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation

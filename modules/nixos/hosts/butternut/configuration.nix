@@ -37,6 +37,7 @@
       self.nixosModules.gimp
       self.nixosModules.telegram
 
+      self.nixosModules.email
       self.nixosModules.rbw
       self.nixosModules.office
       self.nixosModules.docker
