@@ -1,10 +1,5 @@
 {self, ...}: {
-  flake.nixosModules.waybar = {
-    config,
-    lib,
-    pkgs,
-    ...
-  }: let
+  flake.nixosModules.waybar = {config, ...}: let
     user = config.preferences.user.name;
     latte = self.catppuccin;
     mocha = self.catppuccinMocha;
@@ -18,7 +13,7 @@
       @define-color cat-overlay0 ${cat.overlay0};
     '';
 
-    waybarConfig = builtins.toJSON {
+    waybarSettings = {
       layer = "top";
       position = "right";
       reload_style_on_change = true;
@@ -321,17 +316,15 @@
       }
     '';
   in {
-    environment.systemPackages = [pkgs.waybar];
+    home-manager.users.${user}.programs.waybar = {
+      enable = true;
+      systemd.enable = true;
+      settings = waybarSettings;
+      style = waybarStyle;
+    };
 
-    preferences.autostart = [
-      (pkgs.writeShellScriptBin "start-waybar" ''
-        exec ${lib.getExe pkgs.waybar}
-      '')
-    ];
-
+    # Catppuccin color files — darkman symlinks catppuccin-colors.css to one of these
     home-manager.users.${user}.home.file = {
-      ".config/waybar/config".text = waybarConfig;
-      ".config/waybar/style.css".text = waybarStyle;
       ".config/waybar/catppuccin-latte.css".text = mkColorsCss latte;
       ".config/waybar/catppuccin-mocha.css".text = mkColorsCss mocha;
     };
