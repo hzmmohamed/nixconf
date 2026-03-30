@@ -13,7 +13,7 @@
       @define-color cat-overlay0 ${cat.overlay0};
     '';
 
-    waybarSettings = {
+    waybarSettings.mainBar = {
       layer = "top";
       position = "right";
       reload_style_on_change = true;
@@ -316,17 +316,19 @@
       }
     '';
   in {
-    home-manager.users.${user}.programs.waybar = {
-      enable = true;
-      systemd.enable = true;
-      settings = waybarSettings;
-      style = waybarStyle;
-    };
+    home-manager.users.${user} = {
+      programs.waybar = {
+        enable = true;
+        systemd.enable = true;
+        settings = waybarSettings;
+        style = waybarStyle;
+      };
 
-    # Catppuccin color files — darkman symlinks catppuccin-colors.css to one of these
-    home-manager.users.${user}.home.file = {
-      ".config/waybar/catppuccin-latte.css".text = mkColorsCss latte;
-      ".config/waybar/catppuccin-mocha.css".text = mkColorsCss mocha;
+      # Catppuccin color files — darkman symlinks catppuccin-colors.css to one of these
+      home.file = {
+        ".config/waybar/catppuccin-latte.css".text = mkColorsCss latte;
+        ".config/waybar/catppuccin-mocha.css".text = mkColorsCss mocha;
+      };
     };
   };
 }
