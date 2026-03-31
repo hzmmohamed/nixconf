@@ -11,6 +11,7 @@
             export PATH="${pkgs.lib.makeBinPath [
         pkgs.curl
         pkgs.jq
+        pkgs.libsecret
         pkgs.gnome-keyring
         pkgs.xdg-utils
         pkgs.python3

@@ -91,7 +91,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] Neovim Catppuccin colorscheme + darkman integration (Latte/Mocha switching)
 - [ ] Ungoogled Chromium extension support (see https://gist.github.com/MaximilianGaedig/acbce27522c997e9666bd93cef77492d)
 - [x] Email setup: Thunderbird GUI with OAuth2 + gnome-keyring PAM integration
-- [x] aerc TUI email client with xoauth2 token flow (Gmail + O365 via gnome-keyring)
-- [x] Email notifications (imapnotify) with DND toggle + quiet hours (22:00-08:00)
+- [ ] aerc TUI email client with xoauth2 — BROKEN: custom OAuth2 flow fails (Google: "invalid client", Outlook: redirect works but token exchange unreliable). Fix approach: extract refresh tokens from Thunderbird's saved passwords (Settings > Privacy & Security > Saved Passwords, look for "oauth://") and use aerc's native `imapOauth2Params`/`smtpOauth2Params` with Thunderbird's client_id `9e5f94bc-e8a4-4e73-b8be-63364c29d753` (no client_secret needed). Store refresh tokens in sops secret, passwordCommand reads from `config.sops.secrets.*.path`. Remove custom `email-oauth2` script and gnome-keyring dependency for email. Reference config: https://codeberg.org/eisfunke/funke-nixos/src/branch/main/home/modules/mail.nix
+- [ ] Email notifications (imapnotify) — BROKEN: depends on above OAuth2 fix. imapnotify `passwordCmd` needs a working token. Once aerc OAuth2 is fixed, imapnotify can use the same sops-backed passwordCommand. Also set `services.imapnotify.path` for any runtime deps.
 - [ ] Media player widget (waybar/sway) integrated with Spotify (playerctl/MPRIS)
 - [ ] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation
