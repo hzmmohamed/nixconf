@@ -2,14 +2,19 @@
   flake.nixosModules.email = {config, ...}: let
     user = config.preferences.user.name;
   in {
-    # gnome-keyring as secret-service provider for OAuth2 tokens
+    # gnome-keyring as secret-service provider for OAuth2 tokens and VS Code secrets
     services.gnome.gnome-keyring.enable = true;
 
     # PAM: auto-unlock keyring on login, re-unlock after swaylock
     security.pam.services.greetd.enableGnomeKeyring = true;
     security.pam.services.swaylock.enableGnomeKeyring = true;
 
+    # Ensure gnome-keyring-daemon starts with secrets component in sway session
     home-manager.users.${user} = {
+      services.gnome-keyring = {
+        enable = true;
+        components = ["secrets"];
+      };
       programs.thunderbird = {
         enable = true;
 
