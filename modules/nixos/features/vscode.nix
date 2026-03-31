@@ -36,6 +36,7 @@
       "editor.fontFamily" = "'${self.fonts.monospace}', 'monospace', monospace";
       "editor.fontSize" = self.fonts.size;
       "nix.serverPath" = "nil";
+      "password-store" = "gnome-libsecret";
     };
 
     settingsPath = "/home/${user}/.config/VSCodium/User";

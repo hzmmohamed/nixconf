@@ -131,6 +131,7 @@
       "Mod4+v" = "exec ${lib.getExe pkgs.foot} --app-id clipse -e clipse";
       "Mod4+Shift+t" = "exec ${lib.getExe pkgs.darkman} toggle";
       "Mod4+period" = "exec wofi-emoji";
+      "Mod4+n" = "exec dnd-toggle";
     };
 
     hardware.graphics.enable = true;

@@ -6,9 +6,17 @@
   }: let
     user = config.preferences.user.name;
     cat = self.catppuccin;
+
+    dndToggle = pkgs.writeShellScriptBin "dnd-toggle" ''
+      if ${pkgs.mako}/bin/makoctl mode | grep -q do-not-disturb; then
+        ${pkgs.mako}/bin/makoctl set-mode default
+      else
+        ${pkgs.mako}/bin/makoctl set-mode do-not-disturb
+      fi
+    '';
   in {
     home-manager.users.${user} = {
-      home.packages = [pkgs.libnotify];
+      home.packages = [pkgs.libnotify dndToggle];
 
       services.mako = {
         enable = true;
@@ -35,6 +43,40 @@
             default-timeout = 0;
           };
         };
+      };
+
+      systemd.user.services.dnd-on = {
+        Unit.Description = "Enable Do Not Disturb";
+        Service = {
+          Type = "oneshot";
+          ExecStart = "${pkgs.mako}/bin/makoctl set-mode do-not-disturb";
+        };
+      };
+
+      systemd.user.timers.dnd-on = {
+        Unit.Description = "Enable DND at 22:00";
+        Timer = {
+          OnCalendar = "*-*-* 22:00:00";
+          Persistent = true;
+        };
+        Install.WantedBy = ["timers.target"];
+      };
+
+      systemd.user.services.dnd-off = {
+        Unit.Description = "Disable Do Not Disturb";
+        Service = {
+          Type = "oneshot";
+          ExecStart = "${pkgs.mako}/bin/makoctl set-mode default";
+        };
+      };
+
+      systemd.user.timers.dnd-off = {
+        Unit.Description = "Disable DND at 08:00";
+        Timer = {
+          OnCalendar = "*-*-* 08:00:00";
+          Persistent = true;
+        };
+        Install.WantedBy = ["timers.target"];
       };
     };
   };
