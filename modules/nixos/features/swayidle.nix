@@ -15,51 +15,69 @@
 
     c = builtins.mapAttrs (_: v: stripHash v) mocha;
 
-    swaylockCmd = "${lib.getExe pkgs.swaylock} -f";
+    swaylockCmd = "${lib.getExe pkgs.swaylock-effects} -f";
   in {
     environment.systemPackages = with pkgs; [
-      swaylock
+      swaylock-effects
       swayidle
     ];
 
-    home-manager.users.${user}.programs.swaylock.settings = {
-      color = c.base;
-      font = self.fonts.monospace;
-      font-size = 24;
+    home-manager.users.${user}.programs.swaylock = {
+      package = pkgs.swaylock-effects;
+      settings = {
+        font = self.fonts.monospace;
+        font-size = 24;
 
-      indicator-caps-lock = true;
-      indicator-radius = 120;
-      indicator-thickness = 10;
-      show-failed-attempts = true;
+        # swaylock-effects: screenshot + blur background
+        screenshots = true;
+        effect-blur = "10x5";
+        effect-vignette = "0.5:0.5";
+        fade-in = 0.3;
 
-      bs-hl-color = c.peach;
-      caps-lock-bs-hl-color = c.peach;
-      caps-lock-key-hl-color = c.mauve;
-      inside-color = "${c.base}e0";
-      inside-clear-color = "${c.base}e0";
-      inside-caps-lock-color = "${c.base}e0";
-      inside-ver-color = "${c.base}e0";
-      inside-wrong-color = "${c.base}e0";
-      key-hl-color = c.lavender;
-      layout-bg-color = c.base;
-      layout-border-color = c.base;
-      layout-text-color = c.text;
-      line-color = c.base;
-      line-clear-color = c.base;
-      line-caps-lock-color = c.base;
-      line-ver-color = c.base;
-      line-wrong-color = c.base;
-      ring-color = c.surface0;
-      ring-clear-color = c.peach;
-      ring-caps-lock-color = c.surface0;
-      ring-ver-color = c.green;
-      ring-wrong-color = c.red;
-      separator-color = "00000000";
-      text-color = c.text;
-      text-clear-color = c.peach;
-      text-caps-lock-color = c.mauve;
-      text-ver-color = c.text;
-      text-wrong-color = c.red;
+        # Clock and date overlay
+        clock = true;
+        timestr = "󰥔 %Hh %Mm %Ss";
+        datestr = "󰃭 %b-%d-%Y";
+
+        # Indicator behavior
+        indicator = true;
+        indicator-caps-lock = true;
+        indicator-radius = 120;
+        indicator-thickness = 10;
+        indicator-idle-visible = true;
+        ignore-empty-password = true;
+        show-failed-attempts = true;
+
+        # Catppuccin Mocha colors
+        bs-hl-color = c.peach;
+        caps-lock-bs-hl-color = c.peach;
+        caps-lock-key-hl-color = c.mauve;
+        inside-color = "${c.base}e0";
+        inside-clear-color = "${c.base}e0";
+        inside-caps-lock-color = "${c.base}e0";
+        inside-ver-color = "${c.base}e0";
+        inside-wrong-color = "${c.base}e0";
+        key-hl-color = c.lavender;
+        layout-bg-color = c.base;
+        layout-border-color = c.base;
+        layout-text-color = c.text;
+        line-color = c.base;
+        line-clear-color = c.base;
+        line-caps-lock-color = c.base;
+        line-ver-color = c.base;
+        line-wrong-color = c.base;
+        ring-color = c.surface0;
+        ring-clear-color = c.peach;
+        ring-caps-lock-color = c.surface0;
+        ring-ver-color = c.green;
+        ring-wrong-color = c.red;
+        separator-color = "00000000";
+        text-color = c.text;
+        text-clear-color = c.peach;
+        text-caps-lock-color = c.mauve;
+        text-ver-color = c.text;
+        text-wrong-color = c.red;
+      };
     };
 
     preferences.autostart = [
