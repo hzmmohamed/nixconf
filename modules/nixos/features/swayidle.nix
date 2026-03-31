@@ -1,6 +1,5 @@
 {...}: {
   flake.nixosModules.swayidle = {
-    config,
     lib,
     pkgs,
     ...
@@ -11,8 +10,6 @@
       swaylock
       swayidle
     ];
-
-    security.pam.services.swaylock = {};
 
     preferences.autostart = [
       (pkgs.writeShellScriptBin "start-swayidle" ''

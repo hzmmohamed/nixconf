@@ -91,6 +91,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] Neovim Catppuccin colorscheme + darkman integration (Latte/Mocha switching)
 - [ ] Ungoogled Chromium extension support (see https://gist.github.com/MaximilianGaedig/acbce27522c997e9666bd93cef77492d)
 - [x] Email setup: Thunderbird GUI with OAuth2 + gnome-keyring PAM integration
-- [ ] aerc TUI email client with xoauth2 token flow (Gmail + O365 via gnome-keyring)
+- [x] aerc TUI email client with xoauth2 token flow (Gmail + O365 via gnome-keyring)
+- [x] Email notifications (imapnotify) with DND toggle + quiet hours (22:00-08:00)
 - [ ] Media player widget (waybar/sway) integrated with Spotify (playerctl/MPRIS)
 - [ ] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation
