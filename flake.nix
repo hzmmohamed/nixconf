@@ -1,7 +1,10 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    nixpkgs-2511.url = "github:nixos/nixpkgs/nixos-25.11";
+    llama-cpp = {
+      url = "github:ggml-org/llama.cpp";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
