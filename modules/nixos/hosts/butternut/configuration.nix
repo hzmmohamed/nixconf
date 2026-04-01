@@ -59,6 +59,7 @@
       self.nixosModules.music
       self.nixosModules.doas
       self.nixosModules.reticulum
+      self.nixosModules.openrgb
 
       self.nixosModules.sops
       self.nixosModules.wifi-home
