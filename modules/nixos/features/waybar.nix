@@ -1,5 +1,9 @@
 {self, ...}: {
-  flake.nixosModules.waybar = {config, ...}: let
+  flake.nixosModules.waybar = {
+    config,
+    lib,
+    ...
+  }: let
     user = config.preferences.user.name;
     latte = self.catppuccin;
     mocha = self.catppuccinMocha;
@@ -339,6 +343,14 @@
         systemd.enable = true;
         settings = waybarSettings;
         style = waybarStyle;
+      };
+
+      # Override waybar's systemd unit to wait for env vars instead of using
+      # ConditionEnvironment (which fails because sway hasn't imported them yet)
+      systemd.user.services.waybar.Unit = {
+        ConditionEnvironment = lib.mkForce "";
+        After = ["sway-session-env-ready.target"];
+        Requires = ["sway-session-env-ready.target"];
       };
 
       # Catppuccin color files — darkman symlinks catppuccin-colors.css to one of these

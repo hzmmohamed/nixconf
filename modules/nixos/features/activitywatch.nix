@@ -28,12 +28,12 @@
       };
 
       systemd.user.services.activitywatch-watcher-aw-watcher-afk.Unit = {
-        After = ["sway-session.target"];
-        Requires = ["sway-session.target"];
+        After = ["sway-session-env-ready.target"];
+        Requires = ["sway-session-env-ready.target"];
       };
       systemd.user.services.activitywatch-watcher-aw-watcher-window.Unit = {
-        After = ["sway-session.target"];
-        Requires = ["sway-session.target"];
+        After = ["sway-session-env-ready.target"];
+        Requires = ["sway-session-env-ready.target"];
       };
     };
   };
