@@ -39,6 +39,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Wofi Catppuccin theming (light/dark via darkman symlink swap)
 - [x] Wofi emoji picker (custom wrapper with larger font)
 - [ ] KDE Connect
+- [ ] Fix activity-watcher-window unknown window names
 
 ## Productivity Apps
 
