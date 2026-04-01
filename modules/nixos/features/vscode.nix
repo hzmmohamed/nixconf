@@ -5,21 +5,30 @@
     ...
   }: let
     user = config.preferences.user.name;
-    extensions = with pkgs.vscode-extensions; [
-      jnoortheen.nix-ide
-      kamadorueda.alejandra
-      mkhl.direnv
-      ms-python.python
-      ms-toolsai.jupyter
-      foxundermoon.shell-format
-      redhat.vscode-yaml
-      editorconfig.editorconfig
-      catppuccin.catppuccin-vsc
-      catppuccin.catppuccin-vsc-icons
-      anthropic.claude-code
-      mhutchie.git-graph
-      gitlab.gitlab-workflow
-    ];
+    extensions =
+      (with pkgs.vscode-extensions; [
+        jnoortheen.nix-ide
+        kamadorueda.alejandra
+        mkhl.direnv
+        ms-python.python
+        ms-toolsai.jupyter
+        foxundermoon.shell-format
+        redhat.vscode-yaml
+        editorconfig.editorconfig
+        catppuccin.catppuccin-vsc
+        catppuccin.catppuccin-vsc-icons
+        anthropic.claude-code
+        mhutchie.git-graph
+        gitlab.gitlab-workflow
+      ])
+      ++ [
+        (pkgs.vscode-utils.extensionFromVscodeMarketplace {
+          publisher = "ActivityWatch";
+          name = "aw-watcher-vscode";
+          version = "0.5.0";
+          sha256 = "01ssmmpc16hsm9cc0sv9z2g0n7lmzyrr0yrxy47pxiz8vvr6wg3d";
+        })
+      ];
 
     vscodium = pkgs.vscode-with-extensions.override {
       vscode = pkgs.vscodium;

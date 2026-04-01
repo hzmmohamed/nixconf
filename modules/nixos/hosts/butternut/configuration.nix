@@ -60,6 +60,7 @@
       self.nixosModules.doas
       self.nixosModules.reticulum
       self.nixosModules.openrgb
+      self.nixosModules.activitywatch
 
       self.nixosModules.sops
       self.nixosModules.wifi-home
