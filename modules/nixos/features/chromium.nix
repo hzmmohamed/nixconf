@@ -1,7 +1,14 @@
 {
-  flake.nixosModules.chromium = {pkgs, ...}: {
-    programs.chromium = {
+  flake.nixosModules.chromium = {
+    config,
+    pkgs,
+    ...
+  }: let
+    user = config.preferences.user.name;
+  in {
+    home-manager.users.${user}.programs.chromium = {
       enable = true;
+      package = pkgs.ungoogled-chromium;
       extensions = [
         {id = "nngceckbapebfimnlniiiahkandclblb";} # Bitwarden
         {id = "chphlpgkkbolifaimnlloiipkdnihall";} # OneTab
@@ -13,10 +20,6 @@
         {id = "bcjindcccaagfpapjjmafapmmgkkhgoa";} # JSON Formatter
       ];
     };
-
-    environment.systemPackages = [
-      pkgs.ungoogled-chromium
-    ];
 
     persistance.cache.directories = [
       ".config/chromium"
