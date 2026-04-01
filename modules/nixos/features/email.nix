@@ -185,6 +185,16 @@
 
     # Ensure gnome-keyring-daemon starts with secrets component in sway session
     home-manager.users.${user} = {
+      # Remove stale .backup files before home-manager activation to prevent
+      # "would be clobbered" errors from Thunderbird's runtime-generated files
+      home.activation.removeThunderbirdBackups = {
+        before = ["checkFilesChanged"];
+        after = [];
+        data = ''
+          rm -f "$HOME/.thunderbird/${user}/search.json.mozlz4.backup"
+        '';
+      };
+
       services.gnome-keyring = {
         enable = true;
         components = ["secrets"];

@@ -48,6 +48,15 @@
     '';
   in {
     home-manager.users.${user} = {
+      # Remove stale .backup file before activation to prevent "would be clobbered" errors
+      home.activation.removeBtopBackup = {
+        before = ["checkFilesChanged"];
+        after = [];
+        data = ''
+          rm -f "$HOME/.config/btop/btop.conf.backup"
+        '';
+      };
+
       xdg.configFile."btop/themes/catppuccin_latte.theme".text = mkBtopTheme self.catppuccin;
       xdg.configFile."btop/themes/catppuccin_mocha.theme".text = mkBtopTheme self.catppuccinMocha;
 
