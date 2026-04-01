@@ -1,17 +1,24 @@
-{...}: {
+{inputs, ...}: {
   flake.nixosModules.ai-server = {
     pkgs,
     lib,
     config,
     ...
   }: let
-    llama-cpp-cuda = pkgs.llama-cpp.override {cudaSupport = true;};
-    llama-server = lib.getExe' llama-cpp-cuda "llama-server";
+    pkgs2511 = import inputs.nixpkgs-2511 {
+      inherit (pkgs) system;
+      config = {
+        allowUnfree = true;
+        cudaSupport = true;
+      };
+    };
+    llama-server = lib.getExe' pkgs2511.llama-cpp "llama-server";
   in {
     # Use prebuilt mongodb-ce instead of building mongodb from source
     nixpkgs.overlays = [
       (_final: prev: {
         mongodb = prev.mongodb-ce;
+        inherit (pkgs2511) llama-swap llama-cpp;
       })
     ];
 
@@ -167,7 +174,7 @@
 
     # --- Packages ---
     environment.systemPackages = [
-      llama-cpp-cuda
+      pkgs2511.llama-cpp
     ];
   };
 }
