@@ -26,7 +26,7 @@
           publisher = "ActivityWatch";
           name = "aw-watcher-vscode";
           version = "0.5.0";
-          sha256 = "01ssmmpc16hsm9cc0sv9z2g0n7lmzyrr0yrxy47pxiz8vvr6wg3d";
+          sha256 = "sha256-OrdIhgNXpEbLXYVJAx/jpt2c6Qa5jf8FNxqrbu5FfFs=";
         })
       ];
 
