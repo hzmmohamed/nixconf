@@ -1,11 +1,11 @@
-{inputs, ...}: {
+{...}: {
   flake.nixosModules.ai-server = {
     pkgs,
     lib,
     config,
     ...
   }: let
-    llama-cpp-cuda = inputs.llama-cpp.packages.${pkgs.system}.cuda;
+    llama-cpp-cuda = pkgs.llama-cpp.override {cudaSupport = true;};
     llama-server = lib.getExe' llama-cpp-cuda "llama-server";
   in {
     # Use prebuilt mongodb-ce instead of building mongodb from source
