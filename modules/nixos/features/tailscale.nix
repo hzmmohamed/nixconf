@@ -1,5 +1,11 @@
 {...}: {
-  flake.nixosModules.tailscale = {config, ...}: {
+  flake.nixosModules.tailscale = {config, ...}: let
+    user = config.preferences.user.name;
+  in {
+    home-manager.users.${user} = {
+      services.tailscale-systray.enable = true;
+    };
+
     services.tailscale = {
       enable = true;
       extraUpFlags = ["--ssh"];
