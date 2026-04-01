@@ -64,7 +64,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, XDG portals (wlr+gtk), env import for systemd/dbus | `extra_hjem_sway` |
 | `hyprland` | Hyprland WM: keybinds, animations, monitors, dwindle layout | (uses `home.programs.hyprland` consumed by hjem) |
 | `waybar` | Right-side vertical status bar with Catppuccin Latte theme: rotated clock, persistent workspaces, expandable CPU/mem/temp drawer, battery | |
-| `swayidle` | Screen lock (swaylock) + idle timeout (5min lock, 10min DPMS off) | |
+| `swayidle` | Screen lock (swaylock-effects with blur, clock, Catppuccin Mocha theme) + idle timeout (5min lock, 10min DPMS off) | |
 | `cliphist` | Clipboard history daemon (wl-paste + cliphist) | |
 | `gammastep` | Blue light filter (Cairo coordinates) | |
 | `gaming` | Steam, Lutris, Heroic, Proton GE, DXVK, MangoHUD | |
@@ -79,7 +79,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `youtube-music` | YouTube Music client | |
 | `gimp` | GIMP 3 | |
 | `gtk` | GTK/icon theme (Gruvbox) | |
-| `nix` | direnv, nix-index, flakes, nix-ld, formatters | |
+| `nix` | direnv, nix-index, flakes, nix-ld, formatters, cuda-maintainers cachix | |
 | `wallpaper` | swww daemon with wallpaper image (used by sway/hyprland; niri uses noctalia wallpaper management) | |
 | `sops` | Enables sops-nix with age key path | `inputs.sops-nix` |
 | `syncthing` | Syncthing service with device IDs, reads certs from sops secrets | |
@@ -89,8 +89,8 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `docker` | Docker daemon + compose + lazydocker + dive | |
 | `media` | MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl | |
 | `adb` | Android Debug Bridge | |
-| `tailscale` | Tailscale VPN with SSH, firewall rules | |
-| `vscode` | VSCodium with extensions, Catppuccin theme, settings via hjem | |
+| `tailscale` | Tailscale VPN with SSH, firewall rules, system tray | |
+| `vscode` | VSCodium with extensions (Nix, Python, GitLab, Claude Code), Catppuccin theme, gnome-keyring integration | |
 | `k8s` | kubectl, helm, kubectx, k9s, kind, stern, eksctl | |
 | `aws` | AWS CLI + aws-vault | |
 | `atuin` | Shell history sync with vim keybindings, config via hjem | |
@@ -103,6 +103,10 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `nodejs` | Node.js, npm, pnpm | |
 | `cad` | FreeCAD, OpenSCAD | |
 | `ai` | Ollama service, whisper-cpp | |
+| `ai-server` | llama-swap (via upstream llama.cpp flake with CUDA), Wyoming STT/TTS/wakeword, Qdrant, LibreChat | |
+| `email` | OAuth2 email (Gmail/O365), Thunderbird, aerc TUI, imapnotify desktop notifications, gnome-keyring, PAM integration | |
+| `openrgb` | OpenRGB service + GUI for hardware RGB lighting | |
+| `reticulum` | Reticulum mesh networking, MeshChat launchers | `inputs.reticulum-flake` |
 | `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
 
 ### `modules/nixos/extra/` — integration layers
@@ -124,8 +128,9 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 |------|----|----------|------------------|
 | **main** | Hyprland + Niri | AMD CPU/GPU, NVMe, btrfs | Gaming, VR, impermanence, WiFi hotspot, OBS |
 | **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
-| **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet |
+| **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet, email, reticulum, openrgb |
 | **maple** | Niri + Noctalia | Intel, LUKS ext4 | Workstation, SSH server, nix-serve-ng |
+| **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Deployed via nixos-anywhere (`scripts/install-peacelily.sh`) |
 
 **Switching WMs:** Hosts choose their window manager by importing one line:
 ```nix
@@ -178,8 +183,12 @@ each host (not in the repo).
 ```
 secrets/
 ├── README.md               (documents each file and its usage)
-└── butternut/
-    └── syncthing.yaml       (syncthing key/cert for butternut)
+├── shared/
+│   └── librechat.yaml       (LibreChat credentials and JWT secrets)
+├── butternut/
+│   └── syncthing.yaml       (syncthing key/cert for butternut)
+└── <hostname>/
+    └── <service>.yaml
 ```
 
 Convention: `secrets/<hostname>/<service>.yaml`. The `.sops.yaml` at the repo
@@ -224,6 +233,21 @@ preferences.zotero.sharing = false;
 
 This pattern can be reused for other shared resources that need per-host
 secrets and syncthing folders.
+
+### `scripts/` — deployment automation
+
+| Script | Purpose |
+|--------|---------|
+| `install-peacelily.sh` | nixos-anywhere deployment for peacelily. Copies age key, supports `--cache` (local nix-serve) and `--mount-only` flags. |
+
+### External flake inputs
+
+| Input | Purpose | Used by |
+|-------|---------|---------|
+| `llama-cpp` (`ggml-org/llama.cpp`) | Upstream llama.cpp with CUDA package | `ai-server` (`.packages.${system}.cuda`) |
+| `reticulum-flake` | Reticulum mesh networking overlays and modules | `reticulum` |
+| `catppuccin` | Catppuccin theming for NixOS/home-manager | `extra_hjem` |
+| `sops-nix` | Secret management with age encryption | `sops`, `ai-server`, `email`, `syncthing` |
 
 ## Data flow: how a host configuration is built
 

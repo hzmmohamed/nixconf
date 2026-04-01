@@ -29,6 +29,12 @@ sops secrets/<host>/<name>.yaml
 
 # Run a test VM
 nix build .#nixosConfigurations.desktop-vm.config.system.build.vm && ./result/bin/run-desktop-vm-vm
+
+# Deploy peacelily via nixos-anywhere
+bash scripts/install-peacelily.sh <target-ip>
+
+# Build with CUDA binary cache (on machines without it configured)
+nix build ... --extra-substituters https://cuda-maintainers.cachix.org --extra-trusted-public-keys "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
 ```
 
 ## Architecture overview
@@ -61,13 +67,18 @@ See `ARCHITECTURE.md` for the full design document. Key points:
 
 | Host | WM | Notes |
 |------|----|-------|
-| butternut | Sway | ASUS laptop, greetd, SSH:7654, asusd |
+| butternut | Sway | ASUS laptop, greetd, SSH:7654, asusd, email, reticulum, openrgb |
 | maple | Niri + Noctalia | Workstation, SSH:7654 |
-| peacelily | None | AI server (Ollama), no desktop |
+| peacelily | None (headless) | AI server: llama-swap (CUDA), Wyoming STT/TTS, Qdrant, LibreChat. Deployed via `scripts/install-peacelily.sh` |
+
+## External flake inputs
+
+- **`llama-cpp`** (`ggml-org/llama.cpp`) — upstream llama.cpp with CUDA support, used by `ai-server` module via `.packages.${system}.cuda`
+- **`reticulum-flake`** — Reticulum mesh networking overlays and NixOS modules
 
 ## Secrets
 
-sops-nix with age encryption. Key at `~/.config/sops/age/keys.txt` (not in repo). Rules in `.sops.yaml`.
+sops-nix with age encryption. Key at `~/.config/sops/age/keys.txt` (not in repo). Rules in `.sops.yaml`. Shared secrets live in `secrets/shared/`.
 
 ## Code style
 
