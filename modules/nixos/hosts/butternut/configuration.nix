@@ -105,6 +105,7 @@
       printing.enable = true;
 
       asusd.enable = true;
+      vnstat.enable = true;
 
       openssh = {
         enable = true;
