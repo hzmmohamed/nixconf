@@ -54,6 +54,12 @@
       };
     };
 
+    # Give llama-server child processes a writable cache for HF model downloads
+    systemd.services.llama-swap = {
+      environment.XDG_CACHE_HOME = "/var/cache/llama.cpp";
+      serviceConfig.CacheDirectory = "llama.cpp";
+    };
+
     # --- Wyoming Faster Whisper (STT) ---
     services.wyoming.faster-whisper.servers.english = {
       enable = true;
