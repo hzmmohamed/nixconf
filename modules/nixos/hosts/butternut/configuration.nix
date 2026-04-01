@@ -36,6 +36,7 @@
       self.nixosModules.discord
       self.nixosModules.gimp
       self.nixosModules.telegram
+      self.nixosModules.obs
 
       self.nixosModules.email
       self.nixosModules.rbw

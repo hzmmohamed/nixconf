@@ -113,6 +113,9 @@
           "Shift+XF86MonBrightnessUp" = "exec brightnessctl set 1%+";
           "Shift+XF86MonBrightnessDown" = "exec brightnessctl set 1%-";
 
+          # Screenshot
+          "${mod}+Shift+s" = "exec ${lib.getExe pkgs.flameshot} gui";
+
           # Resize mode
           "${mod}+r" = "mode \"resize\"";
 
@@ -241,6 +244,7 @@
       wl-clipboard
       grim
       slurp
+      flameshot
       wofi
       playerctl
       brightnessctl
