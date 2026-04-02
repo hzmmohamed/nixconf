@@ -96,3 +96,6 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] Email notifications (imapnotify) — BROKEN: depends on above OAuth2 fix. imapnotify `passwordCmd` needs a working token. Once aerc OAuth2 is fixed, imapnotify can use the same sops-backed passwordCommand. Also set `services.imapnotify.path` for any runtime deps.
 - [ ] Media player widget (waybar/sway) integrated with Spotify (playerctl/MPRIS)
 - [ ] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation
+- [ ] Add TTS + STT to librechat in ai-server
+- [ ] Configure fan control to make peaclily quieter when idle
+- [ ] Make peacelily RGB profiles dynamic based on state (idle, generating tokens, etc.)
