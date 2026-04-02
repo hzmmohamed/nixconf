@@ -40,7 +40,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] Wofi emoji picker (custom wrapper with larger font)
 - [ ] KDE Connect
 - [ ] Fix activity-watcher-window unknown window names
-
+- [ ] Fix links (from zotero and others) opening in vscode
 ## Productivity Apps
 
 - [x] Obsidian (note-taking)
