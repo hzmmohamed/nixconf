@@ -85,6 +85,7 @@
     crust = "#11111b";
   };
   fonts = {
+    sansSerif = "Open Sans";
     monospace = "JetBrainsMono Nerd Font";
     size = 12;
     barSize = 12;

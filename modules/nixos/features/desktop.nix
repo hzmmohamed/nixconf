@@ -41,8 +41,8 @@
     environment.variables.LOG_ICONS = "true";
 
     fonts.fontconfig.defaultFonts = {
-      serif = ["Ubuntu Sans"];
-      sansSerif = ["Ubuntu Sans"];
+      serif = [fonts.sansSerif];
+      sansSerif = [fonts.sansSerif];
       monospace = [fonts.monospace];
     };
 

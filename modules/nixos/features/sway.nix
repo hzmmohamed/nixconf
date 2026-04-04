@@ -151,7 +151,7 @@
 
         # Title bar font (visible if titlebar is ever re-enabled)
         fonts = {
-          names = [self.fonts.monospace];
+          names = [self.fonts.sansSerif];
           size = self.fonts.size * 0.8;
         };
 

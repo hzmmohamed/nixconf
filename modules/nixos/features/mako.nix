@@ -21,7 +21,7 @@
       services.mako = {
         enable = true;
         settings = {
-          font = "${self.fonts.monospace} ${toString self.fonts.size}";
+          font = "${self.fonts.sansSerif} ${toString self.fonts.size}";
           background-color = cat.base;
           text-color = cat.text;
           border-color = cat.lavender;
