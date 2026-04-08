@@ -60,6 +60,7 @@
       self.nixosModules.music
       self.nixosModules.doas
       self.nixosModules.reticulum
+      self.nixosModules.kdeconnect
       self.nixosModules.openrgb
       self.nixosModules.activitywatch
 
