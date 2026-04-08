@@ -4,3 +4,6 @@
 [submodule ".repos/nixos-anywhere"]
 	path = .repos/nixos-anywhere
 	url = git@github.com:nix-community/nixos-anywhere.git
+[submodule ".repos/adingbatponder-config"]
+	path = .repos/adingbatponder-config
+	url = https://codeberg.org/adingbatponder/reticulum_nixos_flake.git
