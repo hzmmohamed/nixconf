@@ -61,6 +61,7 @@
       self.nixosModules.doas
       self.nixosModules.reticulum
       self.nixosModules.kdeconnect
+      self.nixosModules.whisper-live
       self.nixosModules.openrgb
       self.nixosModules.activitywatch
 

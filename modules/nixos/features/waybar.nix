@@ -18,7 +18,7 @@
       position = "right";
       reload_style_on_change = true;
 
-      modules-left = ["custom/dnd" "custom/notification" "clock" "tray"];
+      modules-left = ["custom/whisper" "custom/dnd" "custom/notification" "clock" "tray"];
       modules-center = ["sway/workspaces"];
       modules-right = ["group/expand" "battery"];
 
