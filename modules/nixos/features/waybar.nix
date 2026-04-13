@@ -1,5 +1,9 @@
 {self, ...}: {
-  flake.nixosModules.waybar = {config, ...}: let
+  flake.nixosModules.waybar = {
+    config,
+    pkgs,
+    ...
+  }: let
     user = config.preferences.user.name;
     latte = self.catppuccin;
     mocha = self.catppuccinMocha;
@@ -39,7 +43,7 @@
       };
 
       "custom/dnd" = {
-        exec = "makoctl mode 2>/dev/null | grep -q do-not-disturb && echo '{\"text\": \"󰂛\", \"class\": \"active\"}' || echo '{\"text\": \"󰂚\", \"class\": \"inactive\"}'";
+        exec = "makoctl mode 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q do-not-disturb && echo '{\"text\": \"󰂛\", \"class\": \"active\"}' || echo '{\"text\": \"󰂚\", \"class\": \"inactive\"}'";
         return-type = "json";
         interval = 2;
         on-click = "dnd-toggle";

@@ -32,7 +32,7 @@
         });
         ExecStart = lib.getExe (pkgs.writeShellApplication {
           name = "lact-watcher";
-          runtimeInputs = [pkgs.libnotify pkgs.lact pkgs.glib pkgs.dbus];
+          runtimeInputs = [pkgs.libnotify pkgs.lact pkgs.glib pkgs.dbus pkgs.gnugrep];
           text = ''
             gdbus monitor --system --dest net.hadess.PowerProfiles |
             while read -r line; do
