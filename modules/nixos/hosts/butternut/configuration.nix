@@ -70,6 +70,7 @@
       self.nixosModules.syncthing
 
       self.nixosModules.powersave
+      self.nixosModules.battery-notify
 
       # disko
       inputs.disko.nixosModules.disko
