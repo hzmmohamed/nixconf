@@ -12,7 +12,7 @@
     ];
 
     home-manager.users.${user} = {
-      home.file.".local/share/FreeCAD/Mod/freecad-ai".source =
+      home.file.".local/share/FreeCAD/v1-1/Mod/freecad-ai".source =
         self.packages.${pkgs.system}.freecad-ai + "/share/FreeCAD/Mod/freecad-ai";
     };
   };
