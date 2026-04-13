@@ -20,6 +20,7 @@
         anthropic.claude-code
         mhutchie.git-graph
         gitlab.gitlab-workflow
+        dbaeumer.vscode-eslint
       ])
       ++ [
         (pkgs.vscode-utils.extensionFromVscodeMarketplace {
