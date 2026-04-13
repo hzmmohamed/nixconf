@@ -12,6 +12,7 @@
       @define-color cat-text ${cat.text};
       @define-color cat-base ${cat.base};
       @define-color cat-mantle ${cat.mantle};
+      @define-color cat-crust ${cat.crust};
       @define-color cat-lavender ${cat.lavender};
       @define-color cat-surface0 ${cat.surface0};
       @define-color cat-overlay0 ${cat.overlay0};
@@ -170,20 +171,26 @@
 
       .modules-left {
         border-radius: 10px;
-        background: alpha(@cat-base, .8);
+        background: alpha(@cat-crust, .7);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
+        margin: 8px 8px 4px 8px;
+        padding: 4px;
       }
 
       .modules-center {
         border-radius: 10px;
-        background: alpha(@cat-base, .8);
+        background: alpha(@cat-crust, .7);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
+        margin: 4px 6px;
+        padding: 4px;
       }
 
       .modules-right {
         border-radius: 10px;
-        background: alpha(@cat-base, .8);
+        background: alpha(@cat-crust, .7);
         box-shadow: 0px 0px 2px rgba(0, 0, 0, .6);
+        margin: 4px 8px 8px 8px;
+        padding: 4px;
       }
 
       tooltip {
