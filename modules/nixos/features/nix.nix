@@ -17,6 +17,7 @@
 
     nix.settings = {
       experimental-features = ["nix-command" "flakes"];
+      trusted-users = ["root" "@wheel"];
       substituters = [
         "https://cache.nixos.org"
         "https://cuda-maintainers.cachix.org"
