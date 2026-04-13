@@ -49,7 +49,6 @@
         };
         Service = {
           ExecStart = "${batteryNotify}/bin/battery-notify";
-          Type = "oneshot";
           Restart = "always";
           RestartSec = 60;
         };
