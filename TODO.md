@@ -95,7 +95,46 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [ ] aerc TUI email client with xoauth2 — BROKEN: custom OAuth2 flow fails (Google: "invalid client", Outlook: redirect works but token exchange unreliable). Fix approach: extract refresh tokens from Thunderbird's saved passwords (Settings > Privacy & Security > Saved Passwords, look for "oauth://") and use aerc's native `imapOauth2Params`/`smtpOauth2Params` with Thunderbird's client_id `9e5f94bc-e8a4-4e73-b8be-63364c29d753` (no client_secret needed). Store refresh tokens in sops secret, passwordCommand reads from `config.sops.secrets.*.path`. Remove custom `email-oauth2` script and gnome-keyring dependency for email. Reference config: https://codeberg.org/eisfunke/funke-nixos/src/branch/main/home/modules/mail.nix
 - [ ] Email notifications (imapnotify) — BROKEN: depends on above OAuth2 fix. imapnotify `passwordCmd` needs a working token. Once aerc OAuth2 is fixed, imapnotify can use the same sops-backed passwordCommand. Also set `services.imapnotify.path` for any runtime deps.
 - [ ] Media player widget (waybar/sway) integrated with Spotify (playerctl/MPRIS)
-- [ ] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation
-- [ ] Add TTS + STT to librechat in ai-server
-- [ ] Configure fan control to make peaclily quieter when idle
+- [x] Global speech-to-text tool (OpenWhisper / whisper.cpp), system-wide hotkey activation
+- [x] Add TTS (Kokoro) + STT (Wyoming Whisper) to LibreChat in ai-server (WIP)
+- [ ] Verify Wyoming Faster Whisper exposes HTTP /v1/audio/transcriptions (or add bridge)
+- [ ] Configure fan control to make peacelily quieter when idle
 - [ ] Make peacelily RGB profiles dynamic based on state (idle, generating tokens, etc.)
+- [ ] Set default email client to Thunderbird and configure default send-from address
+- [ ] Configure Claude Code to send notification on intervention/stop
+- [ ] Make meshchat run as a distinct user with exclusive write access to its files
+- [ ] Live audio transcription of main output (see https://github.com/basnijholt/agent-cli/blob/main/docs/commands/transcribe-live.md)
+
+## AI: Resilient Multi-Device Setup
+
+Goal: seamless AI experience that degrades gracefully when peacelily is unreachable, rather than failing entirely.
+
+- [ ] Run LibreChat on butternut (laptop) instead of / in addition to peacelily
+  - [ ] Configure LibreChat to prefer peacelily endpoint when reachable (via Tailscale)
+  - [ ] Fall back to a small local model (e.g. via Ollama on butternut) when offline
+  - [ ] Conversation sync between butternut and peacelily (shared MongoDB or export/import)
+- [ ] Run a small local model on butternut for offline use (Ollama or llama-swap)
+- [ ] Shared memory/context database synced across devices (Qdrant via Syncthing, or hosted on peacelily with local replica)
+
+## AI: Knowledge & Notes Sync
+
+Goal: capture notes, ideas, and memories on any device and have them available everywhere.
+
+- [ ] Notes sync: phone → laptop → peacelily (Syncthing-based, compatible with Obsidian mobile)
+- [ ] Unified memory store: structured notes/memories accessible from LibreChat and CLI tools
+- [ ] Investigate open-source personal knowledge tools (Logseq, Obsidian Sync alternative, etc.)
+
+## AI: Agentic Workflows
+
+Goal: move from chat to autonomous task execution with tool use.
+
+- [ ] Web search in LibreChat (SearXNG — WIP, needs ai-search sops secret)
+- [ ] Code execution sandbox (LibreChat code interpreter plugin or isolated container)
+- [ ] Agentic framework integration (browser-use, or similar)
+- [ ] Configure claude-code / opencode to use peacelily as the LLM backend
+- [ ] Investigate: Lobe Hub, Gobii Platform (https://github.com/gobii-ai/gobii-platform)
+
+## Peacelily: Vision Model
+
+- [ ] Add vision model to llama-swap (qwen2.5-vl or qwen3-vl)
+- [ ] Expose vision model in LibreChat endpoint
