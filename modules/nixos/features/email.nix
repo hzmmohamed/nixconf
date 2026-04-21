@@ -223,6 +223,20 @@
 
       services.imapnotify.enable = true;
 
+      # imapnotify needs gnome-keyring unlocked to retrieve OAuth2 tokens
+      # via secret-tool. Wait for sway-session.target (keyring is PAM-unlocked
+      # during greetd login, but user services can race ahead of it).
+      systemd.user.services.imapnotify-personal.Unit = {
+        After = ["sway-session.target" "gnome-keyring.service"];
+        Requires = ["gnome-keyring.service"];
+        Requisite = ["sway-session.target"];
+      };
+      systemd.user.services.imapnotify-work.Unit = {
+        After = ["sway-session.target" "gnome-keyring.service"];
+        Requires = ["gnome-keyring.service"];
+        Requisite = ["sway-session.target"];
+      };
+
       accounts.email.accounts = {
         personal = {
           address = "hzmmohamed@gmail.com";

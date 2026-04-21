@@ -23,6 +23,23 @@
         enable = true;
         indicator = true;
       };
+
+      # KDE Connect needs WAYLAND_DISPLAY which is only available after sway
+      # imports the environment. Wait for sway-session.target.
+      systemd.user.services.kdeconnect = {
+        Unit = {
+          After = ["sway-session.target"];
+          PartOf = ["graphical-session.target"];
+          Requisite = ["sway-session.target"];
+        };
+      };
+      systemd.user.services.kdeconnect-indicator = {
+        Unit = {
+          After = ["sway-session.target"];
+          PartOf = ["graphical-session.target"];
+          Requisite = ["sway-session.target"];
+        };
+      };
     };
   };
 }

@@ -8,7 +8,7 @@
 
     batteryNotify = pkgs.writeShellApplication {
       name = "battery-notify";
-      runtimeInputs = [pkgs.upower pkgs.libnotify];
+      runtimeInputs = [pkgs.upower pkgs.libnotify pkgs.gnugrep pkgs.kdePackages.kdeconnect-kde];
       text = ''
         state_file="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/battery-notify-last"
 
@@ -36,6 +36,11 @@
         if (( pct < last )); then
           echo "$pct" > "$state_file"
           notify-send -u critical -i battery-caution "Battery Low" "Battery at ''${pct}%"
+
+          # Ping all reachable KDE Connect devices
+          for dev in $(kdeconnect-cli --id-only --list-available 2>/dev/null); do
+            kdeconnect-cli --ping-msg "Battery Low: ''${pct}%" -d "$dev" 2>/dev/null || true
+          done
         fi
       '';
     };

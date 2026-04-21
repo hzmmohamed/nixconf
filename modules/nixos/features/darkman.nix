@@ -27,7 +27,7 @@
           '';
 
           kitty-theme = ''
-            ${pkgs.kitty}/bin/kitten themes --reload-in=all "Catppuccin Latte"
+            ${pkgs.kitty}/bin/kitten themes --reload-in=all "Catppuccin-Latte"
           '';
 
           vscodium-theme = ''
@@ -77,7 +77,7 @@
           '';
 
           kitty-theme = ''
-            ${pkgs.kitty}/bin/kitten themes --reload-in=all "Catppuccin Mocha"
+            ${pkgs.kitty}/bin/kitten themes --reload-in=all "Catppuccin-Mocha"
           '';
 
           vscodium-theme = ''
@@ -139,7 +139,7 @@
           # Kitty: set initial theme if not already set
           mkdir -p "$HOME/.config/kitty"
           [ -f "$HOME/.config/kitty/current-theme.conf" ] || \
-            ${pkgs.kitty}/bin/kitten themes --dump-theme "Catppuccin Latte" \
+            ${pkgs.kitty}/bin/kitten themes --dump-theme "Catppuccin-Latte" \
               > "$HOME/.config/kitty/current-theme.conf" 2>/dev/null || true
 
           # Foot: default to latte
