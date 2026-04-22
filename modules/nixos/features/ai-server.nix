@@ -85,6 +85,31 @@
         ttl = 3600;
 
         models = {
+          "qwen3.5:9b-coding" = {
+            cmd =
+              "${llama-server} "
+              + "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL "
+              + "--alias qwen3.5:9b-coding "
+              + # <--- This makes it official in the API
+              "--port \${PORT} "
+              + "--ctx-size 131072 "
+              + # Fixes the 16k limit error
+              "--batch-size 4096 "
+              + # Faster prefill
+              "--ubatch-size 1024 "
+              + # Better VRAM stability
+              "--threads 14 "
+              + # Utilizes your CPU (from 1 -> 14)
+              "--gpu-layers 99 "
+              + "--reasoning "
+              + # Modern replacement for thinking kwarg
+              "-fa "
+              + # Flash Attention (Keep this!)
+              "-ctk q8_0 -ctv q8_0 "
+              + # Keep these for KV cache efficiency
+              "--no-webui "
+              + "--spec-type ngram-simple"; # Optional: Keep for speed, remove if code logic feels "jittery"
+          };
           "qwen3.5:9b" = {
             cmd = "${llama-server} -hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL --port \${PORT} --ctx-size 16384 --batch-size 2048 --ubatch-size 2048 --threads 1 --gpu-layers 99 --jinja --chat-template-kwargs '{\"enable_thinking\":true}' -fa -ctk q8_0 -ctv q8_0 --no-webui --spec-type ngram-simple";
           };
