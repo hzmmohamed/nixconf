@@ -92,6 +92,7 @@
               + "--alias qwen3.5:9b-coding "
               + # <--- This makes it official in the API
               "--port \${PORT} "
+              + "--no-mmproj"
               + "--ctx-size 131072 "
               + # Fixes the 16k limit error
               "--batch-size 4096 "
@@ -103,7 +104,7 @@
               "--gpu-layers 99 "
               + "--reasoning "
               + # Modern replacement for thinking kwarg
-              "-fa "
+              "--flash-attn on "
               + # Flash Attention (Keep this!)
               "-ctk q8_0 -ctv q8_0 "
               + # Keep these for KV cache efficiency
@@ -140,7 +141,11 @@
 
     # Give llama-server child processes a writable cache for HF model downloads
     systemd.services.llama-swap = {
-      environment.XDG_CACHE_HOME = "/var/cache/llama.cpp";
+      environment = {
+        XDG_CACHE_HOME = "/var/cache/llama.cpp";
+        HF_HUB_CACHE = "/var/cache/llama.cpp/hub";
+        LLAMA_CACHE = "/var/cache/llama.cpp";
+      };
       serviceConfig.CacheDirectory = "llama.cpp";
     };
 
