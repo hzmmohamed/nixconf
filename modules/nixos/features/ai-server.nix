@@ -143,8 +143,6 @@
     systemd.services.llama-swap = {
       environment = {
         XDG_CACHE_HOME = "/var/cache/llama.cpp";
-        HF_HUB_CACHE = "/var/cache/llama.cpp/hub";
-        LLAMA_CACHE = "/var/cache/llama.cpp";
       };
       serviceConfig.CacheDirectory = "llama.cpp";
     };
