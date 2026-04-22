@@ -212,24 +212,24 @@
       };
     };
 
-    # --- SearXNG ---
-    services.searx = {
-      enable = true;
-      environmentFile = config.sops.secrets."searx_secret_key".path;
-      settings = {
-        server = {
-          bind_address = "127.0.0.1";
-          port = 8080;
-          secret_key = "@SEARX_SECRET_KEY@";
-        };
-        search.formats = ["json"];
-      };
-    };
+    # # --- SearXNG ---
+    # services.searx = {
+    #   enable = true;
+    #   environmentFile = config.sops.secrets."searx_secret_key".path;
+    #   settings = {
+    #     server = {
+    #       bind_address = "127.0.0.1";
+    #       port = 8080;
+    #       secret_key = "@SEARX_SECRET_KEY@";
+    #     };
+    #     search.formats = ["json"];
+    #   };
+    # };
 
-    sops.secrets."searx_secret_key" = {
-      sopsFile = ../../../secrets/shared/ai-search.yaml;
-      owner = "searx";
-    };
+    # sops.secrets."searx_secret_key" = {
+    #   sopsFile = ../../../secrets/shared/ai-search.yaml;
+    #   owner = "searx";
+    # };
 
     # --- LibreChat secrets ---
     sops.secrets."librechat_creds_key" = {
