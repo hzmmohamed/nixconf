@@ -125,12 +125,14 @@
         before = [];
         data = ''
           # Waybar: default to latte
+          mkdir -p "$HOME/.config/waybar"
           [ -L "$HOME/.config/waybar/catppuccin-colors.css" ] || \
             ${pkgs.coreutils}/bin/ln -sf \
               "$HOME/.config/waybar/catppuccin-latte.css" \
               "$HOME/.config/waybar/catppuccin-colors.css"
 
           # Wofi: default to latte
+          mkdir -p "$HOME/.config/wofi"
           [ -L "$HOME/.config/wofi/style.css" ] || \
             ${pkgs.coreutils}/bin/ln -sf \
               "$HOME/.config/wofi/style-light.css" \
