@@ -117,12 +117,39 @@
 
     programs.nix-ld.enable = true;
 
+    # SSH client config for reaching other hosts over Tailscale
+    home-manager.users.${config.preferences.user.name}.programs.ssh = {
+      enable = true;
+      matchBlocks = {
+        "butternut" = {
+          hostname = "butternut";
+          port = 7654;
+          user = config.preferences.user.name;
+        };
+        "peacelily" = {
+          hostname = "peacelily";
+          port = 7654;
+          user = config.preferences.user.name;
+        };
+        "maple" = {
+          hostname = "maple";
+          port = 7654;
+          user = config.preferences.user.name;
+        };
+      };
+    };
+
     services.greetd = {
       enable = true;
       settings.default_session = {
         command = "${lib.getExe pkgs.tuigreet} --time --remember-session --sessions /run/current-system/sw/share/wayland-sessions";
         user = "greeter";
       };
+    };
+
+    # 14" 1080p built-in panel — slight scale bump for readability
+    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.output."eDP-1" = {
+      scale = "1.25";
     };
 
     # Host-specific sway keybindings
