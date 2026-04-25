@@ -41,6 +41,12 @@
       self.nixosModules.rbw
       self.nixosModules.activitywatch
       self.nixosModules.kdeconnect
+      self.nixosModules.shared-zotero
+      self.nixosModules.gimp
+      self.nixosModules.email
+      self.nixosModules.adb
+      self.nixosModules.design
+      self.nixosModules.cad
 
       self.nixosModules.vscode
       self.nixosModules.docker
