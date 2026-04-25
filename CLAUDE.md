@@ -12,7 +12,7 @@ Multi-host NixOS configuration built on **flake-parts** with **import-tree** for
 # Enter dev shell (nix tools, sops, age, formatters, git hooks)
 nix develop
 
-# Build a host (butternut, maple, peacelily)
+# Build a host (butternut, maple, peacelily, hazel)
 nix build .#nixosConfigurations.<host>.config.system.build.toplevel
 
 # Apply config on current host
@@ -30,8 +30,8 @@ sops secrets/<host>/<name>.yaml
 # Run a test VM
 nix build .#nixosConfigurations.desktop-vm.config.system.build.vm && ./result/bin/run-desktop-vm-vm
 
-# Deploy peacelily via nixos-anywhere
-bash scripts/install-peacelily.sh <target-ip>
+# Deploy any host via nixos-anywhere
+bash scripts/install-host.sh <hostname> <target-ip>
 
 # Build with CUDA binary cache (on machines without it configured)
 nix build ... --extra-substituters https://cuda-maintainers.cachix.org --extra-trusted-public-keys "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
@@ -69,7 +69,8 @@ See `ARCHITECTURE.md` for the full design document. Key points:
 |------|----|-------|
 | butternut | Sway | ASUS laptop, greetd, SSH:7654, asusd, email, reticulum, openrgb |
 | maple | Niri + Noctalia | Workstation, SSH:7654 |
-| peacelily | None (headless) | AI server: llama-swap (CUDA), Wyoming STT/TTS, Qdrant, LibreChat. Deployed via `scripts/install-peacelily.sh` |
+| peacelily | None (headless) | AI server: llama-swap (CUDA), Wyoming STT/TTS, Qdrant, LibreChat. Deployed via `scripts/install-host.sh peacelily <ip>` |
+| hazel | Sway | ThinkPad E14 Gen 2 (i5-1135G7), greetd, SSH:7654, programming-focused |
 
 ## External flake inputs
 

@@ -21,6 +21,7 @@
         mhutchie.git-graph
         gitlab.gitlab-workflow
         dbaeumer.vscode-eslint
+        esbenp.prettier-vscode
       ])
       ++ [
         (pkgs.vscode-utils.extensionFromVscodeMarketplace {
@@ -28,6 +29,12 @@
           name = "aw-watcher-vscode";
           version = "0.5.0";
           sha256 = "sha256-OrdIhgNXpEbLXYVJAx/jpt2c6Qa5jf8FNxqrbu5FfFs=";
+        })
+        (pkgs.vscode-utils.extensionFromVscodeMarketplace {
+          publisher = "oxc";
+          name = "oxc-vscode";
+          version = "1.52.0";
+          sha256 = "sha256-CaUe8WSBc7fPianvGl2VS0fciMAw+kAosZ7L6SwBplY=";
         })
       ];
 

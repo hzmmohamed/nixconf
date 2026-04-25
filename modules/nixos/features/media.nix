@@ -1,4 +1,4 @@
-{...}: {
+{self, ...}: {
   flake.nixosModules.media = {pkgs, ...}: {
     environment.systemPackages = with pkgs; [
       mpv
@@ -8,6 +8,7 @@
       exiftool
       yt-dlp
       ffmpeg
+      self.packages.${pkgs.system}.ffflow
       playerctl
     ];
 

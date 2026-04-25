@@ -5,6 +5,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 ## Infrastructure
 
 - [x] Create butternut host (Intel, ASUS laptop, systemd-boot, LUKS)
+- [x] Create hazel host (ThinkPad E14 Gen 2, systemd-boot, LUKS NVMe)
 - [x] Create devShell for development
 - [x] Create VM export for testing
 - [x] Change default user to `hfahmi` (single source of truth in `modules/user.nix`)
@@ -88,6 +89,7 @@ Migrating from old config (Caramel Mint / Snowfall Lib) at `.repos/old-config/` 
 - [x] butternut: nix-serve-ng (binary cache)
 - [x] butternut: wayvnc
 - [x] butternut: nix-ld with libraries
+- [x] hazel: ThinkPad E14 Gen 2 host config (Sway, programming-focused, LUKS NVMe)
 - [ ] Desktop vs CLI-only toggle (module to disable desktop entirely)
 - [ ] Neovim Catppuccin colorscheme + darkman integration (Latte/Mocha switching)
 - [ ] Ungoogled Chromium extension support (see https://gist.github.com/MaximilianGaedig/acbce27522c997e9666bd93cef77492d)
@@ -138,3 +140,5 @@ Goal: move from chat to autonomous task execution with tool use.
 
 - [ ] Add vision model to llama-swap (qwen2.5-vl or qwen3-vl)
 - [ ] Expose vision model in LibreChat endpoint
+
+- Pacakge https://github.com/dgr8akki/nano-ffmpeg
