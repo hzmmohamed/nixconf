@@ -7,7 +7,7 @@
   }: let
     mod = "Mod4";
     user = config.preferences.user.name;
-    terminal = lib.getExe self.packages.${pkgs.system}.terminal;
+    terminal = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.terminal;
   in {
     imports = [self.nixosModules.wofi-theme];
 
@@ -218,7 +218,8 @@
 
         # Map monitor preferences to sway outputs.
         # Disabled monitors get an explicit disable directive.
-        output =
+        # mkOptionDefault so hosts can merge additional output attrs (e.g. scale).
+        output = lib.mkOptionDefault (
           lib.mapAttrs (
             _name: m:
               if m.enabled
@@ -230,7 +231,8 @@
                 disable = "";
               }
           )
-          config.preferences.monitors;
+          config.preferences.monitors
+        );
       };
 
       # Per-app window rules (floating dialogs, sizing overrides)

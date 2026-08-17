@@ -39,6 +39,8 @@
       theme = {
         name = lightTheme;
       };
+      # Keep legacy default (gtk4 theme follows the gtk3 theme) until stateVersion >= 26.05.
+      gtk4.theme.name = lightTheme;
     };
   };
 }

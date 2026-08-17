@@ -25,7 +25,7 @@
           git
         ])
         ++ [
-          inputs.claude-code.packages.${system}.claude-code-bun
+          inputs.claude-code.packages.${system}.claude-code
         ];
 
       enterShell = ''

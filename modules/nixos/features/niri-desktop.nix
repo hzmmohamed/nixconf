@@ -6,7 +6,7 @@
     pkgs,
     ...
   }: let
-    selfpkgs = self.packages.${pkgs.system};
+    selfpkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   in {
     programs.niri.enable = true;
 

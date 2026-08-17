@@ -1,17 +1,12 @@
-{
-  inputs,
-  self,
-  ...
-}: {
+{inputs, ...}: {
   flake.nixosModules.reticulum = {
     config,
     pkgs,
     ...
   }: {
     imports = [
-      # reticulum-shared declares rns.shared.* options (rnsd user service, config seeding)
-      inputs.reticulum-flake.nixosModules.reticulum-shared
       # reticulum-integration adds system packages and dialout group (gated by rns.shared.enable)
+      # also imports reticulum-shared internally (declares rns.shared.* options)
       inputs.reticulum-flake.nixosModules.reticulum-integration
       inputs.reticulum-flake.nixosModules.meshchat-launchers
       # RNS Map web visualizations
@@ -57,8 +52,9 @@
     # Meshchat packages scoped to the user + managed reticulum config
     home-manager.users.${config.preferences.user.name} = {
       home.packages = [
-        self.packages.${pkgs.system}.meshchatx
-        self.packages.${pkgs.system}.meshchatx-desktop-entry
+        # TODO: re-enable once meshchatx pnpm deps are updated
+        # self.packages.${pkgs.stdenv.hostPlatform.system}.meshchatx
+        # self.packages.${pkgs.stdenv.hostPlatform.system}.meshchatx-desktop-entry
       ];
 
       home.file.".reticulum/config".text = ''

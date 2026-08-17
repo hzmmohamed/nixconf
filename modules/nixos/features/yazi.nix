@@ -15,6 +15,7 @@
     home-manager.users.${user}.programs.yazi = {
       enable = true;
       settings.log.enabled = false;
+      shellWrapperName = "yy";
       settings.manager = {
         show_hidden = false;
         show_symlink = true;

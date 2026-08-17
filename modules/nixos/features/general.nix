@@ -15,7 +15,7 @@
       isNormalUser = true;
       description = "${config.preferences.user.name}'s account";
       extraGroups = ["wheel" "networkmanager"];
-      shell = self.packages.${pkgs.system}.environment;
+      shell = self.packages.${pkgs.stdenv.hostPlatform.system}.environment;
 
       hashedPassword = ''
         $6$cH3.3pfi3t/.1q.y$xsVbp6gVp2OtOTDsJaPZga1wvHCBOrMwOEu.Cn/gGQRII8sqs5pOIprNY4Lobkax5PmodprHGhDtPVvIk6IIi1'';

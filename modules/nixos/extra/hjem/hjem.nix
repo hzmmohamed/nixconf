@@ -7,6 +7,11 @@
       inputs.catppuccin.nixosModules.catppuccin
     ];
 
+    # catppuccin/nix is moving to `autoEnable`-driven port enrollment where
+    # `catppuccin.enable` becomes a global toggle. Pin autoEnable to our current
+    # `enable` value (false) so theming stays driven by explicit per-port options.
+    catppuccin.autoEnable = false;
+
     home-manager = {
       useGlobalPkgs = true;
       useUserPackages = true;
@@ -14,6 +19,8 @@
 
       users.${user} = {
         imports = [inputs.catppuccin.homeModules.catppuccin];
+
+        catppuccin.autoEnable = false;
 
         home = {
           username = user;

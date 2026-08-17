@@ -7,10 +7,11 @@
     python3Packages = pkgs.python313Packages;
 
     # Use rns and lxmf from the reticulum flake overlay
-    reticulumPkgs = inputs.reticulum-flake.packages.${pkgs.system};
+    reticulumPkgs = inputs.reticulum-flake.packages.${pkgs.stdenv.hostPlatform.system};
 
-    meshchatxSrc = pkgs.fetchgit {
-      url = "https://git.quad4.io/RNS-Things/MeshChatX.git";
+    meshchatxSrc = pkgs.fetchFromGitHub {
+      owner = "Quad4-Software";
+      repo = "MeshChatX";
       rev = "3da8eab9e4bf6b7d39d71c47ac72c884d5076d13";
       hash = "sha256-zoRPwAUYCwpauVZG43qxBv0XQQSdrtaBrKEk9/NL7qQ=";
     };
@@ -52,8 +53,9 @@
       version = "1.6.1";
       pyproject = true;
 
-      src = pkgs.fetchgit {
-        url = "https://git.quad4.io/LXMFy/LXMFy.git";
+      src = pkgs.fetchFromGitHub {
+        owner = "Quad4-Software";
+        repo = "LXMFy";
         rev = "ccfb41ad519bf9ea93c956f5913979f7947840ce";
         hash = "sha256-WAuGIk5eLE6uwW03CflZceQYAqHgO+vcHWgVtpyfV88=";
       };
@@ -117,8 +119,9 @@
 
       pnpmDeps = pkgs.fetchPnpmDeps {
         inherit (finalAttrs) pname src version;
-        fetcherVersion = 3;
-        hash = "sha256-qx0aPB3OW2R+/oupqhGu+JjPEQymeLLUyeCPOcVIws4=";
+        pnpm = pkgs.pnpm_10;
+        fetcherVersion = 4;
+        hash = "";
       };
 
       nativeBuildInputs = [

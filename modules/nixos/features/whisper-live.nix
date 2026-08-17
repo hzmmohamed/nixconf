@@ -7,8 +7,8 @@
   }: let
     user = config.preferences.user.name;
 
-    whisperLive = self.packages.${pkgs.system}.whisper-live;
-    whisperModel = self.packages.${pkgs.system}.whisper-tiny-model;
+    whisperLive = self.packages.${pkgs.stdenv.hostPlatform.system}.whisper-live;
+    whisperModel = self.packages.${pkgs.stdenv.hostPlatform.system}.whisper-tiny-model;
 
     # Python with whisper-live and its deps available
     pythonEnv = pkgs.python313.withPackages (ps: [

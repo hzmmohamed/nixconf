@@ -7,7 +7,7 @@
   }: let
     mod = "SUPER";
     user = config.preferences.user.name;
-    terminal = self.packages.${pkgs.system}.terminal;
+    terminal = self.packages.${pkgs.stdenv.hostPlatform.system}.terminal;
   in {
     programs.hyprland.enable = true;
 
@@ -165,7 +165,7 @@
             "${mod}, bracketleft, changegroupactive, b"
             "${mod}, bracketright, changegroupactive, f"
             # "${mod}, S, exec, ${getExe pkgs.rofi} -show drun -show-icons"
-            "${mod}, S, exec, ${lib.getExe self.packages.${pkgs.system}.noctalia-shell} ipc call launcher toggle"
+            "${mod}, S, exec, ${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.noctalia-shell} ipc call launcher toggle"
             "${mod}, P, pin, active"
 
             ",XF86AudioRaiseVolume, exec, wpctl set-volume -l 1.4 @DEFAULT_AUDIO_SINK@ 5%+"

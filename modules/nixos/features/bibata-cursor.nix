@@ -29,6 +29,7 @@
 
     config = lib.mkIf cfg.enable {
       home-manager.users.${user}.home.pointerCursor = {
+        enable = true;
         name = "Bibata-Modern-Classic";
         package = pkgs.bibata-cursors;
         size = cfg.size;

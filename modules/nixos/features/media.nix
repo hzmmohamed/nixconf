@@ -8,7 +8,7 @@
       exiftool
       yt-dlp
       ffmpeg
-      self.packages.${pkgs.system}.ffflow
+      self.packages.${pkgs.stdenv.hostPlatform.system}.ffflow
       playerctl
     ];
 
