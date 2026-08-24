@@ -264,6 +264,15 @@
       config.sway = {
         default = lib.mkForce ["wlr" "gtk"];
       };
+      # Without an explicit chooser, xdg-desktop-portal-wlr auto-probes for
+      # fuzzel/wofi/rofi/... — none of which are on the portal service's PATH —
+      # then fails every capture request with "wlroots: no output found".
+      # This broke Firefox screenshare and Chromium window-sharing entirely.
+      # "simple" + slurp lets the user click the output/region to share.
+      wlr.settings.screencast = {
+        chooser_type = "simple";
+        chooser_cmd = "${lib.getExe pkgs.slurp} -f '%o' -or";
+      };
     };
 
     # Force Wayland for Qt, Firefox, and Electron apps
