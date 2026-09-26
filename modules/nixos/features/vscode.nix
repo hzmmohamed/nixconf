@@ -1,10 +1,42 @@
-{self, ...}: {
+{
+  self,
+  inputs,
+  ...
+}: {
   flake.nixosModules.vscode = {
     config,
+    lib,
     pkgs,
     ...
   }: let
     user = config.preferences.user.name;
+
+    # Keep the VSCode extension on the same Claude Code version as the `claude`
+    # CLI from the claude-code flake input (the extension bundles its own copy of
+    # the binary, so a mismatch means two different Claudes on one machine).
+    # When flake.lock bumps claude-code, update vsixPin below: the assert will
+    # tell you the new version, then re-prefetch the hash with
+    #   nix-prefetch-url "https://anthropic.gallery.vsassets.io/_apis/public/gallery/publisher/anthropic/extension/claude-code/<version>/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage?targetPlatform=linux-x64"
+    claudeVersion = inputs.claude-code.packages.${pkgs.stdenv.hostPlatform.system}.claude-code.version;
+    vsixPin = {
+      version = "2.1.282";
+      hash = "sha256-AIchLRsTIDmXnSw2oGJ30ZdYb2IaSgnD1xTfGeLA/bw=";
+      arch = "linux-x64";
+    };
+    claude-code-extension = assert lib.assertMsg (claudeVersion == vsixPin.version)
+    ("claude-code CLI is ${claudeVersion} but the VSCode extension is pinned to "
+      + "${vsixPin.version}; update vsixPin in modules/nixos/features/vscode.nix");
+    # nixpkgs' mktplcRef is not overridable (it is consumed before mkDerivation),
+    # so swap version + src directly and keep its autoPatchelf/alsa-lib wiring.
+      pkgs.vscode-extensions.anthropic.claude-code.overrideAttrs (_: {
+        version = vsixPin.version;
+        src = pkgs.fetchurl {
+          name = "anthropic-claude-code.vsix";
+          url = "https://anthropic.gallery.vsassets.io/_apis/public/gallery/publisher/anthropic/extension/claude-code/${vsixPin.version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage?targetPlatform=${vsixPin.arch}";
+          inherit (vsixPin) hash;
+        };
+      });
+
     extensions =
       (with pkgs.vscode-extensions; [
         jnoortheen.nix-ide
@@ -17,13 +49,13 @@
         editorconfig.editorconfig
         catppuccin.catppuccin-vsc
         catppuccin.catppuccin-vsc-icons
-        anthropic.claude-code
         mhutchie.git-graph
         gitlab.gitlab-workflow
         dbaeumer.vscode-eslint
         esbenp.prettier-vscode
       ])
       ++ [
+        claude-code-extension
         (pkgs.vscode-utils.extensionFromVscodeMarketplace {
           publisher = "ActivityWatch";
           name = "aw-watcher-vscode";
