@@ -251,3 +251,20 @@ Module: `modules/nixos/features/gaming.nix` (butternut only). Steam always runs 
 - ISOs: `~/Downloads/GTASA/Grand Theft Auto - San Andreas (USA) (v3.00).iso` (4.3 GB), plus NBA 2K12
   and PES 2014 under `~/Downloads`. In PCSX2: Settings → Game List → add `~/Downloads` (recursive),
   or launch them from Lutris (existing PS2 entries).
+
+## Agentic workspace (T3 Code, OpenCode)
+
+- [ ] Tailscale admin console: MagicDNS + HTTPS certificates enabled (done 2026-11-17)
+- [ ] Logins on butternut: `claude auth login`, `opencode auth login claude-agent`, `glab auth login`
+- [ ] T3 Code UI: `https://butternut.tail1a9f7c.ts.net/` — OpenCode UI: `https://butternut.tail1a9f7c.ts.net:8443` (or `oc` in a terminal)
+- [ ] Pair each device with T3 Code (token valid 5 min, scan the QR or paste the token):
+
+  ```sh
+  t3-pair phone            # = t3 pair --base-dir ~/.t3 --tailscale --tailscale-serve-port 443 --label phone
+  t3-pair hazel-desktop    # then turn off "Local environment" in hazel's T3 app
+  ```
+
+- [ ] If the T3 Code link fails after a reboot: `tailscale serve status` should list `/ proxy http://127.0.0.1:3773`;
+      if missing, `systemctl --user restart t3code.service` (its own serve registration has a 10 s timeout).
+- [ ] Merge the `agentic/onboarding` branches (worktrees under `~/work/tfc/repos/.agentic-onboarding/`) after review;
+      rotate the routelab Tiltfile DB password and the two Flexprice keys.
