@@ -851,3 +851,29 @@ Also: pnpm `--offline`; no Funnel or Connect; browser and device streams only on
 - home-manager `modules/programs/t3code.nix` on `master` (has `server.*`) and `release-26.05` (no server; nested clientSettings example).
 - Landing and download pages: https://t3.codes, https://t3.codes/download. App Store id6787819824, Play `com.t3tools.t3code`.
 - Local measurements on butternut (2026-11-17): repo sizes, `t3` 0.1.9 `--help`, `t3 policy check`, closure sizes.
+
+---
+
+## Implemented (2026-11-17)
+
+In `modules/nixos/features/agent-t3code.nix`, plus `agent-host.nix` (operator flag), `agent-common.nix` (`preferences.agents.{projects,tailnetDomain}`) and `hosts/{butternut,hazel}/agents.nix`:
+
+- **Package:** `llm.t3code.override { providerPackages = []; }` (0.1.9). Hosts install `out`; hazel installs `.desktop`.
+- **Managed policy** `/etc/t3code/policy.json` on every machine, built by a `runCommand` that runs `t3 policy check` (it passes in the sandbox). On hosts: §6.2, except `defaultRuntimeMode = "approval-required"` (user decision: ask before edits and commands), and binary paths locked to `/etc/profiles/per-user/<user>/bin/{claude,opencode}`. On hazel: only `limits` (updates off, telemetry, Connect, webhooks and cookie import off).
+  - **Left out for 0.1.9:** `keepAwakeWhileAgentsWork` (rejected, exit 77; checked) and `requireConnectDeviceApproval` (rejected per §1; not re-checked). After the bump to 0.1.10, add them through `preferences.agents.t3code.policyExtraSettings`.
+- **Settings:** `mutableUserSettings` is back to its default (true). HM merges only `providerInstances.{claudeAgent,opencode}` with instance-level `enabled`.
+- **Server unit:** `--host 127.0.0.1 --port 3773 --tailscale-serve`, `Restart=always`, the upstream KillMode/OOM/weight properties, a restart trigger on the policy, and no `Slice=`. `app-t3code.slice` is capped at MemoryHigh 60 % / MemoryMax 75 %, the same as `agents.slice`.
+- **Tailscale operator:** `services.tailscale.extraSetFlags = ["--operator=<user>"]`, set in agent-host.
+- **Projects:** the `t3code-projects` oneshot (WantedBy `t3code.service`) runs `t3 project add --title <basename>` for each entry in `preferences.agents.projects` that exists. butternut registers routelab-monorepo and d_abm.
+- **hazel:** the T3 desktop app, plus a "T3 Code web (butternut)" entry that opens `https://butternut.<tailnet>/`.
+
+**Manual steps, once:** enable MagicDNS and HTTPS certificates in the tailnet admin console. Run `claude auth login` on each host. Pair: `ssh butternut t3 pair --label hazel-desktop`, then in the desktop app turn off *Local environment*.
+
+**Deferred:**
+- keybindings (§2.6; the command ids need checking first)
+- hazel `clientSettings` and the Sway assign
+- `t3.json` and setup scripts in the project repos
+- worktree cleanup rules (run the symlink test first)
+- Claude SessionStart direnv hook
+- T3's OpenCode instance sharing the OpenCode service through `serverUrl` (today T3 starts or reuses it through the same `opencode` binary [verify])
+- persistence on impermanence hosts

@@ -1,7 +1,11 @@
 # Compute target for coding agents (design: docs/plans/2026-11-17-agentic-workspace-design.md).
-# Import together with `agent-common` (shared agent config) and `agent-t3code`
-# (T3 Code server). Adds the herdr server, the `agents.slice` resource caps
-# and `agent-run`.
+# Import together with `agent-common` (shared agent config), `agent-t3code`
+# (T3 Code server) and `agent-opencode` (OpenCode service). Adds the herdr
+# server, the `agents.slice` resource caps, `agent-run` and the Tailscale
+# operator setting the services need for `tailscale serve`.
+#
+# T3 Code moves its agents into app-t3code-agents-*.slice (capped separately
+# in agent-t3code); herdr, OpenCode and `agent-run` jobs stay in agents.slice.
 #
 # Verify a process is capped:  grep agents.slice /proc/<pid>/cgroup
 #   (or `systemctl --user status agents.slice` to list its members).
@@ -34,12 +38,18 @@
     # Agent services must run without a graphical login (headless target).
     users.users.${user}.linger = true;
 
+    # Agent services publish themselves on the tailnet with `tailscale serve`
+    # (T3 Code runs it as the user; HTTPS also needs MagicDNS + HTTPS
+    # certificates enabled once in the tailnet admin console). Applied by
+    # tailscaled-set.service, i.e. `tailscale set --operator=<user>`.
+    services.tailscale.extraSetFlags = ["--operator=${user}"];
+
     # Let the user manager control IO weights too (default: pids memory cpu).
     systemd.services."user@".serviceConfig.Delegate = "pids memory cpu io";
 
     home-manager.users.${user} = {
       systemd.user.slices.agents = {
-        Unit.Description = "Coding agents (T3 Code, herdr, agent-run jobs)";
+        Unit.Description = "Coding agents (OpenCode, herdr, agent-run jobs)";
         Slice = {
           MemoryHigh = "60%";
           MemoryMax = "75%";

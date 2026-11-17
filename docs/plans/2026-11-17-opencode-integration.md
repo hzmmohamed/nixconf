@@ -1275,3 +1275,36 @@ opencode pair --url https://$(hostname).<tailnet>.ts.net:8443   # phone: open li
   writes `cli.json`
 - the event envelope `location` field for plugin filtering
 - whether a config switch exists to forbid `pair --remote`
+
+---
+
+## Implemented (2026-11-17)
+
+New module `modules/nixos/features/agent-opencode.nix`, imported by butternut (host) and hazel (client). The 1.x `programs.opencode` block is gone from `agent-common.nix`.
+
+- **Package:** llm-agents `opencode2` 2.3.0, wrapped as `bin/opencode`: `OPENCODE_DISABLE_AUTOUPDATE=1`, `OPENCODE_DISABLE_FREE_MODELS=1`, `OPENCODE_CLAUDE_PATH` set to the claude-code input's unwrapped `claude`, `OPENCODE_CLI_CONFIG_CONTENT` set to the §2.8 cli.json content (a default, so it can be overridden), and git and direnv on PATH. Every host gets the same store path from one flake.lock. T3 Code's locked `binaryPath` is this binary.
+- **opencode.json** (2.x shape, through HM `settings` with `enableMcpIntegration = false`):
+  - `update = "disable"` and `share = "disabled"`. 2.3.0 has no telemetry key.
+  - permissions and policies as in §2.3
+  - compaction and `subagent_depth = 2`
+  - skills: superpowers. Anthropic skills come from `~/.claude/skills`.
+  - MCP servers converted from `programs.mcp` into `mcp.servers`
+  - agent models as in §3.4, plus `local` (peacelily) and `reviewer` (read-only)
+  - provider `peacelily`: the llama-swap ids and contexts from `ai-server.nix`. `qwen3.5:9b-coding` and `qwen3.5:35b-a3b` have 64k; `qwen3.5:9b`, `qwen3.5:9b-nothinker` and `qwen3.5:4b` have 32k.
+  - Validated by running `opencode debug config --standalone` on the generated file. No key was dropped.
+- **Host:**
+  - user unit `opencode.service` (`serve --service`, in `agents.slice`, `ExecStartPre=-opencode service stop`)
+  - an activation step that merges `hostname=127.0.0.1`, `port=49374` and, when enabled, the sops password into `~/.config/opencode/service.json`
+  - root oneshot `opencode-tailscale-serve` (`tailscale serve --bg --https=8443 http://127.0.0.1:49374`)
+  - optional `ANTHROPIC_API_KEY` env file (`preferences.agents.opencode.anthropicApiKey.enable`)
+- **Client:** `oc [dir]` runs `opencode --server https://<target>.<tailnet>:8443 <dir>`. It takes the password from `$OPENCODE_PASSWORD`, then the sops file, and otherwise reads `.password` from the target's `service.json` over SSH.
+- **Secrets:** `secrets/shared/agents.yaml` doesn't exist yet. `preferences.agents.opencode.password.enable` and `anthropicApiKey.enable` are off by default.
+
+**Manual steps, once per host:** run `claude auth login`, then `opencode auth login claude-agent`. The claude-agent route is unofficial (§3.1) and is enabled for the trial. Optionally run `opencode auth login anthropic` for an API key. HTTPS certificates must be enabled for the tailnet. Pair the phone or browser with `opencode pair --url https://butternut.<tailnet>:8443`.
+
+**Deferred:**
+- `opencode-seed-projects` (§6.4; the API calls need checking first)
+- notify and direnv plugins (§7.6)
+- global `AGENTS.md`, file agents and commands
+- system layer `/etc/opencode` (§2.9)
+- the switch to HM master `cli` / `validateFiles` once HM 26.11 is in use

@@ -1,7 +1,7 @@
 # Thin client for remote coding agents (design: docs/plans/2026-11-17-agentic-workspace-design.md).
-# Import together with `agent-common` (same Claude Code / OpenCode / MCP /
-# herdr config, so light local work also works) and `agent-t3code` (desktop
-# entry for the T3 Code UI on preferences.agents.target).
+# Import together with `agent-common` (same Claude Code / MCP / herdr config,
+# so light local work also works), `agent-t3code` (T3 Code desktop app) and
+# `agent-opencode` (`oc`: OpenCode TUI against the target's service).
 {inputs, ...}: {
   flake.nixosModules.agent-client = {
     config,
