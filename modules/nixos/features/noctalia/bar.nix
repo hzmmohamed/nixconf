@@ -29,7 +29,7 @@
           show_on_workspace_switch = true;
 
           start = ["clock" "keyboard_layout" "notifications" "mail" "media"];
-          center = ["workspaces"];
+          center = ["workspaces" "agents" "agents-input" "nix-build"];
           end =
             lib.optional config.services.syncthing.enable "sync"
             ++ ["cpu-warn" "ram-warn" "temp-warn" "disk-warn" "tray" "volume" "network" "bluetooth" "battery"];

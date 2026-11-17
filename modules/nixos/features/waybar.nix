@@ -4,6 +4,8 @@
 # Layout: vertical bar on the right edge, solid background, no blur/alpha.
 # Toggle visibility with Mod4+Shift+b (SIGUSR1). Status widgets that only matter
 # sometimes (CPU, memory, disk, temperature, sync) stay hidden until relevant.
+# No workspace indicator (navigation is by muscle memory); the middle is a quiet
+# activity column — agents, nix builds, privacy — empty while idle.
 {self, ...}: {
   flake.nixosModules.waybar = {
     config,
@@ -20,6 +22,13 @@
     swayosd-client = "${pkgs.swayosd}/bin/swayosd-client";
     networkManager = config.networking.networkmanager.enable;
     terminal = lib.getExe selfpkgs.terminal;
+
+    # Agent inbox (T3 Code): the configured client URL, else the local server.
+    t3code = lib.attrByPath ["preferences" "agents" "t3code"] {} config;
+    t3codeUrl =
+      if t3code.url or null != null
+      then t3code.url
+      else "http://127.0.0.1:${toString (t3code.port or 3773)}";
 
     # One glyph family (Material Design icons from the Nerd Font "Propo"
     # variant: proportional, so glyphs are centred and not clipped) at one
@@ -70,25 +79,90 @@
       include = ["${theme.stateDir}/current/waybar-calendar.json"];
 
       modules-left = ["clock" "sway/language" "custom/notification" "custom/mail" "mpris"];
-      modules-center = ["sway/workspaces"];
+      modules-center = ["custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
       modules-right =
         lib.optional syncthingEnabled "custom/sync"
-        ++ ["cpu" "memory" "disk" "temperature"]
+        ++ ["cpu" "memory" "custom/disk" "temperature"]
         ++ lib.optional networkManager "network"
         ++ ["wireplumber" "bluetooth" "group/tray" "battery"];
 
-      # Dots drawn in CSS (the label is the shape): 1–6 always, 7–9 only
-      # while occupied; the active one is a taller inverted pill.
-      "sway/workspaces" = {
-        # Real glyphs (CSS shapes on empty labels stretch across a vertical bar).
-        format = "{icon}";
+      # Coding agents ($XDG_RUNTIME_DIR/agent-status, one file per session,
+      # written by Claude Code hooks that send SIGRTMIN+10). Spinner + count
+      # while working, a check for sessions done in the last 10 min; a
+      # separate attention glyph (warning colour) for sessions waiting on me.
+      "custom/agents" = {
+        exec = "${lib.getExe selfpkgs.agent-status} busy";
+        return-type = "json";
+        format = "{icon}\n${value "{}"}";
         format-icons = {
-          focused = "●";
-          urgent = "●";
-          default = "●";
-          persistent = "○";
+          working = "󰝲";
+          done = "󰄬";
         };
-        persistent-workspaces = {"*" = [1 2 3 4 5 6];};
+        escape = true; # project names in the tooltip
+        justify = "center";
+        hide-empty-text = true;
+        signal = 10;
+        interval = 30;
+        on-click = "xdg-open ${t3codeUrl}";
+      };
+      "custom/agents-input" = {
+        exec = "${lib.getExe selfpkgs.agent-status} input";
+        return-type = "json";
+        format = "󰍢\n${value "{}"}";
+        escape = true; # project names in the tooltip
+        justify = "center";
+        hide-empty-text = true;
+        signal = 10;
+        interval = 30;
+        on-click = "xdg-open ${t3codeUrl}";
+      };
+
+      # Nix daemon activity: snowflake + running build count (accent), or
+      # dim while it only serves clients (substitutions, copies, evals).
+      "custom/nix-build" = {
+        exec = lib.getExe selfpkgs.nix-build-status;
+        return-type = "json";
+        format = "󰜗\n${value "{}"}";
+        justify = "center";
+        hide-empty-text = true;
+        interval = 5;
+      };
+
+      # Mic capture / screen share (PipeWire Stream/Input nodes). Ignored:
+      # monitor streams, the always-attached DeepFilter capture node and the
+      # mixers' peak meters. Hidden while nothing captures.
+      privacy = {
+        icon-size = glyphSize;
+        icon-spacing = 4;
+        transition-duration = 0;
+        modules = [
+          {type = "screenshare";}
+          {type = "audio-in";}
+        ];
+        ignore-monitor = true;
+        ignore = [
+          {
+            type = "audio-in";
+            name = "deep_filter_mono_input";
+          }
+          {
+            type = "audio-in";
+            name = "PulseAudio Volume Control";
+          }
+          {
+            type = "audio-in";
+            name = "pwvucontrol";
+          }
+        ];
+      };
+
+      # Camera opened directly through V4L2 (browsers bypass PipeWire).
+      "custom/camera" = {
+        exec = lib.getExe selfpkgs.camera-status;
+        return-type = "json";
+        format = "󰄀";
+        hide-empty-text = true;
+        interval = 5;
       };
 
       # Keyboard layout (preferences.keyboard): short label, click cycles.
@@ -208,17 +282,15 @@
         tooltip-format = "{used:0.1f} / {total:0.1f} GiB";
       };
 
-      disk = {
-        interval = 300;
-        path = "/";
-        states = {
-          warning = 85;
-          critical = 95;
-        };
-        format = "";
-        format-warning = "󰋊\n${value "{percentage_used}"}";
-        format-critical = "󰋊\n${value "{percentage_used}"}";
+      # Root free space, absolute thresholds: hidden at >= 100 GiB free,
+      # warning below, critical below 30 GiB (percent is noise on a big disk).
+      "custom/disk" = {
+        exec = "${lib.getExe selfpkgs.disk-free-status} /";
+        return-type = "json";
+        format = "󰋊\n${value "{}"}";
         justify = "center";
+        hide-empty-text = true;
+        interval = 300;
       };
 
       temperature = {
@@ -368,8 +440,9 @@
       /* One vertical rhythm: every item is the same box (6px above/below,
          4px gap), glyphs centred, values in the same box underneath. */
       #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
-      #cpu, #memory, #disk, #temperature, #network, #wireplumber, #bluetooth,
-      #custom-tray-handle, #tray, #battery {
+      #cpu, #memory, #custom-disk, #temperature, #network, #wireplumber, #bluetooth,
+      #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
+      #custom-nix-build, #privacy, #custom-camera {
         padding: 6px 0;
         margin: 2px 4px;
         border-radius: 6px;
@@ -384,7 +457,8 @@
 
       #clock:hover, #language:hover, #custom-notification:hover, #custom-mail:hover,
       #mpris:hover, #custom-sync:hover, #network:hover, #wireplumber:hover,
-      #bluetooth:hover, #custom-tray-handle:hover, #battery:hover {
+      #bluetooth:hover, #custom-tray-handle:hover, #battery:hover,
+      #custom-agents:hover, #custom-agents-input:hover {
         background: @tint;
       }
 
@@ -402,25 +476,20 @@
       #custom-sync.syncing { color: @accent; }
       #custom-sync.error, #custom-sync.down { color: @error; }
 
-      #cpu.warning, #memory.warning, #disk.warning, #temperature.warning { color: @warning; }
-      #cpu.critical, #memory.critical, #disk.critical, #temperature.critical { color: @error; }
+      #cpu.warning, #memory.warning, #custom-disk.warning, #temperature.warning { color: @warning; }
+      #cpu.critical, #memory.critical, #custom-disk.critical, #temperature.critical { color: @error; }
 
-      /* Workspaces: glyph dots (● occupied, ○ empty persistent); the focused
-         one is larger and in the accent. Sway's class is .focused. */
-      #workspaces { margin: 4px 0; }
-      #workspaces button {
-        padding: 1px 0;
-        min-height: 0;
-        background: none;
-        border: none;
-        box-shadow: none;
-        color: @fg-faint;
-        font-size: 11px;
-      }
-      #workspaces button.persistent { color: @hairline-strong; }
-      #workspaces button:hover { color: @fg-muted; background: none; }
-      #workspaces button.focused { color: @accent; font-size: 15px; }
-      #workspaces button.urgent { color: @error; }
+      /* Activity column: agents working (accent) / recently done (faint) /
+         waiting on me (warning); nix builds (accent) or daemon busy (muted);
+         privacy (mic, screen share, camera) in the error colour. */
+      #custom-agents.working { color: @accent; }
+      #custom-agents.done { color: @fg-faint; }
+      #custom-agents-input { color: @warning; }
+      #custom-nix-build.build { color: @accent; }
+      #custom-nix-build.busy { color: @fg-muted; }
+      #privacy { padding: 4px 0; }
+      #privacy-item { color: @error; padding: 2px 0; }
+      #custom-camera { color: @error; }
 
       #network.disconnected, #network.linked { color: @warning; }
 

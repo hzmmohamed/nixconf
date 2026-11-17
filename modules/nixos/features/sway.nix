@@ -7,7 +7,8 @@
   }: let
     mod = "Mod4";
     user = config.preferences.user.name;
-    terminal = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.terminal;
+    selfpkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
+    terminal = lib.getExe selfpkgs.terminal;
     # Sway refuses to start while the proprietary nvidia kernel module is
     # loaded unless passed --unsupported-gpu (e.g. PRIME offload hosts).
     swayExtraOptions = lib.optional (lib.elem "nvidia" config.services.xserver.videoDrivers) "--unsupported-gpu";
@@ -144,6 +145,9 @@
             "${mod}+Return" = "exec ${terminal}";
             "${mod}+Shift+q" = "kill";
             "${mod}+space" = "exec vicinae toggle";
+            # Window picker, heaviest (summed RSS) first: focus / close.
+            "${mod}+Tab" = "exec ${lib.getExe selfpkgs.window-switch}";
+            "${mod}+Shift+Tab" = "exec ${lib.getExe selfpkgs.window-kill}";
             "${mod}+f" = "fullscreen toggle";
             "${mod}+Shift+f" = "floating toggle";
             "${mod}+a" = "focus parent";

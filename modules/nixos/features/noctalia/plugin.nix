@@ -3,7 +3,7 @@
 #   command  — runs a command printing waybar-style JSON ({text,tooltip,class})
 #              every N seconds; hidden while text is empty. Reuses the exact
 #              scripts the waybar stack uses (modules/packages/desktop-status.nix).
-#   syswarn  — one system stat (cpu|ram|temp|disk) from Noctalia's own monitor,
+#   syswarn  — one system stat (cpu|ram|temp) from Noctalia's own monitor,
 #              shown only above a threshold.
 {self, ...}: {
   flake.nixosModules.noctalia = {
@@ -15,6 +15,13 @@
     user = config.preferences.user.name;
     selfpkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
     toml = pkgs.formats.toml {};
+
+    # Agent inbox (T3 Code): the configured client URL, else the local server.
+    t3code = lib.attrByPath ["preferences" "agents" "t3code"] {} config;
+    t3codeUrl =
+      if t3code.url or null != null
+      then t3code.url
+      else "http://127.0.0.1:${toString (t3code.port or 3773)}";
 
     setting = key: type: default: {
       inherit key type default;
@@ -92,6 +99,8 @@
         local cls = data.class or ""
         if cls == "error" or cls == "down" or cls == "critical" then
           barWidget.setGlyphColor("error")
+        elseif cls == "warning" or cls == "input" then
+          barWidget.setGlyphColor("tertiary")
         else
           barWidget.setGlyphColor("primary")
         end
@@ -201,15 +210,10 @@
       cp ${pkgs.writeText "en.json" translations} $d/translations/en.json
     '';
 
-    syswarn = stat: threshold: critical:
-      {
-        type = "nixconf/status:syswarn";
-        inherit stat threshold critical;
-      }
-      // lib.optionalAttrs (stat == "disk") {
-        path = "/";
-        interval = 300;
-      };
+    syswarn = stat: threshold: critical: {
+      type = "nixconf/status:syswarn";
+      inherit stat threshold critical;
+    };
   in {
     config = lib.mkIf (config.preferences.desktopShell == "noctalia") {
       home-manager.users.${user}.programs.noctalia.settings = {
@@ -246,7 +250,35 @@
           cpu-warn = syswarn "cpu" 75.0 90.0;
           ram-warn = syswarn "ram" 80.0 92.0;
           temp-warn = syswarn "temp" 80.0 90.0;
-          disk-warn = syswarn "disk" 85.0 95.0;
+          # Absolute free-space thresholds (same script as waybar).
+          disk-warn = {
+            type = "nixconf/status:command";
+            command = "${lib.getExe selfpkgs.disk-free-status} /";
+            interval = 300;
+            glyph = "database";
+          };
+          # Coding agents ($XDG_RUNTIME_DIR/agent-status) and nix daemon
+          # activity — the same scripts as the waybar activity column.
+          agents = {
+            type = "nixconf/status:command";
+            command = "${lib.getExe selfpkgs.agent-status} working";
+            interval = 10;
+            glyph = "loader-2";
+            click_command = "xdg-open ${t3codeUrl}";
+          };
+          agents-input = {
+            type = "nixconf/status:command";
+            command = "${lib.getExe selfpkgs.agent-status} input";
+            interval = 10;
+            glyph = "message-exclamation";
+            click_command = "xdg-open ${t3codeUrl}";
+          };
+          nix-build = {
+            type = "nixconf/status:command";
+            command = lib.getExe selfpkgs.nix-build-status;
+            interval = 5;
+            glyph = "snowflake";
+          };
         };
       };
     };
