@@ -80,7 +80,14 @@
       # Dots drawn in CSS (the label is the shape): 1–6 always, 7–9 only
       # while occupied; the active one is a taller inverted pill.
       "sway/workspaces" = {
-        format = "";
+        # Real glyphs (CSS shapes on empty labels stretch across a vertical bar).
+        format = "{icon}";
+        format-icons = {
+          focused = "●";
+          urgent = "●";
+          default = "●";
+          persistent = "○";
+        };
         persistent-workspaces = {"*" = [1 2 3 4 5 6];};
       };
 
@@ -88,14 +95,16 @@
       "sway/language" = {
         format = "{short}";
         format-en = "EN";
+        format-us = "EN";
         format-ar = "ع";
+        format-ara = "ع";
         hide-single-layout = true;
         tooltip-format = "{long}";
         on-click = "swaymsg input type:keyboard xkb_switch_layout next";
       };
 
       clock = {
-        format = "<b>{:%H}</b>\n{:%M}";
+        format = "<b>{0:%H}</b>\n{0:%M}";
         justify = "center";
         interval = 60;
         tooltip-format = "<big>{:%A, %d %B %Y}</big>\n\n<tt>{calendar}</tt>";
@@ -396,26 +405,22 @@
       #cpu.warning, #memory.warning, #disk.warning, #temperature.warning { color: @warning; }
       #cpu.critical, #memory.critical, #disk.critical, #temperature.critical { color: @error; }
 
-      /* Workspaces: the label is the dot; active = taller inverted pill. */
+      /* Workspaces: glyph dots (● occupied, ○ empty persistent); the focused
+         one is larger and in the accent. Sway's class is .focused. */
       #workspaces { margin: 4px 0; }
       #workspaces button {
-        padding: 3px 0;
+        padding: 1px 0;
+        min-height: 0;
         background: none;
+        border: none;
+        box-shadow: none;
+        color: @fg-faint;
+        font-size: 11px;
       }
-      #workspaces button label {
-        font-size: 1px;
-        min-width: 8px;
-        min-height: 8px;
-        border-radius: 4px;
-        background: @fg-faint;
-      }
-      #workspaces button.empty label { background: @hairline-strong; }
-      #workspaces button:hover label { background: @fg-muted; }
-      #workspaces button.active label {
-        min-height: 22px;
-        background: @inverse;
-      }
-      #workspaces button.urgent label { background: @error; }
+      #workspaces button.persistent { color: @hairline-strong; }
+      #workspaces button:hover { color: @fg-muted; background: none; }
+      #workspaces button.focused { color: @accent; font-size: 15px; }
+      #workspaces button.urgent { color: @error; }
 
       #network.disconnected, #network.linked { color: @warning; }
 

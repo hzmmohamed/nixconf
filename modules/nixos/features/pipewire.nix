@@ -1,6 +1,7 @@
 {...}: {
   flake.nixosModules.pipewire = {pkgs, ...}: {
-    environment.systemPackages = [pkgs.pavucontrol];
+    # pwvucontrol (libadwaita) follows dark mode; pavucontrol (plain GTK4) does not.
+    environment.systemPackages = [pkgs.pwvucontrol];
     preferences.keymap = {
       "SUPER + v".exec = ''${pkgs.alsa-utils}/bin/amixer sset Capture toggle'';
       "SUPER + d"."s".package = pkgs.pwvucontrol;

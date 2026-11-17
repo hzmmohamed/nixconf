@@ -89,6 +89,18 @@
       @define-color thumbnail_fg_color ${p.fg};
       @define-color shade_color ${p.hairlineSoft};
       @define-color scrollbar_outline_color ${p.hairlineSoft};
+
+      /* GTK3 legacy selection names (Thunar & co.): selected items must use
+         the dark on-accent text, not the normal foreground. */
+      @define-color theme_selected_bg_color ${p.accent};
+      @define-color theme_selected_fg_color ${p.onAccent};
+      @define-color selected_bg_color ${p.accent};
+      @define-color selected_fg_color ${p.onAccent};
+      .view:selected, .view text:selected, iconview:selected,
+      .view:selected:focus, treeview:selected, flowboxchild:selected {
+        background-color: ${p.accent};
+        color: ${p.onAccent};
+      }
     '';
 
     importCss = ''
