@@ -40,6 +40,20 @@
 
     claude-code.url = "github:sadjow/claude-code-nix";
 
+    # Fresh agent CLIs (t3code, herdr, opencode, ...). Deliberately NOT
+    # following our nixpkgs so we hit cache.numtide.com (see features/nix.nix).
+    llm-agents.url = "github:numtide/llm-agents.nix";
+
+    # Claude Code skills/plugins, pinned (exposed by features/agent-common.nix).
+    anthropic-skills = {
+      url = "github:anthropics/skills";
+      flake = false;
+    };
+    superpowers = {
+      url = "github:obra/superpowers";
+      flake = false;
+    };
+
     reticulum-flake = {
       url = "git+https://codeberg.org/adingbatponder/reticulum_nixos_flake.git";
       inputs.nixpkgs.follows = "nixpkgs";
