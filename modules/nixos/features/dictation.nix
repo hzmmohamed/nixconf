@@ -1,29 +1,47 @@
-# Push-to-talk dictation into any window (Sway), online or offline.
+# Push-to-talk dictation into any window (Sway), online or offline,
+# streamed segment by segment.
 #
-#   Mod4+d  hold: record while held, transcribe and type on release
+#   Mod4+d  hold: record while held, stop on release
 #           tap:  latch (toggle mode), tap again to stop
-#   Mod4+Ctrl+d  cancel the running recording
+#   Mod4+Ctrl+d  cancel: the text already typed stays, the segment in
+#                flight is discarded
 #
-# One client, `dictate` (dictation/dictate.sh), picks the engine per
-# dictation while you speak:
+# Segment streaming ("commit on pause", dictation/dictate-stream.py): one
+# recording runs continuously; Silero VAD cuts it at natural pauses
+# (`pauseMs`) or, in continuous speech, at the quietest point before
+# `maxSegmentSec`. Each segment is transcribed as soon as it closes, while
+# recording goes on, and typed with wtype in order (a space between
+# segments, none before punctuation). The engine, chosen once per session:
 #   1. the first reachable `servers` entry: whisper.cpp `whisper-server`
 #      (dictation-server feature; butternut's RTX 3050 runs Whisper
-#      large-v3-turbo, multilingual), over the cable or the tailnet;
+#      large-v3-turbo, multilingual), over the cable or the tailnet; kept
+#      warm for the session;
 #   2. otherwise this machine: Parakeet TDT 0.6B v2 (int8 ONNX, sherpa-onnx)
-#      on the CPU for English, Whisper small (whisper.cpp, Vulkan iGPU or
-#      CPU) for other languages.
+#      on the CPU for English, a session-only whisper-server with Whisper
+#      small (Vulkan iGPU or CPU) for other languages.
 # The language follows the active keyboard layout (`layoutLanguages`).
-# The text is typed with wtype (falls back to the clipboard).
+#
+# Crash safety: every committed segment is appended to
+# ~/.local/state/dictation/YYYY-MM-DD.md (time + session id); a session's
+# raw audio stays in $XDG_RUNTIME_DIR/dictate/sessions/ until every segment
+# is committed, so a crash loses at most the segment in flight and
+# `dictate recover` transcribes what is left.
+#
+# Feedback (dictation/dictate-overlay.py): a GTK4 layer-shell panel at the
+# top right, next to the bar, while a session runs: timer, input level,
+# language and backend, the last committed text and what is in flight; the
+# timer shows the 2 px ink rule at each full minute, and past
+# `overlay.longSessionMinutes` a note says the segments are saved. It never
+# takes keyboard focus. The waybar module shows the running mm:ss, refreshed
+# by signal once a second during a session only. Colours: `surface` paper,
+# `outlineVariant` hairline, `fg`/`fgMuted` text, `error` recording dot (as
+# in the bar), `accent` for the level and the minute rule on `surface` and
+# `surfaceContainer`: all pairs in the contrast contract
+# (extra/theme-palette.py CONTRACT); sizes from `self.design`.
 #
 # Battery: no model is resident while idle. The local engine is a
 # socket-activated user service: the press itself sends GET /ready (model
 # loads while you speak) and it exits after `localIdleSec`.
-#
-# Indicator: a waybar module in the activity column (recording = error
-# colour, transcribing = accent, from the theme palette) plus one
-# replaceable notification. Recording uses the default source, so
-# WirePlumber's headset autoswitch and the DeepFilter mic apply as usual.
-# Claude Code's own voice mode (SoX `rec`) is unaffected.
 #
 # T3 Code: its transcription runs transcribe.cpp (GGUF) inside the T3
 # server of the chosen environment, downloading into its state dir. With
@@ -33,7 +51,7 @@
 #
 # Models are fixed-output fetches pinned by hash: nothing is downloaded at
 # dictation time.
-{...}: {
+{self, ...}: {
   flake.nixosModules.dictation = {
     config,
     lib,
@@ -94,24 +112,141 @@
       flakeIgnore = ["E501"];
     } (builtins.readFile ./dictation/dictate-local.py);
 
-    whisperCli = cfg.localWhisperPackage;
+    # Silero VAD v6.2 (ONNX; the server's GGUF is the same model) for the
+    # client-side segmenter. 2.3 MB.
+    sileroVad = pkgs.fetchurl {
+      name = "silero-vad-v6.2.3.onnx";
+      url = "https://github.com/snakers4/silero-vad/raw/v6.2.3/src/silero_vad/data/silero_vad.onnx";
+      hash = "sha256-GhU6IvRQnikqlOZ9b5uF6N6yW0mIaCt+F0xlJ52HiOM=";
+    };
+
+    d = self.design;
+    px = n: "${toString n}px";
+    overlayCss = "${config.preferences.theme.stateDir}/current/dictation-overlay.css";
+
+    # The live panel: GTK4 + gtk4-layer-shell through PyGObject. The layer
+    # shell library must be loaded before libwayland-client (LD_PRELOAD).
+    # The Cairo renderer: a small static panel needs no Vulkan/GL init
+    # (faster start, nothing woken on the GPU).
+    overlayScript = pkgs.writers.writePython3 "dictate-overlay" {
+      libraries = ps: [ps.pygobject3 ps.pycairo];
+      flakeIgnore = ["E501"];
+    } (builtins.readFile ./dictation/dictate-overlay.py);
+    overlay = pkgs.stdenv.mkDerivation {
+      name = "dictate-overlay";
+      dontUnpack = true;
+      nativeBuildInputs = [pkgs.wrapGAppsHook4 pkgs.gobject-introspection];
+      buildInputs = [pkgs.gtk4 pkgs.gtk4-layer-shell];
+      installPhase = "install -Dm755 ${overlayScript} $out/bin/dictate-overlay";
+      preFixup = ''
+        gappsWrapperArgs+=(
+          --set LD_PRELOAD ${pkgs.gtk4-layer-shell}/lib/libgtk4-layer-shell.so
+          --set-default GSK_RENDERER cairo
+        )
+      '';
+      meta.mainProgram = "dictate-overlay";
+    };
+
+    # Palette-only stylesheet, rendered per mode into the theme state dir.
+    mkOverlayCss = p: ''
+      window.dictation {
+        background: ${p.surface};
+        color: ${p.fg};
+        border: ${px d.panel.border} solid ${p.outlineVariant};
+        border-radius: ${px d.panel.radius};
+        box-shadow: none;
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.body};
+      }
+      window.dictation .panel {
+        padding: ${px d.panel.padding};
+        border-spacing: ${px d.panel.gap};
+      }
+      window.dictation .head { border-spacing: ${px d.space.md}; }
+      window.dictation .dot { color: ${p.error}; font-size: ${px d.type.size.caption}; }
+      window.dictation .timer {
+        font-size: ${px d.type.size.title};
+        font-weight: ${toString d.type.weight.medium};
+        font-feature-settings: "tnum";
+        padding-bottom: ${px d.space.xs};
+        border-bottom: ${px d.border.focus} solid ${p.surface};
+        transition: border-color ${toString d.motion.base}ms ease-out;
+      }
+      window.dictation .timer.minute { border-bottom-color: ${p.accent}; }
+      window.dictation .dot.finishing, window.dictation .timer.finishing { color: ${p.fgMuted}; }
+      window.dictation .meta, window.dictation .status, window.dictation .note {
+        color: ${p.fgMuted};
+        font-size: ${px d.type.size.caption};
+      }
+      window.dictation .older { color: ${p.fgMuted}; }
+      window.dictation .latest { color: ${p.fg}; }
+      window.dictation .older, window.dictation .latest { line-height: ${toString d.type.lineHeight.body}; }
+      window.dictation levelbar trough {
+        min-height: ${px d.osd.barHeight};
+        padding: 0;
+        border: none;
+        border-radius: ${px d.radius.pill};
+        background: ${p.surfaceContainer};
+      }
+      window.dictation levelbar block {
+        min-height: ${px d.osd.barHeight};
+        border: none;
+        border-radius: ${px d.radius.pill};
+      }
+      window.dictation levelbar block.filled { background: ${p.accent}; }
+      window.dictation levelbar block.empty { background: ${p.surfaceContainer}; }
+    '';
+
+    streamConfig = pkgs.writeText "dictate.json" (builtins.toJSON {
+      inherit (cfg) servers threads output prompt;
+      default_lang = cfg.defaultLanguage;
+      local_lang = "en";
+      whisper_model = lib.optionalString cfg.localMultilingual "${whisperSmall}";
+      append_space = cfg.appendSpace;
+      max_sec = cfg.maxSeconds;
+      pause_ms = cfg.pauseMs;
+      max_segment_sec = cfg.maxSegmentSec;
+      workers = 2;
+      waybar_signal = waybarSignal;
+      journal_dir = "~/${cfg.journalDir}";
+      vad_model = "${sileroVad}";
+      overlay = {
+        inherit (cfg.overlay) enable;
+        css = overlayCss;
+        long_session_sec = cfg.overlay.longSessionMinutes * 60;
+      };
+      bin = {
+        pw-record = lib.getExe' pkgs.pipewire "pw-record";
+        wtype = lib.getExe pkgs.wtype;
+        wl-copy = lib.getExe' pkgs.wl-clipboard "wl-copy";
+        notify-send = lib.getExe' pkgs.libnotify "notify-send";
+        systemctl = lib.getExe' pkgs.systemd "systemctl";
+        whisper-server = lib.getExe' cfg.localWhisperPackage "whisper-server";
+        overlay = "${lib.getExe overlay} --width ${toString d.osd.width} --margin ${toString d.panel.margin}";
+      };
+    });
+
+    streamScript = pkgs.writers.writePython3 "dictate-stream" {
+      libraries = ps: [ps.numpy ps.onnxruntime];
+      flakeIgnore = ["E501"];
+    } (builtins.readFile ./dictation/dictate-stream.py);
+    stream = pkgs.runCommand "dictate-stream" {nativeBuildInputs = [pkgs.makeWrapper];} ''
+      makeWrapper ${streamScript} $out/bin/dictate-stream \
+        --set-default DICTATE_CONFIG ${streamConfig}
+    '';
 
     preamble = ''
       cfg_servers=${lib.escapeShellArg (lib.concatStringsSep " " cfg.servers)}
       cfg_local_socket="''${XDG_RUNTIME_DIR:?}/dictate/local.sock"
-      cfg_local_lang=en
-      cfg_whisper_model=${lib.escapeShellArg (lib.optionalString cfg.localMultilingual "${whisperSmall}")}
-      cfg_threads=${toString cfg.threads}
-      cfg_output="${cfg.output}"
-      cfg_append_space=${
-        if cfg.appendSpace
+      cfg_stream=${lib.getExe' stream "dictate-stream"}
+      cfg_overlay=${
+        if cfg.overlay.enable
         then "1"
         else "0"
       }
-      cfg_prompt=${lib.escapeShellArg cfg.prompt}
-      cfg_max_sec=${toString cfg.maxSeconds}
       cfg_tap_ms=${toString cfg.tapMs}
       cfg_waybar_signal=${toString waybarSignal}
+      cfg_caption_px=${toString d.type.size.caption}
 
       layout_lang() {
         case "$1" in
@@ -123,21 +258,15 @@
 
     dictate = pkgs.writeShellApplication {
       name = "dictate";
-      runtimeInputs =
-        [
-          pkgs.coreutils
-          pkgs.curl
-          pkgs.gnused
-          pkgs.jq
-          pkgs.libnotify
-          pkgs.pipewire # pw-record
-          pkgs.sway # swaymsg
-          pkgs.systemd
-          pkgs.util-linux # flock
-          pkgs.wl-clipboard
-          pkgs.wtype
-        ]
-        ++ lib.optional cfg.localMultilingual whisperCli;
+      runtimeInputs = [
+        pkgs.coreutils
+        pkgs.curl
+        pkgs.jq
+        pkgs.libnotify
+        pkgs.sway # swaymsg
+        pkgs.systemd
+        pkgs.util-linux # flock, setsid
+      ];
       text = preamble + builtins.readFile ./dictation/dictate.sh;
     };
 
@@ -151,7 +280,8 @@
         description = ''
           whisper.cpp servers (dictation-server feature), tried in order and
           probed in parallel at each key press; the first reachable one
-          transcribes. Empty or none reachable: the local engine.
+          transcribes the session's segments (the local engine takes over if
+          it fails mid-session). Empty or none reachable: the local engine.
         '';
       };
 
@@ -189,7 +319,11 @@
         type = lib.types.package;
         default = pkgs.whisper-cpp-vulkan;
         defaultText = lib.literalExpression "pkgs.whisper-cpp-vulkan";
-        description = "whisper.cpp for the local multilingual fallback (Vulkan uses the iGPU; it falls back to the CPU).";
+        description = ''
+          whisper.cpp for the local multilingual fallback: its whisper-server
+          runs for the session only (Vulkan uses the iGPU; it falls back to
+          the CPU).
+        '';
       };
 
       threads = lib.mkOption {
@@ -216,20 +350,61 @@
       appendSpace = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Type a space after each dictation, so consecutive ones don't run together.";
+        description = "Type a space after each dictation session, so consecutive ones don't run together.";
       };
 
       prompt = lib.mkOption {
         type = lib.types.str;
         default = "";
         example = "NixOS, Sway, Claude Code, T3 Code, flake, home-manager.";
-        description = "Whisper initial prompt (server path only): vocabulary and style hints.";
+        description = ''
+          Whisper initial prompt (Whisper backends only): vocabulary and
+          style hints. The session's last committed text is appended, so a
+          segment continues the previous one's casing and punctuation.
+        '';
       };
 
       maxSeconds = lib.mkOption {
         type = lib.types.ints.positive;
-        default = 300;
-        description = "Recording safety limit; it stops and transcribes at this point.";
+        default = 1800;
+        description = ''
+          Safety stop for a forgotten latch (segments are typed as you go,
+          so long sessions are fine; this is not a dictation limit).
+        '';
+      };
+
+      pauseMs = lib.mkOption {
+        type = lib.types.ints.between 250 2000;
+        default = 550;
+        description = ''
+          Silence that closes a segment (it is then transcribed and typed).
+          Shorter: text appears sooner but sentences split more often.
+        '';
+      };
+
+      maxSegmentSec = lib.mkOption {
+        type = lib.types.ints.between 5 30;
+        default = 25;
+        description = "Continuous speech is split at its quietest point before this length.";
+      };
+
+      journalDir = lib.mkOption {
+        type = lib.types.str;
+        default = ".local/state/dictation";
+        description = "Home-relative directory of the dictation journal (one Markdown file per day).";
+      };
+
+      overlay = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Show the live panel (timer, level, backend, running text) while dictating.";
+        };
+        longSessionMinutes = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 10;
+          description = "After this long the panel notes that every segment is already saved (not a limit).";
+        };
       };
 
       tapMs = lib.mkOption {
@@ -260,6 +435,22 @@
         readOnly = true;
         default = dictate;
         description = "The generated `dictate` client.";
+      };
+
+      streamPackage = lib.mkOption {
+        type = lib.types.package;
+        readOnly = true;
+        internal = true;
+        default = stream;
+        description = "The segment-streaming session engine (`dictate-stream`).";
+      };
+
+      overlayPackage = lib.mkOption {
+        type = lib.types.package;
+        readOnly = true;
+        internal = true;
+        default = overlay;
+        description = "The live panel (`dictate-overlay`).";
       };
     };
 
@@ -305,6 +496,10 @@
 
           home.file = lib.mkIf cfg.t3code.provideModels t3ModelFiles;
         };
+
+        # Read at each session start, so no reload hook is needed.
+        preferences.theme.files."dictation-overlay.css" = mkOverlayCss;
+        persistance.data.directories = [cfg.journalDir];
       }
 
       (lib.mkIf (config.preferences.desktopShell == "waybar") {
@@ -324,9 +519,9 @@
           };
           style = lib.mkAfter ''
             #custom-dictation {
-              padding: 6px 0;
-              margin: 2px 4px;
-              border-radius: 6px;
+              padding: ${px d.bar.itemPaddingY} 0;
+              margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+              border-radius: ${px d.bar.radius};
             }
             #custom-dictation.recording { color: @error; }
             #custom-dictation.transcribing { color: @accent; }

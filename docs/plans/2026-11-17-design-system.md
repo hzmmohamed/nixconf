@@ -361,6 +361,15 @@ disabled `fgFaint`, urgent `error`. Elevation without shadow: a panel is
 - **swayosd**: new opaque stylesheet (was 80 % alpha): panel chrome, Plex
   Sans label, 4 px ink level bar on `surfaceContainerHigh`; restart hook on
   mode switch.
+- **dictation overlay** (`dictation.nix`, `dictation/dictate-overlay.py`):
+  GTK4 layer-shell panel, top right next to the bar, `osd.width` wide,
+  `panel.*` chrome (opaque `surface`, hairline, radius 8, no shadow); timer
+  Plex Sans `title` medium with `tnum`; `error` recording dot (as the bar);
+  input level = 4 px `accent` line on a `surfaceContainer` trough; the 2 px
+  ink rule under the timer for 2 s at each full minute; text `fg` (latest
+  segment) / `fgMuted` (older, status, notes, caption). Every pair is
+  already in the contract; palette file `dictation-overlay.css`, read at
+  each session start.
 - **swaylock** (`swayidle.nix`): idle ring `outline`, caps `warning`,
   verifying text `accentText`, layout box border `outline`, 4 px ring, type
   tokens.
