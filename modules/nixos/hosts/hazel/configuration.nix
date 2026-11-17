@@ -40,6 +40,7 @@
       self.nixosModules.obs
       self.nixosModules.office
       self.nixosModules.rbw
+      self.nixosModules.vault
       self.nixosModules.activitywatch
       self.nixosModules.kdeconnect
       self.nixosModules.shared-zotero

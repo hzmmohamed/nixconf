@@ -41,6 +41,7 @@
 
       self.nixosModules.email
       self.nixosModules.rbw
+      self.nixosModules.vault
       self.nixosModules.office
       self.nixosModules.docker
       self.nixosModules.media

@@ -25,6 +25,7 @@
       self.nixosModules.openssh
       self.nixosModules.tailscale
       self.nixosModules.syncthing
+      self.nixosModules.vault
       self.nixosModules.nix-serve
       self.nixosModules.doas
 
@@ -92,6 +93,10 @@
     programs.nix-ld.enable = true;
 
     time.timeZone = "Africa/Cairo";
+
+    # Always-on copy of the vault (Syncthing folder only, no KeePassXC here):
+    # a year of staggered versions is the vault's history/backup.
+    preferences.vault.keepVersions = true;
 
     system.stateVersion = "24.11";
   };
