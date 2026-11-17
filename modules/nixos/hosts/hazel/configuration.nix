@@ -49,6 +49,7 @@
       self.nixosModules.adb
       self.nixosModules.design
       self.nixosModules.cad
+      self.nixosModules.dictation
 
       self.nixosModules.vscode
       self.nixosModules.docker
@@ -107,6 +108,10 @@
     preferences.office.element.enable = true;
     preferences.media.extraApps.enable = true;
     preferences.design.extraApps.enable = true;
+
+    # Dictation (Mod4+d): butternut's GPU server when reachable (cable
+    # first, then the tailnet), else Parakeet/Whisper on this CPU/iGPU.
+    preferences.dictation.servers = ["http://butternut-cable:8178" "http://butternut:8178"];
 
     networking = {
       hostName = "hazel";

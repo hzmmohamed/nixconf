@@ -101,6 +101,11 @@
           branchNamingMode = setting "semantic" false;
           defaultAutoPull = setting true false;
           "storageCleanup.logsAfterDays" = setting 30 false;
+          # Voice: Parakeet Unified English 0.6B (the dictation feature puts
+          # T3's exact catalog file in ~/.cache/huggingface, so "Download"
+          # links it offline). Hosts can shorten the unload timeout.
+          speechModelId = setting "handy-computer/parakeet-unified-en-0.6b-gguf" false;
+          speechModelUnloadTimeout = setting "min_15" false;
           # Labs: server-to-server links (`t3-link`). Must be on at both ends.
           linkedEnvironmentsEnabled = setting true false;
         }
@@ -599,6 +604,9 @@
                   # node/npm + ffmpeg (libx264) for the device hub.
                   "PATH=${lib.makeBinPath (lib.optionals android.enable [pkgs.nodejs pkgs.ffmpeg-full])}:${userBin}:/run/current-system/sw/bin:/run/wrappers/bin"
                   "T3CODE_TELEMETRY_ENABLED=false"
+                  # transcribe.cpp's libggml-vulkan dlopens libvulkan.so.1;
+                  # without it voice transcription silently runs on the CPU.
+                  "LD_LIBRARY_PATH=${pkgs.vulkan-loader}/lib"
                 ]
                 ++ lib.optionals android.enable (
                   [

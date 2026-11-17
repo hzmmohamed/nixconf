@@ -40,9 +40,16 @@
         server.enable = true;
         # Battery: no background git fetches, provider health every 15 min,
         # background work paused on battery/low power. Unlocked default.
-        policyExtraSettings."backgroundActivity.profile" = {
-          value = "battery-saver";
-          locked = false;
+        policyExtraSettings = {
+          "backgroundActivity.profile" = {
+            value = "battery-saver";
+            locked = false;
+          };
+          # Free the speech model's RAM sooner on battery.
+          speechModelUnloadTimeout = {
+            value = "min_5";
+            locked = false;
+          };
         };
       };
     };
