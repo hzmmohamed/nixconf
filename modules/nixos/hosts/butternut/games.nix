@@ -10,5 +10,15 @@
         gameId = "umu-409710";
       };
     };
+
+    # PS2: drop your own BIOS dump in ~/Games/ps2/bios/ and your disc dump at
+    # ~/Games/ps2/gta-sa.iso (see ~/Games/ps2/README.txt after a switch).
+    preferences.gaming.ps2 = {
+      enable = true;
+      games.gta-sa = {
+        name = "GTA San Andreas";
+        iso = "gta-sa.iso";
+      };
+    };
   };
 }
