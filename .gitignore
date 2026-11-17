@@ -10,3 +10,4 @@ result-*
 # Local reference clones (not part of the config; submodules are tracked separately)
 .repos/survey/
 .repos/CQL/
+__pycache__/
