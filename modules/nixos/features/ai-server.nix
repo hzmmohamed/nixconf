@@ -5,8 +5,28 @@
     config,
     ...
   }: let
+    cfg = config.preferences.ai-server;
+    tailscaleIf = config.services.tailscale.interfaceName;
+
     llama-cpp-cuda = pkgs.llama-cpp.override {cudaSupport = true;};
     llama-server = lib.getExe' llama-cpp-cuda "llama-server";
+
+    # One flag per list element, joined with spaces: rules out the
+    # `--no-mmproj--ctx-size` class of bug. llama-swap substitutes ${PORT};
+    # llama-server itself binds 127.0.0.1 (its default host).
+    mkCmd = args: lib.concatStringsSep " " ([llama-server] ++ args ++ ["--port \${PORT}"]);
+
+    # Shared by the chat/coding models: tool calling needs the Jinja chat
+    # template (default on llama.cpp 9190; explicit so a version bump can't
+    # silently drop it). q8_0 KV halves the cache vs f16 at negligible quality cost.
+    chatFlags = [
+      "--jinja"
+      "--flash-attn on"
+      "--cache-type-k q8_0"
+      "--cache-type-v q8_0"
+      "--no-webui"
+      "--spec-type ngram-simple"
+    ];
 
     kokoroPython = pkgs.python313.withPackages (ps: [
       ps.kokoro
@@ -67,259 +87,322 @@
       '';
     };
   in {
-    # Use prebuilt mongodb-ce instead of building mongodb from source
-    nixpkgs.overlays = [
-      (_final: prev: {
-        mongodb = prev.mongodb-ce;
-      })
-    ];
+    options.preferences.ai-server.qdrantApiKey.enable = lib.mkEnableOption ''
+      a Qdrant API key from sops (secrets/<hostname>/qdrant.yaml, key
+      `qdrant_api_key`; any long random string, e.g. `openssl rand -hex 32`).
+      Clients then send it in the `api-key` header; the dashboard prompts for it'';
 
-    # --- llama-swap ---
-    services.llama-swap = {
-      enable = true;
-      listenAddress = "0.0.0.0";
-      port = 9292;
-      openFirewall = true;
-      settings = {
-        healthCheckTimeout = 600;
-        ttl = 3600;
+    config = {
+      # Use prebuilt mongodb-ce instead of building mongodb from source
+      nixpkgs.overlays = [
+        (_final: prev: {
+          mongodb = prev.mongodb-ce;
+        })
+      ];
 
-        models = {
-          "qwen3.5:9b-coding" = {
-            cmd =
-              "${llama-server} "
-              + "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL "
-              + "--alias qwen3.5:9b-coding "
-              + # <--- This makes it official in the API
-              "--port \${PORT} "
-              + "--no-mmproj"
-              + "--ctx-size 131072 "
-              + # Fixes the 16k limit error
-              "--batch-size 4096 "
-              + # Faster prefill
-              "--ubatch-size 1024 "
-              + # Better VRAM stability
-              "--threads 14 "
-              + # Utilizes your CPU (from 1 -> 14)
-              "--gpu-layers 99 "
-              + "--reasoning "
-              + # Modern replacement for thinking kwarg
-              "--flash-attn on "
-              + # Flash Attention (Keep this!)
-              "-ctk q8_0 -ctv q8_0 "
-              + # Keep these for KV cache efficiency
-              "--no-webui "
-              + "--spec-type ngram-simple"; # Optional: Keep for speed, remove if code logic feels "jittery"
+      # --- llama-swap ---
+      # OpenCode (agent-common.nix `llamaSwapUrl`) and ai-client reach this at
+      # http://peacelily:9292/v1 over Tailscale (MagicDNS). It binds 0.0.0.0 so
+      # the tailnet address works without knowing the Tailscale IP at eval time;
+      # the firewall only admits 9292 on tailscale0 (see "Firewall" below).
+      #
+      # VRAM budget: RTX 5060 Ti 16 GB (docs/plans/2026-03-28-peacelily-ai-server-design.md).
+      # The embedding model stays resident (~0.5 GB); one chat model is swapped in.
+      # Models OpenCode uses get --parallel 1 so one session owns the whole window
+      # (concurrent requests queue instead of splitting the KV cache).
+      services.llama-swap = {
+        enable = true;
+        listenAddress = "0.0.0.0";
+        port = 9292;
+        openFirewall = false;
+        settings = {
+          healthCheckTimeout = 600;
+          ttl = 3600;
+
+          models = {
+            # OpenCode `qwen-coder`. 9B Q4 (~6.5 GB) + 64k q8_0 KV fits in 16 GB.
+            "qwen3.5:9b-coding".cmd = mkCmd ([
+                "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
+                "--alias qwen3.5:9b-coding"
+                "--no-mmproj"
+                "--ctx-size 65536"
+                "--parallel 1"
+                "--batch-size 4096"
+                "--ubatch-size 1024"
+                "--threads 14"
+                "--gpu-layers 99"
+                "--reasoning on"
+              ]
+              ++ chatFlags);
+            "qwen3.5:9b".cmd = mkCmd ([
+                "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
+                "--ctx-size 32768"
+                "--batch-size 2048"
+                "--ubatch-size 2048"
+                "--threads 1"
+                "--gpu-layers 99"
+                "--chat-template-kwargs '{\"enable_thinking\":true}'"
+              ]
+              ++ chatFlags);
+            "qwen3.5:9b-nothinker".cmd = mkCmd ([
+                "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
+                "--ctx-size 32768"
+                "--batch-size 2048"
+                "--ubatch-size 2048"
+                "--threads 1"
+                "--gpu-layers 99"
+                "--chat-template-kwargs '{\"enable_thinking\":false}'"
+              ]
+              ++ chatFlags);
+            # OpenCode `qwen-moe`. ~22 GB of weights can't fit in 16 GB VRAM, so
+            # no --gpu-layers: llama.cpp's --fit (default on) places layers and
+            # keeps MoE expert weights on the CPU around the fixed 64k context.
+            "qwen3.5:35b-a3b".cmd = mkCmd ([
+                "-hf unsloth/Qwen3.5-35B-A3B-GGUF:UD-Q4_K_XL"
+                "--ctx-size 65536"
+                "--parallel 1"
+                "--batch-size 2048"
+                "--ubatch-size 512"
+                "--threads 12"
+              ]
+              ++ chatFlags);
+            # OpenCode `qwen-small` (titles, summaries) and LibreChat titles.
+            "qwen3.5:4b".cmd = mkCmd ([
+                "-hf unsloth/Qwen3.5-4B-GGUF:Q8_0"
+                "--ctx-size 32768"
+                "--batch-size 2048"
+                "--ubatch-size 2048"
+                "--threads 1"
+                "--gpu-layers 99"
+              ]
+              ++ chatFlags);
+            "embeddinggemma:300m".cmd = mkCmd [
+              "-hf ggml-org/embeddinggemma-300M-GGUF"
+              "--embeddings"
+              "--batch-size 2048"
+              "--ubatch-size 2048"
+              "--gpu-layers 99"
+            ];
           };
-          "qwen3.5:9b" = {
-            cmd = "${llama-server} -hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL --port \${PORT} --ctx-size 16384 --batch-size 2048 --ubatch-size 2048 --threads 1 --gpu-layers 99 --jinja --chat-template-kwargs '{\"enable_thinking\":true}' -fa -ctk q8_0 -ctv q8_0 --no-webui --spec-type ngram-simple";
-          };
-          "qwen3.5:9b-nothinker" = {
-            cmd = "${llama-server} -hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL --port \${PORT} --ctx-size 16384 --batch-size 2048 --ubatch-size 2048 --threads 1 --gpu-layers 99 --jinja --chat-template-kwargs '{\"enable_thinking\":false}' -fa -ctk q8_0 -ctv q8_0 --no-webui --spec-type ngram-simple";
-          };
-          "qwen3.5:35b-a3b" = {
-            cmd = "${llama-server} -hf unsloth/Qwen3.5-35B-A3B-GGUF:UD-Q4_K_XL --port \${PORT} --ctx-size 16384 --batch-size 2048 --ubatch-size 512 --threads 8 --gpu-layers 99 --jinja -fa -ctk q8_0 -ctv q8_0 --no-webui --spec-type ngram-simple";
-          };
-          "qwen3.5:4b" = {
-            cmd = "${llama-server} -hf unsloth/Qwen3.5-4B-GGUF:Q8_0 --port \${PORT} --ctx-size 16384 --batch-size 2048 --ubatch-size 2048 --threads 1 --gpu-layers 99 --jinja -fa -ctk q8_0 -ctv q8_0 --no-webui --spec-type ngram-simple";
-          };
-          "embeddinggemma:300m" = {
-            cmd = "${llama-server} -hf ggml-org/embeddinggemma-300M-GGUF --port \${PORT} --embeddings --batch-size 2048 --ubatch-size 2048 --gpu-layers 99";
+
+          groups = {
+            embedding = {
+              persistent = true;
+              swap = false;
+              exclusive = false;
+              members = ["embeddinggemma:300m"];
+            };
           };
         };
+      };
 
-        groups = {
-          embedding = {
-            persistent = true;
-            swap = false;
-            exclusive = false;
-            members = ["embeddinggemma:300m"];
-          };
+      # Give llama-server child processes a writable cache for HF model downloads
+      systemd.services.llama-swap = {
+        environment = {
+          XDG_CACHE_HOME = "/var/cache/llama.cpp";
         };
+        serviceConfig.CacheDirectory = "llama.cpp";
       };
-    };
 
-    # Give llama-server child processes a writable cache for HF model downloads
-    systemd.services.llama-swap = {
-      environment = {
-        XDG_CACHE_HOME = "/var/cache/llama.cpp";
+      # Wyoming servers bind 0.0.0.0 for Home Assistant / satellites on the
+      # tailnet; the firewall admits their ports on tailscale0 only.
+
+      # --- Wyoming Faster Whisper (STT) ---
+      services.wyoming.faster-whisper.servers.english = {
+        enable = true;
+        model = "large-v3";
+        language = "en";
+        device = "cuda";
+        uri = "tcp://0.0.0.0:10300";
       };
-      serviceConfig.CacheDirectory = "llama.cpp";
-    };
 
-    # --- Wyoming Faster Whisper (STT) ---
-    services.wyoming.faster-whisper.servers.english = {
-      enable = true;
-      model = "large-v3";
-      language = "en";
-      device = "cuda";
-      uri = "tcp://0.0.0.0:10300";
-    };
-
-    systemd.services.wyoming-faster-whisper-english.serviceConfig = {
-      Restart = "on-failure";
-      RestartSec = 10;
-      MemoryMax = "16G";
-      MemoryHigh = "14G";
-    };
-
-    # --- Kokoro TTS (OpenAI-compatible /v1/audio/speech) ---
-    systemd.services.kokoro-tts = {
-      description = "Kokoro TTS server";
-      after = ["network.target"];
-      wantedBy = ["multi-user.target"];
-      environment = {
-        # HF model cache
-        XDG_CACHE_HOME = "/var/cache/kokoro-tts";
-        # Use CUDA if available
-        PYTORCH_CUDA_ALLOC_CONF = "max_split_size_mb:512";
-      };
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${kokoroPython}/bin/uvicorn --app-dir ${builtins.dirOf kokoroServer} kokoro_server:app --host 127.0.0.1 --port 8880";
+      systemd.services.wyoming-faster-whisper-english.serviceConfig = {
         Restart = "on-failure";
         RestartSec = 10;
-        CacheDirectory = "kokoro-tts";
-        # CUDA needs access to GPU devices
-        PrivateDevices = false;
+        MemoryMax = "16G";
+        MemoryHigh = "14G";
       };
-    };
 
-    # --- Wyoming Piper (TTS) — kept for Home Assistant / Wyoming satellites ---
-    services.wyoming.piper.servers.english = {
-      enable = true;
-      voice = "en-us-ryan-high";
-      uri = "tcp://0.0.0.0:10200";
-      useCUDA = true;
-    };
-
-    # --- Wyoming OpenWakeWord ---
-    services.wyoming.openwakeword = {
-      enable = true;
-      uri = "tcp://0.0.0.0:10400";
-    };
-
-    # --- Qdrant Vector Database ---
-    services.qdrant = {
-      enable = true;
-      settings = {
-        storage = {
-          storage_path = "/var/lib/qdrant/storage";
-          snapshots_path = "/var/lib/qdrant/snapshots";
+      # --- Kokoro TTS (OpenAI-compatible /v1/audio/speech) ---
+      systemd.services.kokoro-tts = {
+        description = "Kokoro TTS server";
+        after = ["network.target"];
+        wantedBy = ["multi-user.target"];
+        environment = {
+          # HF model cache
+          XDG_CACHE_HOME = "/var/cache/kokoro-tts";
+          # Use CUDA if available
+          PYTORCH_CUDA_ALLOC_CONF = "max_split_size_mb:512";
         };
-        service = {
-          host = "0.0.0.0";
-          http_port = 6333;
+        serviceConfig = {
+          Type = "simple";
+          ExecStart = "${kokoroPython}/bin/uvicorn --app-dir ${builtins.dirOf kokoroServer} kokoro_server:app --host 127.0.0.1 --port 8880";
+          Restart = "on-failure";
+          RestartSec = 10;
+          CacheDirectory = "kokoro-tts";
+          # CUDA needs access to GPU devices
+          PrivateDevices = false;
         };
-        telemetry_disabled = true;
       };
-    };
 
-    # # --- SearXNG ---
-    # services.searx = {
-    #   enable = true;
-    #   environmentFile = config.sops.secrets."searx_secret_key".path;
-    #   settings = {
-    #     server = {
-    #       bind_address = "127.0.0.1";
-    #       port = 8080;
-    #       secret_key = "@SEARX_SECRET_KEY@";
-    #     };
-    #     search.formats = ["json"];
-    #   };
-    # };
-
-    # sops.secrets."searx_secret_key" = {
-    #   sopsFile = ../../../secrets/shared/ai-search.yaml;
-    #   owner = "searx";
-    # };
-
-    # --- LibreChat secrets ---
-    sops.secrets."librechat_creds_key" = {
-      sopsFile = ../../../secrets/shared/librechat.yaml;
-    };
-    sops.secrets."librechat_creds_iv" = {
-      sopsFile = ../../../secrets/shared/librechat.yaml;
-    };
-    sops.secrets."librechat_jwt_secret" = {
-      sopsFile = ../../../secrets/shared/librechat.yaml;
-    };
-    sops.secrets."librechat_jwt_refresh_secret" = {
-      sopsFile = ../../../secrets/shared/librechat.yaml;
-    };
-
-    # --- LibreChat ---
-    services.librechat = {
-      enable = true;
-      openFirewall = false; # handled in firewall below (upstream module has a bug with cfg.port)
-      enableLocalDB = true;
-      credentials = {
-        CREDS_KEY = config.sops.secrets."librechat_creds_key".path;
-        CREDS_IV = config.sops.secrets."librechat_creds_iv".path;
-        JWT_SECRET = config.sops.secrets."librechat_jwt_secret".path;
-        JWT_REFRESH_SECRET = config.sops.secrets."librechat_jwt_refresh_secret".path;
+      # --- Wyoming Piper (TTS) — kept for Home Assistant / Wyoming satellites ---
+      services.wyoming.piper.servers.english = {
+        enable = true;
+        voice = "en-us-ryan-high";
+        uri = "tcp://0.0.0.0:10200";
+        useCUDA = true;
       };
-      env = {
-        HOST = "0.0.0.0";
-        ALLOW_REGISTRATION = true;
-        ALLOW_SOCIAL_LOGIN = false;
-        SEARCH = "true";
-        SEARXNG_URL = "http://127.0.0.1:8080";
+
+      # --- Wyoming OpenWakeWord ---
+      services.wyoming.openwakeword = {
+        enable = true;
+        uri = "tcp://0.0.0.0:10400";
       };
-      settings = {
-        version = "1.2.1";
-        cache = true;
-        speech = {
-          tts = {
-            openai = {
-              url = "http://127.0.0.1:8880/v1/audio/speech";
-              apiKey = "EMPTY";
-              model = "kokoro";
-              voices = ["af_heart" "af_bella" "af_nicole" "af_sarah" "am_adam" "am_michael" "bf_emma" "bm_george"];
-            };
+
+      # --- Qdrant Vector Database ---
+      # 0.0.0.0 for the dashboard bookmark (ai-client.nix); the firewall admits
+      # 6333 on tailscale0 only. The API key comes from the environment
+      # (QDRANT__SERVICE__API_KEY) so it never lands in the world-readable
+      # store config.
+      services.qdrant = {
+        enable = true;
+        settings = {
+          storage = {
+            storage_path = "/var/lib/qdrant/storage";
+            snapshots_path = "/var/lib/qdrant/snapshots";
           };
-          stt = {
-            openai = {
-              url = "http://localhost:10300/v1/audio/transcriptions";
-              model = "whisper";
-            };
+          service = {
+            host = "0.0.0.0";
+            http_port = 6333;
           };
+          telemetry_disabled = true;
         };
-        endpoints = {
-          custom = [
-            {
-              name = "peacelily";
-              apiKey = "sk-no-key-required";
-              baseURL = "http://localhost:9292/v1";
-              models = {
-                default = [
-                  "qwen3.5:9b"
-                  "qwen3.5:9b-nothinker"
-                  "qwen3.5:35b-a3b"
-                  "qwen3.5:4b"
-                ];
+      };
+
+      sops.secrets."qdrant_api_key" = lib.mkIf cfg.qdrantApiKey.enable {
+        sopsFile = ../../.. + "/secrets/${config.networking.hostName}/qdrant.yaml";
+      };
+      sops.templates."qdrant.env" = lib.mkIf cfg.qdrantApiKey.enable {
+        content = ''
+          QDRANT__SERVICE__API_KEY=${config.sops.placeholder."qdrant_api_key"}
+        '';
+      };
+      # Read by systemd (as root) before DynamicUser drops privileges.
+      systemd.services.qdrant.serviceConfig.EnvironmentFile =
+        lib.mkIf cfg.qdrantApiKey.enable config.sops.templates."qdrant.env".path;
+
+      # # --- SearXNG ---
+      # services.searx = {
+      #   enable = true;
+      #   environmentFile = config.sops.secrets."searx_secret_key".path;
+      #   settings = {
+      #     server = {
+      #       bind_address = "127.0.0.1";
+      #       port = 8080;
+      #       secret_key = "@SEARX_SECRET_KEY@";
+      #     };
+      #     search.formats = ["json"];
+      #   };
+      # };
+
+      # sops.secrets."searx_secret_key" = {
+      #   sopsFile = ../../../secrets/shared/ai-search.yaml;
+      #   owner = "searx";
+      # };
+
+      # --- LibreChat secrets ---
+      sops.secrets."librechat_creds_key" = {
+        sopsFile = ../../../secrets/shared/librechat.yaml;
+      };
+      sops.secrets."librechat_creds_iv" = {
+        sopsFile = ../../../secrets/shared/librechat.yaml;
+      };
+      sops.secrets."librechat_jwt_secret" = {
+        sopsFile = ../../../secrets/shared/librechat.yaml;
+      };
+      sops.secrets."librechat_jwt_refresh_secret" = {
+        sopsFile = ../../../secrets/shared/librechat.yaml;
+      };
+
+      # --- LibreChat ---
+      services.librechat = {
+        enable = true;
+        openFirewall = false; # handled in firewall below (upstream module has a bug with cfg.port)
+        enableLocalDB = true;
+        credentials = {
+          CREDS_KEY = config.sops.secrets."librechat_creds_key".path;
+          CREDS_IV = config.sops.secrets."librechat_creds_iv".path;
+          JWT_SECRET = config.sops.secrets."librechat_jwt_secret".path;
+          JWT_REFRESH_SECRET = config.sops.secrets."librechat_jwt_refresh_secret".path;
+        };
+        env = {
+          HOST = "0.0.0.0"; # firewall: tailscale0 only
+          # Closed. To create the first account, deploy once with this set to
+          # true, register, then set it back to false and redeploy.
+          ALLOW_REGISTRATION = false;
+          ALLOW_SOCIAL_LOGIN = false;
+          SEARCH = "true";
+          SEARXNG_URL = "http://127.0.0.1:8080";
+        };
+        settings = {
+          version = "1.2.1";
+          cache = true;
+          speech = {
+            tts = {
+              openai = {
+                url = "http://127.0.0.1:8880/v1/audio/speech";
+                apiKey = "EMPTY";
+                model = "kokoro";
+                voices = ["af_heart" "af_bella" "af_nicole" "af_sarah" "am_adam" "am_michael" "bf_emma" "bm_george"];
               };
-              titleConvo = true;
-              titleModel = "qwen3.5:4b";
-              modelDisplayLabel = "Peacelily";
-            }
-          ];
+            };
+            stt = {
+              openai = {
+                url = "http://localhost:10300/v1/audio/transcriptions";
+                model = "whisper";
+              };
+            };
+          };
+          endpoints = {
+            custom = [
+              {
+                name = "peacelily";
+                apiKey = "sk-no-key-required";
+                baseURL = "http://localhost:9292/v1";
+                models = {
+                  default = [
+                    "qwen3.5:9b"
+                    "qwen3.5:9b-nothinker"
+                    "qwen3.5:35b-a3b"
+                    "qwen3.5:4b"
+                  ];
+                };
+                titleConvo = true;
+                titleModel = "qwen3.5:4b";
+                modelDisplayLabel = "Peacelily";
+              }
+            ];
+          };
         };
       };
+
+      # --- Firewall ---
+      # Nothing on the global allow list: every service is tailnet-only.
+      # tailscale0 is also in trustedInterfaces (tailscale.nix); this explicit
+      # list documents what peacelily serves and survives dropping that.
+      networking.firewall.interfaces.${tailscaleIf}.allowedTCPPorts = [
+        9292 # llama-swap (OpenCode: http://peacelily:9292/v1)
+        3080 # librechat
+        6333 # qdrant (HTTP + dashboard)
+        10200 # piper TTS
+        10300 # whisper STT
+        10400 # openwakeword
+      ];
+
+      # --- Packages ---
+      environment.systemPackages = [
+        llama-cpp-cuda
+      ];
     };
-
-    # --- Firewall ---
-    networking.firewall.allowedTCPPorts = [
-      3080 # librechat
-      10200 # piper TTS
-      10300 # whisper STT
-      10400 # openwakeword
-      6333 # qdrant
-    ];
-
-    # --- Packages ---
-    environment.systemPackages = [
-      llama-cpp-cuda
-    ];
   };
 }
