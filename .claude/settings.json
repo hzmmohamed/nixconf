@@ -14,16 +14,40 @@
       "Bash(statix:*)",
       "Bash(deadnix:*)",
       "Bash(ls:*)",
-      "Bash(find:*)",
       "Bash(cat:*)",
       "Bash(mkdir:*)",
-      "mcp__nixos__nix"
+      "mcp__nixos__nix",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/ggml-org/llama.cpp/master/docs/function-calling.md\")",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Read(//nix/store/3az5pgq8ri8p2qbd0bkwrm3bkryqbsls-python3.13-rns-1.1.3/bin/**)",
+      "Bash(journalctl --user -u whisper-live-server --no-pager -n 20)",
+      "Bash(nix-prefetch-fetchFromGitHub --owner yugaaank --repo ffflow --rev main)",
+      "Bash(nix-shell -p nix-prefetch-github --run \"nix-prefetch-github yugaaank ffflow\")"
     ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push:*)",
       "Bash(git reset --hard:*)",
-      "Bash(sops:*)"
+      "Bash(sops:*)",
+      "Bash(nixos-rebuild:*)",
+      "Bash(sudo nixos-rebuild:*)",
+      "Bash(nixos-anywhere:*)",
+      "Bash(disko:*)",
+      "Bash(sudo disko:*)",
+      "Bash(bash scripts/install-*)",
+      "Bash(./scripts/install-*)",
+      "Bash(scripts/install-*)",
+      "Bash(dd:*)",
+      "Bash(sudo dd:*)",
+      "Bash(mkfs:*)",
+      "Bash(sudo mkfs:*)",
+      "Bash(wipefs:*)",
+      "Bash(sudo wipefs:*)",
+      "Bash(docker system prune:*)",
+      "Bash(docker volume prune:*)",
+      "Bash(docker builder prune:*)"
     ]
   }
 }
