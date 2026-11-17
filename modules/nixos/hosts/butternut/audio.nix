@@ -31,6 +31,14 @@
               matches = [{"node.name" = "~bluez_output.*";}];
               actions.update-props."priority.session" = 2500;
             }
+            {
+              # Keep the default microphone off Bluetooth: a BT mic only exists
+              # in HSP/HFP, so anything recording the default source (e.g. the
+              # always-on DeepFilter chain) would pin headsets to call quality.
+              # Pick the headset mic manually for calls.
+              matches = [{"node.name" = "~bluez_input.*";}];
+              actions.update-props."priority.session" = 100;
+            }
           ];
         };
 
