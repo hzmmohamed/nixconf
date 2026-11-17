@@ -112,6 +112,14 @@
               Constraint { "media.class", "=", "Audio/Sink" },
               Constraint { "node.name", "#", "alsa_output.usb-*" },
             },
+            -- The headset mic (A2DP exposes it as a virtual source; recording
+            -- from it triggers the HSP/HFP autoswitch). The built-in C-Media
+            -- input is only the empty headphone jack, so never prefer it.
+            EventInterest {
+              Constraint { "event.type", "=", "node-added" },
+              Constraint { "media.class", "=", "Audio/Source" },
+              Constraint { "node.name", "#", "bluez_input.*" },
+            },
           },
           execute = function (event)
             local name = event:get_properties () ["node.name"]
@@ -123,8 +131,11 @@
             if name:find ("alsa_output.usb-ASUSTeK_COMPUTER_INC._C-Media", 1, true) then
               return
             end
-            log:info ("headset sink added, making it default: " .. name)
-            metadata:set (0, "default.configured.audio.sink", "Spa:String:JSON",
+            local isSource = name:find ("bluez_input", 1, true) ~= nil
+            local key = isSource and "default.configured.audio.source"
+                or "default.configured.audio.sink"
+            log:info ("headset node added, making it default: " .. name)
+            metadata:set (0, key, "Spa:String:JSON",
                 Json.Object { ["name"] = name }:to_string ())
           end
         }:register ()
