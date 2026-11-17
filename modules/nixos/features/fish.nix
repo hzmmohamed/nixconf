@@ -41,7 +41,9 @@
           # Auto-start zellij for interactive terminals, but not when:
           # - already inside zellij
           # - running inside a non-interactive context (e.g. IDE terminal, scripts)
-          if status is-interactive; and not set -q ZELLIJ; and not set -q INSIDE_EMACS; and not set -q VSCODE_PID
+          # - stdin/stdout aren't a terminal: tools like T3 Code run `fish -ilc`
+          #   through pipes to read PATH, and `exec zellij` hijacked that
+          if status is-interactive; and isatty stdin; and isatty stdout; and not set -q ZELLIJ; and not set -q INSIDE_EMACS; and not set -q VSCODE_PID
               exec zellij
           end
         '';
