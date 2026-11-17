@@ -70,7 +70,13 @@
                     }
                     // lib.optionalAttrs (denoise.source != null) {
                       "target.object" = denoise.source;
-                      "node.dont-reconnect" = true;
+                      # Wait for the mic instead of falling back to another
+                      # source. NOT node.dont-reconnect: the filter chain
+                      # loads with PipeWire, before WirePlumber creates the
+                      # ALSA node, and dont-reconnect then errors the stream
+                      # and unloads the whole chain (DeepFilter missing after
+                      # every boot).
+                      "node.dont-fallback" = true;
                     };
                   "playback.props" = {
                     "node.name" = "deep_filter_mono_output";
