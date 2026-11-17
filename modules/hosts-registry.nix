@@ -74,7 +74,7 @@ in {
       hostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM3lWxkqUILLcdgkAwo9WIQtY1bC89G4wTryQ/K3JuEG";
       userKey = userKeys.hazel or null;
       syncthingId = "ZOEBYES-RFID2ZK-7CWRNXP-5TTQ5LO-GC6HQK2-H25UYNX-UPYBP7T-KHOI7AV";
-      roles = ["desktop" "client"];
+      roles = ["desktop" "client" "t3"]; # t3: own T3 Code environment (agent-t3code)
       tags = [];
     };
 

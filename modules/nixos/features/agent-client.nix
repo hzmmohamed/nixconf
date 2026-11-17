@@ -1,7 +1,9 @@
-# Thin client for remote coding agents (design: docs/plans/2026-11-17-agentic-workspace-design.md).
-# Import together with `agent-common` (same Claude Code / MCP / herdr config,
-# so light local work also works), `agent-t3code` (T3 Code desktop app) and
-# `agent-opencode` (`oc`: OpenCode TUI against the target's service).
+# The machine the user sits at (design: docs/plans/2026-11-17-agentic-workspace-design.md):
+# herdr --remote to the target, Zed. Import together with `agent-common` (same
+# Claude Code / MCP / herdr config, so local work also works), `agent-t3code`
+# (desktop app; set preferences.agents.t3code.server.enable for a local T3
+# environment too, as on hazel) and `agent-opencode` (`oc`: OpenCode TUI
+# against the target's service).
 {inputs, ...}: {
   flake.nixosModules.agent-client = {
     config,

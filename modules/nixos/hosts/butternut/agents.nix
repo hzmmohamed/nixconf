@@ -1,4 +1,5 @@
-# Agentic workspace: butternut is a compute target (agent-host).
+# Agentic workspace: butternut is a compute target (agent-host) and, with a
+# monitor attached, also runs the T3 desktop app against its own server.
 {self, ...}: {
   flake.nixosModules.hostButternut = {
     config,
@@ -35,7 +36,20 @@
       projects = [
         "${home}/work/tfc/repos/routelab-monorepo"
         "${home}/work/tfc/repos/d_abm"
+        "${home}/nixconf"
       ];
+
+      # routelab's Android emulator as a T3 device (KVM, headless; T3 boots
+      # the AVDs from the repo's .android/avd). The SDK comes from routelab's
+      # own mobile shell: `rl-dev-mobile -c t3-android-sdk` once
+      # (docs/plans/2026-11-17-t3-devices-routelab.md).
+      t3code.devices.android = let
+        routelab = "${home}/work/tfc/repos/routelab-monorepo";
+      in {
+        enable = true;
+        avdHome = "${routelab}/.android/avd";
+        userHome = "${routelab}/.android";
+      };
     };
 
     # `cloud-box up|down|status`: the on-demand EC2 agent host (fern).

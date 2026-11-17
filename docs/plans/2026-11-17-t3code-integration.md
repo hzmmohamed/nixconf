@@ -877,3 +877,169 @@ In `modules/nixos/features/agent-t3code.nix`, plus `agent-host.nix` (operator fl
 - Claude SessionStart direnv hook
 - T3's OpenCode instance sharing the OpenCode service through `serverUrl` (today T3 starts or reuses it through the same `opencode` binary [verify])
 - persistence on impermanence hosts
+
+---
+
+## 9. Rework (2026-11-17, after exploring the settings UI)
+
+Ground truth: the 0.1.9 package itself. The server's source maps carry the
+full TS sources (`libexec/t3code/apps/server/dist/*.map`), the desktop ships
+`apps/desktop/src`, and keys were checked with `t3 policy check`. Paths below
+are T3 source paths (S = server/packages, D = desktop `src/`).
+
+### 9.1 What T3 0.1.9 actually models
+
+- **Environment = one server** with its own SQLite store. **Projects are rows
+  per environment** (key: environmentId + workspaceRoot). The client groups
+  rows with the same git remote (`repositoryIdentity.canonicalKey`, S
+  `src/project/RepositoryIdentityResolver.ts`) into one logical project
+  (`sidebarProjectGroupingMode`: `repository` (default) | `repository_path` |
+  `separate`). A new thread's machine is picked among the environments that
+  have that repo registered (host picker / auto balance). Nothing on the
+  servers ties the rows together, and **threads never move between
+  environments** (`t3_thread_transfer` = fork/merge-back inside one).
+- **Desktop saved environments** (`saved-environments.json`, tokens
+  encrypted with the keyring) decide what the UI shows; **server links**
+  (Labs, `linkedEnvironmentsEnabled`) let one environment's *agents* act on
+  another. Different things.
+- **Links** (S `src/peer/PeerLinks.ts`, `src/cli/environment.ts`):
+  `t3 environment link <url> --pairing-code <code> --access <level>` on A,
+  code from `t3 pair` on B. One direction (A's agents → B), 30-day session,
+  HTTPS (or http on loopback/Tailscale IPs), the setting on at both ends.
+  Access = `read-only | approval-required | auto-accept-edits | auto |
+  full-access`; below full-access the link is *fenced* (it can only touch
+  threads it started). Then any T3 MCP tool with an `environmentId`
+  (`t3_thread_launch`, `t3_project_*`, …) and `delegate_task` with
+  `target.environmentId` run on B; the remote project is matched by git
+  remote. No chaining (A→B→C), no remote worktree isolation for
+  `delegate_task`, no renewal without a new code.
+- **Not declarative:** links and pairings (secrets + server-side
+  registration). `linkedEnvironmentsEnabled` itself is a normal setting
+  (policy-manageable).
+
+### 9.2 Topology chosen
+
+Every machine is a full environment: **butternut** (GPU, always on, devices),
+**fern** (next to S3, headless, lightweight: no desktop app, no browser
+Chromium) and now **hazel** (`preferences.agents.t3code.server.enable`; role
+`t3` in the hosts registry). Each registers the repos it has checked out
+(routelab, d_abm, nixconf). From hazel's desktop app, a new thread in
+"routelab" can go to hazel, butternut or fern; hazel's own agents can farm
+work out after `t3-link butternut` / `t3-link fern`.
+
+hazel's server starts with the graphical session (no lingering), is
+published on the tailnet like the others, and gets the `battery-saver`
+background-activity profile as a policy default (no background git fetch,
+provider health every 15 min, background work paused on battery). No
+`ConditionACPower`: on battery is exactly when hazel works alone.
+
+### 9.3 Desktop app (butternut and hazel)
+
+- Its *local environment* is a second `t3 serve` on `~/.t3`; with the systemd
+  server running it exits "state dir owned" and the app shows an error and
+  **quits** (D `backend/DesktopBackendPool.ts:176`). So the app is
+  remote-only: activation merges `localEnvironmentEnabled = false` into
+  `~/.t3/userdata/desktop-settings.json`, and the local server is paired
+  over loopback like any other environment.
+- Cost of that choice: the **Electron-drawn agent browser** only exists for a
+  server the app spawned itself (bootstrap fds, S
+  `src/preview/DesktopBrowserChannel.ts`). With the systemd server, agent
+  browser tabs run in the server's headless browser and are streamed to the
+  panel. T3 downloads a Chrome-for-Testing `chrome-headless-shell` that
+  can't run on NixOS, and has no path override; it only checks for an
+  executable at `~/.t3/tools/chrome-headless-shell/linux64/<ver>/`. An
+  `ExecStartPre` links nixpkgs Chromium (157, same major as T3's pin) there,
+  reading `<ver>` from the bundle (`browser.enable`, default on GUI servers).
+- **Snapshots** (window/screen capture into the draft): capture works on Sway
+  through Electron's picker (portal-wlr ScreenCast + PipeWire, already
+  configured), but 0.1.9 has **no trigger on Sway**: the shortcut needs the
+  GlobalShortcuts portal (portal-wlr has none), and there is no CLI, deep link
+  or palette command. The package is patched (one line in
+  `dist-electron/main.cjs`, `--replace-fail`) so the D-Bus endpoint T3 only
+  registers on Niri also registers on Sway; `Super+Ctrl+S` runs
+  `t3-snapshot` (gdbus `com.t3tools.T3Code.SnapShot` →
+  `com.t3tools.SnapShot.Capture`). The Snapshot settings page will still say
+  Niri; ignore it.
+- `sendShortcut = "mod-enter"` ("Ctrl + Enter always": Enter is a newline)
+  is a *client* setting (`client-settings.json`, per device; the policy
+  rejects it), merged by HM `programs.t3code.clientSettings`.
+- Launchers: "T3 Code" = the desktop app (the package's "T3 Code (Beta)" entry
+  is replaced); "T3 Code web (<host>)" = `t3-open <host>` Chromium app
+  windows for the other environments.
+
+### 9.4 Settings
+
+- `textGenerationModelSelection` → `claude-sonnet-5` (0.1.9's own Claude
+  default, `claude-haiku-5-5` in S `packages/contracts/src/model.ts:166`, is
+  not a valid id); `defaultModelSelection` stays `claude-opus-5-5`. Both are
+  unlocked policy defaults: butternut's settings.json already has sonnet from
+  the UI.
+- `linkedEnvironmentsEnabled = true` (default, unlocked) on every server.
+
+### 9.5 Two Claude subscriptions
+
+The `claudeAgent` driver has a per-instance `homePath` = `CLAUDE_CONFIG_DIR`
+(S `packages/contracts/src/settings.ts:778`, `src/provider/Drivers/ClaudeHome.ts`),
+so no wrapper is needed for T3. `preferences.agents.claudeAccounts`
+(agent-common) defines personal (`~/.claude`, instance id `claudeAgent`) and
+work (`~/.claude-work`, `claudeWork`, `claude-work` wrapper for terminal use
+and login). The personal one keeps the id `claudeAgent` because existing
+threads reference it and the policy's provider pin is keyed by **driver**:
+it applies to every Claude instance and recreates `claudeAgent` anyway
+(S `src/policy/managedProviders.ts`). Only `binaryPath`, `launchArgs` and
+`environment` can be pinned, so each instance keeps its own `homePath`.
+The settings merge (denies + hooks) now runs for every account dir, and the
+work dir links `skills` to `~/.claude/skills`; plugins and MCP servers come
+from the `claude` wrapper's flags and apply to both.
+
+### 9.6 Devices
+
+See `2026-11-17-t3-devices-routelab.md`.
+
+### 9.7 User steps (fish; root = doas)
+
+After `just deploy butternut switch` and `just deploy hazel switch`
+(`just deploy fern switch` when fern exists):
+
+```fish
+# Claude logins, once per machine (personal is usually done already).
+claude-work          # then /login with the work account, /exit
+ssh -t butternut claude-work
+# fern (when up): ssh -t fern claude    and    ssh -t fern claude-work
+
+# hazel desktop app ↔ hazel's own server (loopback), and the remotes.
+t3 pair --label hazel-desktop
+ssh butternut t3-pair hazel-desktop
+# In the app: Settings → Environments → Add environment, paste each
+# "Pairing URL" (5-minute, single use).
+
+# butternut desktop app (monitor attached): run this on butternut, then add
+# the URL in the app there.
+t3 pair --label butternut-desktop
+
+# Links: hazel's agents may launch threads on butternut / fern.
+t3-link butternut
+t3-link fern         # fern must be up: cloud-box up
+# Optional reverse direction, run on butternut:  t3-link hazel
+# Stronger access: t3-link butternut full-access
+t3 environment list
+```
+
+Snapshot test (hazel or butternut): open the desktop app, start a draft,
+press `Super+Ctrl+S`, pick the output in the portal chooser; the image lands
+in the draft. If nothing happens: `busctl --user list | grep T3Code`.
+
+Browser test: `ls -l ~/.t3/tools/chrome-headless-shell/linux64/*/` shows the
+Chromium link; in a thread on that environment ask the agent to open
+`https://example.com` in the browser and take a screenshot;
+`journalctl --user -u t3code -e` on errors.
+
+### 9.8 What 0.1.9 can't do
+
+- Move a thread between environments; declare links/pairings in Nix; renew a
+  link without a new code (30 days); chain links; remote worktree isolation
+  for `delegate_task`.
+- Snapshots on Sway without the patch; the Electron-drawn agent browser with
+  an externally managed server; a Nix path for the server browser except
+  through the versioned tools path.
+- Devices declared per project (`t3.json` has no device fields).

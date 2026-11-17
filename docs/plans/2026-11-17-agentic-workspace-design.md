@@ -14,6 +14,11 @@ inbox), Zed for occasional reading/editing (ACP), terminal with
 `herdr --remote <target>`, review tools (lazygit + difftastic, hunk).
 Module: `agent-client`.
 
+> Update (2026-11-17): hazel also runs its own T3 Code server, so it is a full
+> T3 environment (its own projects and threads when alone); butternut and fern
+> take specific threads via the desktop app's host picker or server links
+> (`t3-link`). See `2026-11-17-t3code-integration.md` §9.
+
 **Compute targets** — all import the same `agent-host` profile:
 
 | Target | When |
