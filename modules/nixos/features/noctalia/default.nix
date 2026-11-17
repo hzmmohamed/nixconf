@@ -44,9 +44,9 @@
       exit 0
     '';
 
-    # Bring Noctalia's light/dark mode in line with darkman (used on start).
-    syncThemeMode = pkgs.writeShellScript "noctalia-sync-darkman" ''
-      mode=$(${pkgs.darkman}/bin/darkman get 2>/dev/null) || exit 0
+    # Bring Noctalia's light/dark mode in line with the theme state (on start).
+    syncThemeMode = pkgs.writeShellScript "noctalia-sync-theme" ''
+      mode=$(${lib.getExe config.preferences.theme.package} get 2>/dev/null) || exit 0
       case "$mode" in dark|light) exec ${msg} theme-mode-set "$mode" ;; esac
     '';
   in {
@@ -60,6 +60,10 @@
           exec_before = "${screenshareDndOn}";
           exec_after = "${screenshareDndOff}";
         };
+
+        preferences.theme.reloadHooks.noctalia = ''
+          ${msg} theme-mode-set "$mode" >/dev/null 2>&1 || true
+        '';
 
         home-manager.users.${user} = {
           programs.noctalia = {
@@ -86,11 +90,6 @@
               RestartSec = 1;
               ExecStartPost = ["-${syncThemeMode}"];
             };
-          };
-
-          services.darkman = {
-            lightModeScripts.noctalia-theme = "${msg} theme-mode-set light >/dev/null 2>&1 || true";
-            darkModeScripts.noctalia-theme = "${msg} theme-mode-set dark >/dev/null 2>&1 || true";
           };
 
           # Quiet hours (same schedule as the swaync stack).

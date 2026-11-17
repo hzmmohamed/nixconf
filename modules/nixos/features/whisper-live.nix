@@ -106,7 +106,7 @@
 
       programs.waybar.style = lib.mkAfter ''
         #custom-whisper.recording {
-          color: #f38ba8;
+          color: @error;
           font-weight: bold;
         }
         #custom-whisper.idle {

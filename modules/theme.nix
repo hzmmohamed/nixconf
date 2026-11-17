@@ -1,4 +1,4 @@
-{...}: let
+{lib, ...}: let
   theme = {
     base00 = "#242424"; # bg
     base01 = "#3c3836"; # dark
@@ -85,13 +85,130 @@
     crust = "#11111b";
   };
   fonts = {
-    sansSerif = "Open Sans";
+    sansSerif = "Inter";
+    serif = "Noto Serif";
     monospace = "JetBrainsMono Nerd Font";
     size = 12;
     barSize = 12;
   };
+
+  # --- Colour helpers (sRGB, opaque) ----------------------------------------
+  # Used to derive hairlines and interaction tints by mixing palette colours
+  # onto opaque surfaces (no alpha anywhere).
+  hexDigits = {
+    "0" = 0;
+    "1" = 1;
+    "2" = 2;
+    "3" = 3;
+    "4" = 4;
+    "5" = 5;
+    "6" = 6;
+    "7" = 7;
+    "8" = 8;
+    "9" = 9;
+    "a" = 10;
+    "b" = 11;
+    "c" = 12;
+    "d" = 13;
+    "e" = 14;
+    "f" = 15;
+  };
+  byteAt = s: i:
+    hexDigits.${lib.toLower (builtins.substring i 1 s)}
+    * 16
+    + hexDigits.${lib.toLower (builtins.substring (i + 1) 1 s)};
+  toRgb = hex: let
+    s = stripHash hex;
+  in [(byteAt s 0) (byteAt s 2) (byteAt s 4)];
+  toByteHex = n: let
+    h = lib.toLower (lib.toHexString n);
+  in
+    if n < 16
+    then "0${h}"
+    else h;
+  fromRgb = rgb: "#" + lib.concatMapStrings toByteHex rgb;
+  # mix a b t: t·a + (1−t)·b, t in [0,1] (e.g. "26% fg over surface").
+  mix = a: b: t:
+    fromRgb (lib.zipListsWith (x: y: let
+      v = t * x + (1 - t) * y;
+    in
+      builtins.floor (v + 0.5)) (toRgb a) (toRgb b));
+  color = {inherit stripHash toRgb fromRgb mix;};
+
+  # --- Palette shape ---------------------------------------------------------
+  # Every themed module consumes this shape (via
+  # config.preferences.theme.palette.{light,dark}):
+  #   - the 26 Catppuccin slot names (rosewater … crust)
+  #   - semantic aliases (accent, onAccent, Material-style surface roles)
+  #   - contrast-tiered text roles fg/fgDim/fgMuted/fgFaint
+  #   - derived opaque mixes: hairline{Soft,,Strong}, tint{5,10,16}
+  #   - isDark: whether this is the dark variant
+  #   - accentName: a Catppuccin accent name (lookup key for packages that
+  #     only accept named colours, e.g. papirus-folders); null if unknown
+  #   - noHash: the same attrset with every colour's leading "#" stripped
+  # A future wallpaper (matugen) palette must provide the same keys.
+  mkPalette = {
+    slots,
+    onAccent,
+    isDark,
+    accentName ? "lavender",
+  }: let
+    p =
+      slots
+      // rec {
+        accent = slots.${accentName};
+        inherit onAccent;
+        primary = accent;
+        error = slots.red;
+
+        surface = slots.base;
+        surfaceContainerLow = slots.mantle;
+        surfaceContainer = slots.surface0;
+        surfaceContainerHigh = slots.surface1;
+        onSurface = slots.text;
+        onSurfaceVariant = slots.subtext0;
+        outline = slots.overlay0;
+        outlineVariant = slots.surface1;
+        inverseSurface = slots.text;
+        onInverseSurface = slots.base;
+
+        # Text tiers (design targets 12 / 9 / 6.6 / 4.6 : 1 on surface).
+        # Catppuccin slots only approximate them — Latte tops out at ~7:1 and
+        # its fgFaint (overlay2) is ~3.5:1; the WCAG guard (phase 5) will
+        # enforce minimums for generated palettes.
+        fg = slots.text;
+        fgDim = slots.subtext1;
+        fgMuted = slots.subtext0;
+        fgFaint = slots.overlay2;
+
+        hairlineSoft = mix slots.text slots.base 0.13;
+        hairline = mix slots.text slots.base 0.26;
+        hairlineStrong = mix slots.text slots.base 0.42;
+        tint5 = mix slots.text slots.base 0.05;
+        tint10 = mix slots.text slots.base 0.10;
+        tint16 = mix slots.text slots.base 0.16;
+      };
+  in
+    p
+    // {
+      inherit accentName isDark;
+      noHash = builtins.mapAttrs (_: stripHash) p;
+    };
+
+  palettes.catppuccin = {
+    light = mkPalette {
+      slots = catppuccin;
+      onAccent = catppuccin.base;
+      isDark = false;
+    };
+    dark = mkPalette {
+      slots = catppuccinMocha;
+      onAccent = catppuccinMocha.crust;
+      isDark = true;
+    };
+  };
 in {
   flake = {
-    inherit theme themeNoHash catppuccin catppuccinMocha fonts;
+    inherit theme themeNoHash catppuccin catppuccinMocha fonts palettes color;
   };
 }

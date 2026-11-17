@@ -7,6 +7,7 @@
   }: {
     imports = [
       self.nixosModules.extra_hjem
+      self.nixosModules.extra_theme
       self.nixosModules.fish
       self.nixosModules.gtk
       self.nixosModules.nix

@@ -28,7 +28,7 @@
           auto_hide = true;
           show_on_workspace_switch = true;
 
-          start = ["clock" "notifications" "mail" "media"];
+          start = ["clock" "keyboard_layout" "notifications" "mail" "media"];
           center = ["workspaces"];
           end =
             lib.optional config.services.syncthing.enable "sync"
@@ -47,6 +47,20 @@
           battery.peek = false;
           volume.peek = true;
           network.peek = true;
+          # Keyboard layout (preferences.keyboard): short label, click cycles
+          # through the compositor backend (sway xkb_switch_layout).
+          keyboard_layout = {
+            display = "short";
+            show_icon = false;
+            show_label = true;
+            hide_when_single_layout = true;
+          };
+        };
+
+        # Labels keyed by the XKB layout description sway reports.
+        shell.keyboard_layout.custom_labels = {
+          "English (US)" = "EN";
+          "Arabic" = "ع";
         };
       };
     };

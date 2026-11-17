@@ -39,10 +39,17 @@
             dark.name = "catppuccin-mocha";
           };
 
-          # Opaque, no blur/glass.
+          # Opaque, no blur/glass. Same chrome as swaync and tooltips:
+          # 8px radius, 1px border, no shadow.
           launcher_window = {
             opacity = 1.0;
             material = "none";
+            rounding = 8;
+            client_side_decorations = {
+              enabled = true;
+              border_width = 1;
+              shadow_size = 0;
+            };
           };
 
           favorites = [];

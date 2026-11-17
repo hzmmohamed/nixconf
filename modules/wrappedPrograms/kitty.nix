@@ -27,7 +27,9 @@
 
         cursor_trail = 3;
 
-        include = "~/.config/kitty/current-theme.conf";
+        # Palette from the NixOS theme state dir (light/dark, switched by
+        # theme-mode, live-reloaded with SIGUSR1). Missing file = defaults.
+        include = "~/.local/state/theme/current/kitty.conf";
 
         remember_window_size = "no";
         initial_window_width = 800;

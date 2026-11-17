@@ -23,7 +23,7 @@
       enable = lib.mkEnableOption "Bibata Modern Classic cursor theme";
       size = lib.mkOption {
         type = lib.types.int;
-        default = 17;
+        default = 24;
       };
     };
 

@@ -33,6 +33,7 @@
       self.nixosModules.swayosd
       self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor
+      self.nixosModules.qt
 
       self.nixosModules.discord
       self.nixosModules.gimp

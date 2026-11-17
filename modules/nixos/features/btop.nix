@@ -1,4 +1,4 @@
-{self, ...}: {
+{...}: {
   flake.nixosModules.btop = {config, ...}: let
     user = config.preferences.user.name;
 
@@ -47,6 +47,11 @@
       theme[process_end]="${p.mauve}"
     '';
   in {
+    preferences.theme = {
+      files."btop.theme" = mkBtopTheme;
+      links.".config/btop/themes/current.theme" = "btop.theme";
+    };
+
     home-manager.users.${user} = {
       # Remove stale .backup file before activation to prevent "would be clobbered" errors
       home.activation.removeBtopBackup = {
@@ -57,12 +62,10 @@
         '';
       };
 
-      xdg.configFile."btop/themes/catppuccin_latte.theme".text = mkBtopTheme self.catppuccin;
-      xdg.configFile."btop/themes/catppuccin_mocha.theme".text = mkBtopTheme self.catppuccinMocha;
-
-      # Default to latte; darkman sed-replaces the color_theme line
+      # themes/current.theme -> theme state dir (follows light/dark; btop
+      # picks it up on its next start).
       xdg.configFile."btop/btop.conf".text = ''
-        color_theme = "catppuccin_latte"
+        color_theme = "current"
         theme_background = true
       '';
     };

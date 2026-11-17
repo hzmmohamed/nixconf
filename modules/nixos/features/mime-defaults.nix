@@ -1,4 +1,4 @@
-{
+{self, ...}: {
   # Default applications (xdg-open / gio / file-manager double-click).
   # Without this, the first app that claims a type wins — e.g. images opened
   # in Chromium.
@@ -99,22 +99,60 @@
       pkgs.zathura
     ];
 
-    home-manager.users.${user}.xdg.mimeApps = {
-      enable = true;
-      defaultApplications =
-        assoc imageViewer imageTypes
-        // assoc textEditor textTypes
-        // assoc mediaPlayer mediaTypes
-        // assoc browser webTypes
-        // {
-          "application/pdf" = [pdfViewer];
-          "application/epub+zip" = [pdfViewer];
-          "inode/directory" = [fileManager];
-          "x-scheme-handler/mailto" = ["thunderbird.desktop"];
-          # Carried over from the previous hand-managed mimeapps.list
-          "x-scheme-handler/discord" = ["vesktop.desktop"];
-          "x-scheme-handler/claude-cli" = ["claude-code-url-handler.desktop"];
-        };
+    # Zathura: palette include (switched with the mode; applies to new
+    # windows) and recolouring so pages sit on the palette, not white.
+    preferences.theme.files.zathura = p: ''
+      set default-bg "${p.surface}"
+      set default-fg "${p.fg}"
+      set statusbar-bg "${p.surfaceContainerLow}"
+      set statusbar-fg "${p.fgMuted}"
+      set inputbar-bg "${p.surface}"
+      set inputbar-fg "${p.fg}"
+      set notification-bg "${p.surface}"
+      set notification-fg "${p.fg}"
+      set notification-error-bg "${p.surface}"
+      set notification-error-fg "${p.error}"
+      set notification-warning-bg "${p.surface}"
+      set notification-warning-fg "${p.peach}"
+      set highlight-color "${p.hairlineStrong}"
+      set highlight-active-color "${p.accent}"
+      set completion-bg "${p.surfaceContainerLow}"
+      set completion-fg "${p.fg}"
+      set completion-highlight-bg "${p.inverseSurface}"
+      set completion-highlight-fg "${p.onInverseSurface}"
+      set index-bg "${p.surface}"
+      set index-fg "${p.fg}"
+      set index-active-bg "${p.inverseSurface}"
+      set index-active-fg "${p.onInverseSurface}"
+      set recolor-lightcolor "${p.surface}"
+      set recolor-darkcolor "${p.fg}"
+    '';
+
+    home-manager.users.${user}.xdg = {
+      configFile."zathura/zathurarc".text = ''
+        include ${config.preferences.theme.stateDir}/current/zathura
+        set recolor true
+        set recolor-keephue true
+        set font "${self.fonts.sansSerif} ${toString self.fonts.size}"
+      '';
+
+      mimeApps = {
+        enable = true;
+        defaultApplications =
+          assoc imageViewer imageTypes
+          // assoc textEditor textTypes
+          // assoc mediaPlayer mediaTypes
+          // assoc browser webTypes
+          // {
+            "application/pdf" = [pdfViewer];
+            "application/epub+zip" = [pdfViewer];
+            "inode/directory" = [fileManager];
+            "x-scheme-handler/mailto" = ["thunderbird.desktop"];
+            # Carried over from the previous hand-managed mimeapps.list
+            "x-scheme-handler/discord" = ["vesktop.desktop"];
+            "x-scheme-handler/claude-cli" = ["claude-code-url-handler.desktop"];
+          };
+      };
     };
   };
 }

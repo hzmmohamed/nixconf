@@ -1,13 +1,14 @@
-# Noctalia theme: a custom palette generated from the repo's Catppuccin
-# flavours (latte = light, mocha = dark) with the lavender accent used
-# everywhere else. Light/dark follows darkman (hooks in default.nix).
-{self, ...}: {
+# Noctalia theme: a custom palette generated from preferences.theme.palette
+# (light/dark) with the shared accent. Light/dark follows darkman via the
+# theme-mode reload hook (default.nix).
+{...}: {
   flake.nixosModules.noctalia = {
     config,
     lib,
     ...
   }: let
     user = config.preferences.user.name;
+    pal = config.preferences.theme.palette;
 
     mkVariant = c: onAccent: {
       primary = c.lavender;
@@ -60,8 +61,8 @@
       home-manager.users.${user}.programs.noctalia = {
         customPalettes.Nixconf = {
           version = 2;
-          dark = mkVariant self.catppuccinMocha self.catppuccinMocha.crust;
-          light = mkVariant self.catppuccin self.catppuccin.base;
+          dark = mkVariant pal.dark pal.dark.onAccent;
+          light = mkVariant pal.light pal.light.onAccent;
         };
 
         settings.theme = {

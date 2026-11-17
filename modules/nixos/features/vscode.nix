@@ -77,6 +77,11 @@
 
     userSettings = {
       "workbench.sideBar.location" = "right";
+      # Follow the desktop colour scheme (portal color-scheme, written by
+      # theme-mode via dconf) instead of rewriting colorTheme at runtime.
+      "window.autoDetectColorScheme" = true;
+      "workbench.preferredLightColorTheme" = "Catppuccin Latte";
+      "workbench.preferredDarkColorTheme" = "Catppuccin Mocha";
       "workbench.colorTheme" = "Catppuccin Latte";
       "workbench.startupEditor" = "none";
       "files.autoSave" = "afterDelay";
@@ -93,8 +98,9 @@
     environment.systemPackages = [vscodium];
 
     # Write settings.json as a mutable file (not a nix store symlink) so
-    # darkman can sed the colorTheme value at runtime for light/dark switching.
-    # Re-written on each nixos-rebuild from the Nix-defined defaults above.
+    # VSCodium can still save UI changes. Re-written on each nixos-rebuild
+    # from the Nix-defined defaults above. Light/dark follows the portal
+    # colour scheme (window.autoDetectColorScheme).
     home-manager.users.${user}.home.activation.vscodiumSettings = {
       after = ["writeBoundary"];
       before = [];

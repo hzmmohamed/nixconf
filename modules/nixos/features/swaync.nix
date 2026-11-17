@@ -10,21 +10,24 @@
     ...
   }: let
     user = config.preferences.user.name;
-    home = config.users.users.${user}.home;
     swaync = pkgs.swaynotificationcenter;
     client = "${swaync}/bin/swaync-client";
 
-    mkColorsCss = cat: ''
-      @define-color cat-text ${cat.text};
-      @define-color cat-subtext0 ${cat.subtext0};
-      @define-color cat-overlay0 ${cat.overlay0};
-      @define-color cat-surface0 ${cat.surface0};
-      @define-color cat-surface1 ${cat.surface1};
-      @define-color cat-base ${cat.base};
-      @define-color cat-mantle ${cat.mantle};
-      @define-color cat-crust ${cat.crust};
-      @define-color cat-lavender ${cat.lavender};
-      @define-color cat-red ${cat.red};
+    theme = config.preferences.theme;
+
+    # Palette-only CSS, included from the theme state dir.
+    mkColorsCss = p: ''
+      @define-color surface ${p.surface};
+      @define-color surface-low ${p.surfaceContainerLow};
+      @define-color surface-container ${p.surfaceContainer};
+      @define-color outline-variant ${p.outlineVariant};
+      @define-color fg ${p.fg};
+      @define-color fg-muted ${p.fgMuted};
+      @define-color fg-faint ${p.fgFaint};
+      @define-color inverse ${p.inverseSurface};
+      @define-color on-inverse ${p.onInverseSurface};
+      @define-color accent ${p.accent};
+      @define-color error ${p.error};
     '';
 
     # `dnd on|off|toggle|status` — backend-specific; the same CLI exists in
@@ -55,7 +58,7 @@
     '';
 
     style = ''
-      @import url("file://${home}/.config/swaync/colors.css");
+      @import url("file://${theme.stateDir}/current/swaync.css");
 
       * {
         font-family: "${self.fonts.sansSerif}";
@@ -71,66 +74,68 @@
       }
 
       .notification {
-        background: @cat-base;
-        color: @cat-text;
-        border: 1px solid @cat-surface1;
+        background: @surface;
+        color: @fg;
+        border: 1px solid @outline-variant;
         border-radius: 8px;
         margin: 6px;
         padding: 0;
         box-shadow: none;
       }
-      .notification.critical { border-color: @cat-red; }
+      .notification.critical { border-color: @error; }
       .notification-content { padding: 10px; }
-      .summary { color: @cat-text; font-weight: bold; }
-      .body { color: @cat-subtext0; }
-      .time { color: @cat-overlay0; }
+      .summary { color: @fg; font-weight: bold; }
+      .body { color: @fg-muted; }
+      .time { color: @fg-faint; }
 
       .notification-action {
-        background: @cat-mantle;
-        color: @cat-text;
-        border: 1px solid @cat-surface0;
+        background: @surface-low;
+        color: @fg;
+        border: 1px solid @surface-container;
         border-radius: 6px;
         margin: 4px;
       }
-      .notification-action:hover { background: @cat-surface0; }
+      .notification-action:hover { background: @surface-container; }
 
       .close-button {
-        background: @cat-surface0;
-        color: @cat-text;
+        background: @surface-container;
+        color: @fg;
         border-radius: 100%;
         min-width: 20px;
         min-height: 20px;
         margin: 6px;
       }
-      .close-button:hover { background: @cat-red; color: @cat-base; }
+      .close-button:hover { background: @error; color: @surface; }
 
       .control-center {
-        background: @cat-mantle;
-        color: @cat-text;
-        border: 1px solid @cat-surface1;
-        border-radius: 10px;
+        background: @surface-low;
+        color: @fg;
+        border: 1px solid @outline-variant;
+        border-radius: 8px;
+        box-shadow: none;
       }
       .control-center-list { background: none; }
 
-      .widget-title { color: @cat-text; margin: 10px 10px 4px 10px; }
+      .widget-title { color: @fg; margin: 10px 10px 4px 10px; }
       .widget-title > label { font-size: ${toString (self.fonts.size + 3)}px; font-weight: bold; }
       .widget-title > button {
-        background: @cat-surface0;
-        color: @cat-text;
+        background: @surface-container;
+        color: @fg;
         border: none;
         border-radius: 6px;
         padding: 2px 10px;
       }
-      .widget-title > button:hover { background: @cat-surface1; }
+      .widget-title > button:hover { background: @outline-variant; }
 
-      .widget-dnd { color: @cat-text; margin: 4px 10px; }
-      .widget-dnd > switch { background: @cat-surface1; border-radius: 12px; }
-      .widget-dnd > switch:checked { background: @cat-lavender; }
-      .widget-dnd > switch slider { background: @cat-base; border-radius: 12px; }
+      .widget-dnd { color: @fg; margin: 4px 10px; }
+      .widget-dnd > switch { background: @outline-variant; border-radius: 12px; }
+      .widget-dnd > switch:checked { background: @inverse; }
+      .widget-dnd > switch slider { background: @surface; border-radius: 12px; }
+      .widget-dnd > switch:checked slider { background: @on-inverse; }
 
       .widget-mpris {
-        background: @cat-base;
-        color: @cat-text;
+        background: @surface;
+        color: @fg;
         border-radius: 8px;
         margin: 6px 10px;
         padding: 6px;
@@ -149,6 +154,11 @@
       xdg.portal.wlr.settings.screencast = {
         exec_before = "${screenshareDndOn}";
         exec_after = "${screenshareDndOff}";
+      };
+
+      preferences.theme = {
+        files."swaync.css" = mkColorsCss;
+        reloadHooks.swaync = "${client} -rs >/dev/null 2>&1 || true";
       };
 
       home-manager.users.${user} = {
@@ -203,32 +213,6 @@
             StartLimitBurst = 30;
           };
           Service.RestartSec = 1;
-        };
-
-        # Theme: darkman flips the colors.css symlink and reloads the CSS live.
-        home.file = {
-          ".config/swaync/catppuccin-latte.css".text = mkColorsCss self.catppuccin;
-          ".config/swaync/catppuccin-mocha.css".text = mkColorsCss self.catppuccinMocha;
-        };
-        home.activation.swayncInitialColors = {
-          after = ["writeBoundary"];
-          before = [];
-          data = ''
-            f="$HOME/.config/swaync/colors.css"
-            if [ ! -e "$f" ] && [ ! -L "$f" ]; then
-              ${pkgs.coreutils}/bin/ln -s "$HOME/.config/swaync/catppuccin-latte.css" "$f"
-            fi
-          '';
-        };
-        services.darkman = {
-          lightModeScripts.swaync-theme = ''
-            ${pkgs.coreutils}/bin/ln -sf "$HOME/.config/swaync/catppuccin-latte.css" "$HOME/.config/swaync/colors.css"
-            ${client} -rs >/dev/null 2>&1 || true
-          '';
-          darkModeScripts.swaync-theme = ''
-            ${pkgs.coreutils}/bin/ln -sf "$HOME/.config/swaync/catppuccin-mocha.css" "$HOME/.config/swaync/colors.css"
-            ${client} -rs >/dev/null 2>&1 || true
-          '';
         };
 
         # Quiet hours (ported from mako.nix).

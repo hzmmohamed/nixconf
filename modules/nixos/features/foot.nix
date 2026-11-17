@@ -8,35 +8,36 @@
     font = self.fonts.monospace;
     fontSize = self.fonts.size;
 
-    stripHash = s: builtins.substring 1 (builtins.stringLength s - 1) s;
-
     mkFootColors = p: ''
       [colors]
-      foreground=${stripHash p.text}
-      background=${stripHash p.base}
-      regular0=${stripHash p.surface1}
-      regular1=${stripHash p.red}
-      regular2=${stripHash p.green}
-      regular3=${stripHash p.yellow}
-      regular4=${stripHash p.blue}
-      regular5=${stripHash p.pink}
-      regular6=${stripHash p.teal}
-      regular7=${stripHash p.subtext1}
-      bright0=${stripHash p.surface2}
-      bright1=${stripHash p.red}
-      bright2=${stripHash p.green}
-      bright3=${stripHash p.yellow}
-      bright4=${stripHash p.blue}
-      bright5=${stripHash p.pink}
-      bright6=${stripHash p.teal}
-      bright7=${stripHash p.subtext0}
+      foreground=${p.noHash.text}
+      background=${p.noHash.base}
+      regular0=${p.noHash.surface1}
+      regular1=${p.noHash.red}
+      regular2=${p.noHash.green}
+      regular3=${p.noHash.yellow}
+      regular4=${p.noHash.blue}
+      regular5=${p.noHash.pink}
+      regular6=${p.noHash.teal}
+      regular7=${p.noHash.subtext1}
+      bright0=${p.noHash.surface2}
+      bright1=${p.noHash.red}
+      bright2=${p.noHash.green}
+      bright3=${p.noHash.yellow}
+      bright4=${p.noHash.blue}
+      bright5=${p.noHash.pink}
+      bright6=${p.noHash.teal}
+      bright7=${p.noHash.subtext0}
     '';
   in {
     environment.systemPackages = [pkgs.foot];
 
+    # Palette include; switched with the mode (applies to new terminals).
+    preferences.theme.files."foot.ini" = mkFootColors;
+
     home-manager.users.${user} = {
       xdg.configFile."foot/foot.ini".text = ''
-        include=~/.config/foot/colors.ini
+        include=${config.preferences.theme.stateDir}/current/foot.ini
 
         [main]
         font=${font}:size=${toString fontSize}
@@ -48,10 +49,6 @@
         [cursor]
         blink=yes
       '';
-
-      # Color theme files — darkman symlinks colors.ini to one of these
-      xdg.configFile."foot/catppuccin-latte.ini".text = mkFootColors self.catppuccin;
-      xdg.configFile."foot/catppuccin-mocha.ini".text = mkFootColors self.catppuccinMocha;
     };
   };
 }

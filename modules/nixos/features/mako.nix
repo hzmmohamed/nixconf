@@ -5,7 +5,7 @@
     ...
   }: let
     user = config.preferences.user.name;
-    cat = self.catppuccin;
+    cat = config.preferences.theme.palette.light;
 
     dndToggle = pkgs.writeShellScriptBin "dnd-toggle" ''
       if ${pkgs.mako}/bin/makoctl mode | grep -q do-not-disturb; then

@@ -12,45 +12,54 @@
     ...
   }: let
     user = config.preferences.user.name;
-    home = config.users.users.${user}.home;
     selfpkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
-    latte = self.catppuccin;
-    mocha = self.catppuccinMocha;
+    theme = config.preferences.theme;
     swaync-client = "${pkgs.swaynotificationcenter}/bin/swaync-client";
     syncthingEnabled = config.services.syncthing.enable;
     swayosdEnabled = config.home-manager.users.${user}.services.swayosd.enable;
     swayosd-client = "${pkgs.swayosd}/bin/swayosd-client";
+    networkManager = config.networking.networkmanager.enable;
+    terminal = lib.getExe selfpkgs.terminal;
+
+    # One glyph family (Material Design icons from the Nerd Font "Propo"
+    # variant: proportional, so glyphs are centred and not clipped) at one
+    # size; values sit under their glyph, smaller, only when relevant.
+    glyphFont = "${self.fonts.monospace} Propo";
+    glyphSize = 16;
+    value = s: "<span size='small'>${s}</span>";
 
     # Signal the running waybar (main process only — never its module children).
     waybarSignal = sig: "systemctl --user kill --kill-whom=main -s ${sig} waybar.service";
 
-    mkColorsCss = cat: ''
-      @define-color cat-text ${cat.text};
-      @define-color cat-subtext0 ${cat.subtext0};
-      @define-color cat-overlay0 ${cat.overlay0};
-      @define-color cat-overlay1 ${cat.overlay1};
-      @define-color cat-surface0 ${cat.surface0};
-      @define-color cat-surface1 ${cat.surface1};
-      @define-color cat-base ${cat.base};
-      @define-color cat-mantle ${cat.mantle};
-      @define-color cat-crust ${cat.crust};
-      @define-color cat-lavender ${cat.lavender};
-      @define-color cat-red ${cat.red};
-      @define-color cat-peach ${cat.peach};
-      @define-color cat-yellow ${cat.yellow};
-      @define-color cat-green ${cat.green};
+    # Palette-only CSS (semantic names), included from the theme state dir.
+    mkColorsCss = p: ''
+      @define-color bar-bg ${p.surfaceContainerLow};
+      @define-color surface ${p.surface};
+      @define-color fg ${p.fg};
+      @define-color fg-muted ${p.fgMuted};
+      @define-color fg-faint ${p.fgFaint};
+      @define-color hairline ${p.hairline};
+      @define-color hairline-strong ${p.hairlineStrong};
+      @define-color tint ${p.tint10};
+      @define-color outline-variant ${p.outlineVariant};
+      @define-color inverse ${p.inverseSurface};
+      @define-color on-inverse ${p.onInverseSurface};
+      @define-color accent ${p.accent};
+      @define-color error ${p.error};
+      @define-color warning ${p.peach};
+      @define-color success ${p.green};
     '';
 
     # Calendar markup can't use CSS colors, so its colors live in a small
-    # included config fragment that darkman swaps (then `systemctl reload`).
-    mkCalendarColors = cat:
+    # included config fragment (waybar `include`), switched with the mode.
+    mkCalendarColors = p:
       builtins.toJSON {
         clock.calendar.format = {
-          months = "<span color='${cat.lavender}'><b>{}</b></span>";
-          days = "<span color='${cat.text}'>{}</span>";
-          weeks = "<span color='${cat.overlay1}'>W{}</span>";
-          weekdays = "<span color='${cat.subtext0}'><b>{}</b></span>";
-          today = "<span color='${cat.peach}'><b><u>{}</u></b></span>";
+          months = "<span color='${p.accent}'><b>{}</b></span>";
+          days = "<span color='${p.fg}'>{}</span>";
+          weeks = "<span color='${p.fgFaint}'>W{}</span>";
+          weekdays = "<span color='${p.fgMuted}'><b>{}</b></span>";
+          today = "<span color='${p.peach}'><b><u>{}</u></b></span>";
         };
       };
 
@@ -58,26 +67,36 @@
       layer = "top";
       position = "right";
       reload_style_on_change = true;
-      include = ["${home}/.config/waybar/calendar-colors.json"];
+      include = ["${theme.stateDir}/current/waybar-calendar.json"];
 
-      modules-left = ["clock" "custom/notification" "custom/mail" "mpris"];
+      modules-left = ["clock" "sway/language" "custom/notification" "custom/mail" "mpris"];
       modules-center = ["sway/workspaces"];
       modules-right =
         lib.optional syncthingEnabled "custom/sync"
-        ++ ["cpu" "memory" "disk" "temperature" "wireplumber" "bluetooth" "tray" "battery"];
+        ++ ["cpu" "memory" "disk" "temperature"]
+        ++ lib.optional networkManager "network"
+        ++ ["wireplumber" "bluetooth" "group/tray" "battery"];
 
+      # Dots drawn in CSS (the label is the shape): 1–6 always, 7–9 only
+      # while occupied; the active one is a taller inverted pill.
       "sway/workspaces" = {
-        format = "{icon}";
-        format-icons = {
-          active = "";
-          default = "○";
-          empty = "○";
-        };
-        persistent-workspaces = {"*" = [1 2 3 4 5 6 7 8 9];};
+        format = "";
+        persistent-workspaces = {"*" = [1 2 3 4 5 6];};
+      };
+
+      # Keyboard layout (preferences.keyboard): short label, click cycles.
+      "sway/language" = {
+        format = "{short}";
+        format-en = "EN";
+        format-ar = "ع";
+        hide-single-layout = true;
+        tooltip-format = "{long}";
+        on-click = "swaymsg input type:keyboard xkb_switch_layout next";
       };
 
       clock = {
-        format = "{:%H\n%M}";
+        format = "<b>{:%H}</b>\n{:%M}";
+        justify = "center";
         interval = 60;
         tooltip-format = "<big>{:%A, %d %B %Y}</big>\n\n<tt>{calendar}</tt>";
         calendar = {
@@ -119,7 +138,9 @@
       "custom/mail" = {
         exec = lib.getExe selfpkgs.mail-unread-status;
         return-type = "json";
-        format = "󰇮\n{}";
+        format = "󰇮\n${value "{}"}";
+        justify = "center";
+        hide-empty-text = true; # no unread mail = hidden
         interval = 120;
         signal = 9;
         on-click = "${pkgs.thunderbird}/bin/thunderbird";
@@ -143,7 +164,10 @@
       "custom/sync" = {
         exec = "${lib.getExe selfpkgs.sync-status}";
         return-type = "json";
-        format = "󰓦\n{}";
+        format = "󰓦\n${value "{}"}";
+        justify = "center";
+        # Idle (in sync) prints an empty text: hide the module entirely.
+        hide-empty-text = true;
         interval = 30;
         on-click = "xdg-open http://${config.services.syncthing.guiAddress}";
       };
@@ -152,12 +176,14 @@
       cpu = {
         interval = 20;
         states = {
-          warning = 75;
-          critical = 90;
+          warning = 90;
+          critical = 97;
         };
         format = "";
-        format-warning = "󰻠\n{usage}%";
-        format-critical = "󰻠\n{usage}%";
+        format-warning = "󰻠\n${value "{usage}"}";
+        format-critical = "󰻠\n${value "{usage}"}";
+        justify = "center";
+        tooltip-format = "CPU {usage}%";
       };
 
       memory = {
@@ -167,8 +193,9 @@
           critical = 92;
         };
         format = "";
-        format-warning = "󰍛\n{percentage}%";
-        format-critical = "󰍛\n{percentage}%";
+        format-warning = "󰍛\n${value "{percentage}"}";
+        format-critical = "󰍛\n${value "{percentage}"}";
+        justify = "center";
         tooltip-format = "{used:0.1f} / {total:0.1f} GiB";
       };
 
@@ -180,8 +207,9 @@
           critical = 95;
         };
         format = "";
-        format-warning = "󰋊\n{percentage_used}%";
-        format-critical = "󰋊\n{percentage_used}%";
+        format-warning = "󰋊\n${value "{percentage_used}"}";
+        format-critical = "󰋊\n${value "{percentage_used}"}";
+        justify = "center";
       };
 
       temperature = {
@@ -189,8 +217,9 @@
         warning-threshold = 80;
         critical-threshold = 90;
         format = "";
-        format-warning = "\n{temperatureC}°";
-        format-critical = "\n{temperatureC}°";
+        format-warning = "󰔏\n${value "{temperatureC}°"}";
+        format-critical = "󰔏\n${value "{temperatureC}°"}";
+        justify = "center";
       };
 
       # Output volume: icon only; device + level in the tooltip.
@@ -213,48 +242,93 @@
           on-scroll-down = "${swayosd-client} --output-volume -5 --max-volume 100";
         };
 
+      # Network (replaces the nm-applet tray icon): hidden on a working wired
+      # link (the normal case), Wi-Fi strength on wireless, a warning glyph
+      # when offline. Left: nmtui in the terminal. Right: connection editor.
+      network = {
+        format = "";
+        format-ethernet = "";
+        format-wifi = "{icon}";
+        format-linked = "󰤫";
+        format-disconnected = "󰤮";
+        format-disabled = "";
+        format-icons = ["󰤟" "󰤢" "󰤥" "󰤨"];
+        tooltip-format-wifi = "{essid} · {signalStrength}%\n{ipaddr}";
+        tooltip-format-linked = "{ifname}: no IP address";
+        tooltip-format-disconnected = "Offline";
+        on-click = "${terminal} ${pkgs.networkmanager}/bin/nmtui";
+        on-click-right = "${pkgs.networkmanagerapplet}/bin/nm-connection-editor";
+      };
+
       # Bluetooth: dim icon when idle, highlighted while a device is connected,
       # hidden without an adapter. Left: bzmenu (via vicinae). Right: blueman.
       bluetooth = {
         format = "󰂯";
-        format-off = "󰂲";
-        format-disabled = "󰂲";
+        format-off = "";
+        format-disabled = "";
         format-connected = "󰂱";
         format-no-controller = "";
         tooltip-format = "{controller_alias}: {status}";
         tooltip-format-connected = "{controller_alias}\n{device_enumerate}";
         tooltip-format-enumerate-connected = "{device_alias}";
         tooltip-format-enumerate-connected-battery = "{device_alias} · {device_battery_percentage}%";
-        on-click = "${lib.getExe pkgs.bzmenu} -l custom --launcher-command \"vicinae dmenu -p '{hint}'\"";
+        on-click = "${lib.getExe pkgs.bzmenu} -l custom -s 2 --launcher-command \"vicinae dmenu -p '{hint}'\"";
         on-click-right = "${pkgs.blueman}/bin/blueman-manager";
       };
 
+      # Tray: collapsed into a drawer behind one handle glyph (click to
+      # reveal). Apps the bar already covers keep no tray icon (blueman →
+      # bluetooth module, nm-applet → network module, flameshot → keybind).
+      # Icons come from the icon theme (Papirus panel icons, monochrome)
+      # where the app sends an icon name; same size as the glyphs.
+      "group/tray" = {
+        orientation = "inherit";
+        drawer = {
+          transition-duration = 170;
+          children-class = "tray-child";
+          transition-left-to-right = false;
+          click-to-reveal = true;
+        };
+        modules = ["custom/tray-handle" "tray"];
+      };
+      "custom/tray-handle" = {
+        format = "󰇙";
+        tooltip-format = "Tray";
+      };
       tray = {
-        icon-size = 14;
+        icon-size = glyphSize;
         spacing = 8;
       };
 
+      # Battery: only while discharging or low — hidden on AC (butternut is
+      # always plugged in; hazel when docked).
       battery = {
         interval = 60;
         states = {
           warning = 30;
           critical = 15;
         };
-        format = "{icon}\n{capacity}";
-        format-charging = "󰂄\n{capacity}";
-        format-plugged = "󰚥\n{capacity}";
+        format = "";
+        format-warning = "{icon}\n${value "{capacity}"}";
+        format-critical = "{icon}\n${value "{capacity}"}";
+        format-discharging = "{icon}\n${value "{capacity}"}";
+        format-charging = "";
+        format-plugged = "";
+        format-full = "";
+        format-not-charging = "";
         format-icons = ["󰁻" "󰁼" "󰁾" "󰂀" "󰂂" "󰁹"];
+        justify = "center";
         tooltip-format = "{timeTo} · {power:0.1f} W";
       };
     };
 
     waybarStyle = ''
-      @import url("catppuccin-colors.css");
+      @import url("file://${theme.stateDir}/current/waybar.css");
 
       * {
-        font-size: ${toString self.fonts.barSize}px;
-        font-family: "${self.fonts.monospace}";
-        color: @cat-text;
+        font-size: ${toString glyphSize}px;
+        font-family: "${glyphFont}";
+        color: @fg;
         border: none;
         border-radius: 0;
         min-height: 0;
@@ -263,84 +337,102 @@
       }
 
       window#waybar {
-        background: @cat-mantle;
-        border-left: 1px solid @cat-surface0;
+        background: @bar-bg;
+        border-left: 1px solid @hairline;
       }
 
       tooltip {
-        background: @cat-base;
-        border: 1px solid @cat-surface1;
-        border-radius: 6px;
+        background: @surface;
+        border: 1px solid @outline-variant;
+        border-radius: 8px;
       }
-      tooltip label { color: @cat-text; }
+      tooltip label {
+        color: @fg;
+        font-family: "${self.fonts.sansSerif}";
+        font-size: ${toString self.fonts.size}px;
+      }
 
       .modules-left, .modules-center, .modules-right {
-        padding: 6px 0;
+        padding: 8px 0;
       }
 
-      #clock, #custom-notification, #custom-mail, #mpris, #custom-sync,
-      #cpu, #memory, #disk, #temperature, #wireplumber, #bluetooth, #tray, #battery {
-        padding: 4px 6px;
-        margin: 1px 4px;
+      /* One vertical rhythm: every item is the same box (6px above/below,
+         4px gap), glyphs centred, values in the same box underneath. */
+      #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
+      #cpu, #memory, #disk, #temperature, #network, #wireplumber, #bluetooth,
+      #custom-tray-handle, #tray, #battery {
+        padding: 6px 0;
+        margin: 2px 4px;
         border-radius: 6px;
       }
 
-      #clock {
-        font-size: ${toString (self.fonts.barSize + 3)}px;
-        font-weight: bold;
-        padding: 6px 6px;
+      #clock { font-size: ${toString (glyphSize - 2)}px; }
+      #language {
+        color: @fg-muted;
+        font-size: ${toString (glyphSize - 4)}px;
       }
+      #custom-tray-handle { color: @fg-muted; }
 
-      #clock:hover, #custom-notification:hover, #custom-mail:hover,
-      #mpris:hover, #custom-sync:hover, #wireplumber:hover, #bluetooth:hover,
-      #battery:hover {
-        background: @cat-surface0;
+      #clock:hover, #language:hover, #custom-notification:hover, #custom-mail:hover,
+      #mpris:hover, #custom-sync:hover, #network:hover, #wireplumber:hover,
+      #bluetooth:hover, #custom-tray-handle:hover, #battery:hover {
+        background: @tint;
       }
 
       #custom-notification.dnd-notification,
-      #custom-notification.dnd-none { color: @cat-overlay0; }
+      #custom-notification.dnd-none { color: @fg-faint; }
       #custom-notification.notification,
-      #custom-mail { color: @cat-lavender; }
+      #custom-mail { color: @accent; }
 
-      #mpris.paused { color: @cat-overlay1; }
+      #mpris.paused { color: @fg-faint; }
 
-      #wireplumber.muted { color: @cat-overlay0; }
-      #bluetooth.on, #bluetooth.off, #bluetooth.disabled { color: @cat-overlay0; }
-      #bluetooth.connected { color: @cat-lavender; }
+      #wireplumber.muted { color: @fg-faint; }
+      #bluetooth.on { color: @fg-faint; }
+      #bluetooth.connected { color: @accent; }
 
-      #custom-sync.syncing { color: @cat-lavender; }
-      #custom-sync.error, #custom-sync.down { color: @cat-red; }
+      #custom-sync.syncing { color: @accent; }
+      #custom-sync.error, #custom-sync.down { color: @error; }
 
-      #cpu.warning, #memory.warning, #disk.warning, #temperature.warning { color: @cat-peach; }
-      #cpu.critical, #memory.critical, #disk.critical, #temperature.critical { color: @cat-red; }
+      #cpu.warning, #memory.warning, #disk.warning, #temperature.warning { color: @warning; }
+      #cpu.critical, #memory.critical, #disk.critical, #temperature.critical { color: @error; }
 
-      #workspaces { margin: 0 4px; }
+      /* Workspaces: the label is the dot; active = taller inverted pill. */
+      #workspaces { margin: 4px 0; }
       #workspaces button {
-        padding: 2px 0;
+        padding: 3px 0;
         background: none;
-        color: @cat-overlay0;
       }
-      #workspaces button:hover { background: @cat-surface0; }
-      #workspaces button label { color: inherit; }
-      #workspaces button.active { color: @cat-lavender; }
-      #workspaces button.empty { color: @cat-surface1; }
-      #workspaces button.urgent { color: @cat-red; }
+      #workspaces button label {
+        font-size: 1px;
+        min-width: 8px;
+        min-height: 8px;
+        border-radius: 4px;
+        background: @fg-faint;
+      }
+      #workspaces button.empty label { background: @hairline-strong; }
+      #workspaces button:hover label { background: @fg-muted; }
+      #workspaces button.active label {
+        min-height: 22px;
+        background: @inverse;
+      }
+      #workspaces button.urgent label { background: @error; }
 
-      #battery.charging, #battery.plugged { color: @cat-green; }
-      #battery.warning:not(.charging) { color: @cat-peach; }
-      #battery.critical:not(.charging) { color: @cat-red; font-weight: bold; }
+      #network.disconnected, #network.linked { color: @warning; }
 
-      #tray > .needs-attention { background: @cat-surface0; }
-    '';
+      #battery.warning { color: @warning; }
+      #battery.critical { color: @error; }
 
-    mkThemeHook = flavor: ''
-      ${pkgs.coreutils}/bin/ln -sf "$HOME/.config/waybar/catppuccin-${flavor}.css" "$HOME/.config/waybar/catppuccin-colors.css"
-      ${pkgs.coreutils}/bin/ln -sf "$HOME/.config/waybar/calendar-${flavor}.json" "$HOME/.config/waybar/calendar-colors.json"
-      # SIGUSR2: reload config + style in place (no restart, no flicker).
-      systemctl --user reload waybar.service 2>/dev/null || true
+      #tray > .needs-attention { background: @tint; }
     '';
   in {
     config = lib.mkIf (config.preferences.desktopShell == "waybar") {
+      preferences.theme = {
+        files."waybar.css" = mkColorsCss;
+        files."waybar-calendar.json" = mkCalendarColors;
+        # SIGUSR2: reload config + style in place (no restart, no flicker).
+        reloadHooks.waybar = "${pkgs.systemd}/bin/systemctl --user reload waybar.service 2>/dev/null || true";
+      };
+
       home-manager.users.${user} = {
         programs.waybar = {
           enable = true;
@@ -361,37 +453,6 @@
             StartLimitBurst = 30;
           };
           Service.RestartSec = 1;
-        };
-
-        # Theme variants; darkman points the *-colors.* symlinks at one of them.
-        home.file = {
-          ".config/waybar/catppuccin-latte.css".text = mkColorsCss latte;
-          ".config/waybar/catppuccin-mocha.css".text = mkColorsCss mocha;
-          ".config/waybar/calendar-latte.json".text = mkCalendarColors latte;
-          ".config/waybar/calendar-mocha.json".text = mkCalendarColors mocha;
-        };
-
-        # GTK aborts on a missing @import, so make sure the runtime symlinks
-        # exist before waybar ever starts. Only created when absent — darkman
-        # owns them afterwards.
-        home.activation.waybarInitialTheme = {
-          after = ["writeBoundary"];
-          before = [];
-          data = ''
-            d="$HOME/.config/waybar"
-            mkdir -p "$d"
-            for pair in catppuccin-colors.css:catppuccin-latte.css calendar-colors.json:calendar-latte.json; do
-              link="$d/''${pair%%:*}"; target="$d/''${pair##*:}"
-              if [ ! -e "$link" ]; then
-                ${pkgs.coreutils}/bin/ln -sfn "$target" "$link"
-              fi
-            done
-          '';
-        };
-
-        services.darkman = {
-          lightModeScripts.waybar-theme = mkThemeHook "latte";
-          darkModeScripts.waybar-theme = mkThemeHook "mocha";
         };
 
         # Hide/show the bar for focus.

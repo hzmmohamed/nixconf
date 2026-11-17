@@ -1,9 +1,5 @@
 {self, ...}: {
-  flake.nixosModules.wofi-theme = {config, ...}: let
-    user = config.preferences.user.name;
-    latte = self.catppuccin;
-    mocha = self.catppuccinMocha;
-
+  flake.nixosModules.wofi-theme = {...}: let
     mkWofiCss = cat: ''
       * {
         font-family: '${self.fonts.monospace}', monospace;
@@ -13,8 +9,8 @@
       window {
         margin: 0px;
         padding: 10px;
-        border: 0.16em solid ${cat.lavender};
-        border-radius: 0.1em;
+        border: 1px solid ${cat.outlineVariant};
+        border-radius: 8px;
         background-color: ${cat.base};
         animation: slideIn 0.2s ease-in-out both;
       }
@@ -83,11 +79,12 @@
       }
 
       #entry:selected {
-        border: 0.11em solid ${cat.lavender};
+        background-color: ${cat.inverseSurface};
+        border-radius: 6px;
       }
 
       #entry:selected #text {
-        color: ${cat.mauve};
+        color: ${cat.onInverseSurface};
       }
 
       #entry:drop(active) {
@@ -95,9 +92,10 @@
       }
     '';
   in {
-    home-manager.users.${user}.home.file = {
-      ".config/wofi/style-light.css".text = mkWofiCss latte;
-      ".config/wofi/style-dark.css".text = mkWofiCss mocha;
+    # wofi only reads ~/.config/wofi/style.css: link it to the current mode.
+    preferences.theme = {
+      files."wofi.css" = mkWofiCss;
+      links.".config/wofi/style.css" = "wofi.css";
     };
   };
 }
