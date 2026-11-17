@@ -113,9 +113,11 @@
       networkmanager.enable = true;
     };
 
-    # Direct cable to butternut: static 10.42.0.2, no gateway (internet stays
-    # on Wi-Fi). NIC name unknown here, so the profiles match any wired NIC.
-    # TODO(user): set preferences.cable.interface once `ip link` on hazel is known.
+    # Onboard ethernet enp4s0 (a discrete PCIe NIC: Realtek RTL8111, driver
+    # r8169, on the E14 Gen 2 Intel). A router gives DHCP (`lan`),
+    # butternut on the other end gives the static cable link (10.42.0.2, no
+    # gateway, internet stays on Wi-Fi). See features/cable-link.nix.
+    preferences.cable.interface = "enp4s0";
 
     # Wi-Fi profiles beyond home (secrets: see features/wifi-home.nix).
     preferences.wifi = {

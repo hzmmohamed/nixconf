@@ -29,6 +29,16 @@
       meshchat.ensureStorage = true;
     };
 
+    # The upstream activation script (rnsSharedSeed in reticulum-shared.nix)
+    # assumes user-private groups: `chown -R <user>:<user>` on ~/.reticulum
+    # and ~/.local/share/meshchat, guarded by `id -g <user>`, which succeeds
+    # with the primary group `users`. Without a group named like the user,
+    # every switch printed "chown: invalid group: '<user>:<user>'" twice and
+    # left the root-created meshchat dir root-owned. An empty group of that
+    # name makes the chown work (both dirs end up <user>:<user>, mode 0700
+    # for ~/.lxmd; the user owns them, so membership is not needed).
+    users.groups.${config.preferences.user.name} = {};
+
     # Enable RNS Map visualizations (ports 8085 and 8086)
     rns.map.enable = false;
     rns.map3d.enable = false;

@@ -19,7 +19,8 @@ in {
   # Fields (all optional except where noted):
   #   tailnetName  MagicDNS label (default: the attribute name)
   #   ts4          tailnet IPv4 from `tailscale status` (read-only snapshot 2026-11-17)
-  #   lan          home-LAN address (DHCP reservation on the WE router), null if none
+  #   lan          home-LAN address (DHCP reservation on the WE router), null if none;
+  #                gives /etc/hosts `<host>-lan` and a lan-cache URL
   #   cable        static address on the direct butternut <-> hazel cable (cable-link)
   #   cableShare   CIDR used by the `<host>-shares` fallback profile (NM shared mode)
   #   sshPort      sshd port; hosts without it get no ssh config (phone)
@@ -33,6 +34,18 @@ in {
   #   buildOnTarget  `deploy` builds on the host itself instead of locally + nix copy
   #                (cloud boxes: only derivations cross the uplink)
   flake.tailnet.domain = "tail1a9f7c.ts.net";
+
+  # The home LAN (WE router). A wired DHCP connection (cable-link `lan`) is
+  # trusted only while its gateway is this IP *and* MAC (trusted-networks):
+  # every WE customer has a 192.168.100.1. The MAC is not secret (any LAN
+  # client sees it) but it is per device, so it is what identifies home.
+  # TODO(user): on the home network (Wi-Fi or wired) run
+  #   ip neigh show 192.168.100.1
+  # and put the `lladdr` value here; until then `lan` stays untrusted.
+  flake.networks.home = {
+    gateway = "192.168.100.1";
+    gatewayMac = null;
+  };
 
   flake.hosts = {
     butternut = {

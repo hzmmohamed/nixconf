@@ -22,6 +22,11 @@
     removableMedia = config.home-manager.users.${user}.services.udiskie.enable;
     swayosd-client = "${pkgs.swayosd}/bin/swayosd-client";
     networkManager = config.networking.networkmanager.enable;
+    # network-ui feature (desktop): net-status / net-menu, when imported.
+    netUi = lib.attrByPath ["preferences" "networkUi"] null config;
+    netModules = networkManager && netUi != null;
+    # swayidle feature (caffeine), when imported.
+    idle = lib.attrByPath ["preferences" "idle"] null config;
     terminal = lib.getExe selfpkgs.terminal;
 
     # Agent inbox (T3 Code): the configured client URL, else the local server.
@@ -73,18 +78,37 @@
         };
       };
 
+    netModule = part:
+      lib.optionalAttrs netModules {
+        exec = "${netUi.statusCommand} show ${part}";
+        return-type = "json";
+        interval = "once";
+        signal = 12;
+        justify = "center";
+        hide-empty-text = true;
+        on-click = netUi.menuCommand;
+        on-click-right = "${terminal} ${pkgs.networkmanager}/bin/nmtui";
+      };
+
     waybarSettings.mainBar = {
       layer = "top";
       position = "right";
       reload_style_on_change = true;
       include = ["${theme.stateDir}/current/waybar-calendar.json"];
 
-      modules-left = ["clock" "sway/language" "custom/notification" "custom/mail" "mpris"];
+      modules-left =
+        ["clock" "sway/language" "custom/notification"]
+        ++ lib.optional (idle != null) "custom/caffeine"
+        ++ ["custom/mail" "mpris"];
       modules-center = ["custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
       modules-right =
         lib.optional syncthingEnabled "custom/sync"
         ++ ["cpu" "memory" "custom/disk" "temperature"]
-        ++ lib.optional networkManager "network"
+        ++ (
+          if netModules
+          then ["custom/wired" "custom/wifi" "custom/tailscale"]
+          else lib.optional networkManager "network"
+        )
         ++ ["wireplumber" "bluetooth"]
         ++ lib.optional removableMedia "custom/removable"
         ++ ["group/tray" "battery"];
@@ -219,6 +243,20 @@
         on-click-right = "${swaync-client} -d -sw";
       };
 
+      # Caffeine (swayidle feature): faint cup while the idle lock is armed,
+      # accent cup (+ time left) while it is paused. Left: toggle. Right:
+      # duration picker. Refreshed by `caffeine` via SIGRTMIN+13; 60 s for
+      # the countdown.
+      "custom/caffeine" = lib.optionalAttrs (idle != null) {
+        exec = "${idle.caffeineCommand} waybar";
+        return-type = "json";
+        justify = "center";
+        interval = 60;
+        signal = 13;
+        on-click = "${idle.caffeineCommand} toggle";
+        on-click-right = "${idle.caffeineCommand} menu";
+      };
+
       # Unread mail: local file read; refreshed by imapnotify / 5-min timer,
       # which nudge this module via SIGRTMIN+9.
       "custom/mail" = {
@@ -326,7 +364,25 @@
           on-scroll-down = "${swayosd-client} --output-volume -5 --max-volume 100";
         };
 
-      # Network (replaces the nm-applet tray icon): hidden on a working wired
+      # Network (network-ui): three glyphs, one shared tooltip (devices, IPs,
+      # trusted/untrusted, connectivity). Event-driven: net-status-watch
+      # refreshes the cache and sends SIGRTMIN+12 on NetworkManager, address,
+      # route and trust changes; the modules only read it ("once" + signal).
+      #   wired      LAN 󰈀 (fg; muted while untrusted) · cable link 󰌘
+      #              (accent; "out"/"in" under it in a shared mode) ·
+      #              connecting 󰌚 · link without connection 󰌙 (warning) ·
+      #              no carrier 󰈂 (faint) · hidden without a wired NIC
+      #   wifi       signal strength; warning colour behind a captive portal /
+      #              limited; offline 󰤮 (warning) when nothing has a default
+      #              route; hidden while disconnected but online over wire
+      #   tailscale  󰖂 up (muted) · exit node in use (accent, "exit") ·
+      #              stopped (faint) · needs login / daemon down (warning)
+      # Left: network picker (same as "Network" in vicinae). Right: nmtui.
+      "custom/wired" = netModule "wired";
+      "custom/wifi" = netModule "wifi";
+      "custom/tailscale" = netModule "tailscale";
+
+      # Fallback without network-ui (builtin module): hidden on a working wired
       # link (the normal case), Wi-Fi strength on wireless, a warning glyph
       # when offline. Left: nmtui in the terminal. Right: connection editor.
       network = {
@@ -460,7 +516,8 @@
       /* One vertical rhythm: every item is the same box (6px above/below,
          4px gap), glyphs centred, values in the same box underneath. */
       #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
-      #cpu, #memory, #custom-disk, #temperature, #network, #wireplumber, #bluetooth,
+      #cpu, #memory, #custom-disk, #temperature, #network, #custom-wired, #custom-wifi,
+      #custom-tailscale, #wireplumber, #bluetooth,
       #custom-removable, #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
       #custom-nix-build, #privacy, #custom-camera {
         padding: 6px 0;
@@ -476,7 +533,8 @@
       #custom-tray-handle { color: @fg-muted; }
 
       #clock:hover, #language:hover, #custom-notification:hover, #custom-mail:hover,
-      #mpris:hover, #custom-sync:hover, #network:hover, #wireplumber:hover,
+      #mpris:hover, #custom-sync:hover, #network:hover, #custom-wired:hover,
+      #custom-wifi:hover, #custom-tailscale:hover, #wireplumber:hover,
       #bluetooth:hover, #custom-removable:hover, #custom-tray-handle:hover, #battery:hover,
       #custom-agents:hover, #custom-agents-input:hover {
         background: @tint;
@@ -514,10 +572,31 @@
 
       #network.disconnected, #network.linked { color: @warning; }
 
+      #custom-wired.untrusted { color: @fg-muted; }
+      #custom-wired.cable { color: @accent; }
+      #custom-wired.connecting { color: @fg-muted; }
+      #custom-wired.idle { color: @warning; }
+      #custom-wired.nocarrier { color: @fg-faint; }
+      #custom-wifi.limited, #custom-wifi.offline { color: @warning; }
+      #custom-tailscale.up { color: @fg-muted; }
+      #custom-tailscale.exit { color: @accent; }
+      #custom-tailscale.stopped { color: @fg-faint; }
+      #custom-tailscale.error { color: @warning; }
+
       #battery.warning { color: @warning; }
       #battery.critical { color: @error; }
 
       #tray > .needs-attention { background: @tint; }
+
+      /* Caffeine: same box as the other items; faint off, accent on. */
+      #custom-caffeine {
+        padding: 6px 0;
+        margin: 2px 4px;
+        border-radius: 6px;
+        color: @fg-faint;
+      }
+      #custom-caffeine:hover { background: @tint; }
+      #custom-caffeine.on { color: @accent; }
     '';
   in {
     config = lib.mkIf (config.preferences.desktopShell == "waybar") {

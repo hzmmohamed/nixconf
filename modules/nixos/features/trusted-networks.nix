@@ -1,4 +1,4 @@
-{...}: {
+{self, ...}: {
   # Café-safe firewall: LAN-facing service ports (KDE Connect, spotifyd,
   # Syncthing, Reticulum, mDNS, sshd) are NOT opened globally. Features add
   # them to `preferences.trustedNetworks.allowed*` and they are accepted only on
@@ -9,6 +9,14 @@
   #                          `connections` (home, hotspot, cable, …): an NM
   #                          dispatcher hook marks its interface as trusted
   #                          while it is up
+  #   - gateway connections  a connection in `gatewayConnections` (the wired
+  #                          `lan` DHCP profile): trusted only while its IPv4
+  #                          gateway is one of `gateways` (IP + MAC, i.e. the
+  #                          home router), checked on up and on every DHCP
+  #                          renewal. NM can't tell wired networks apart, the
+  #                          router's MAC can. Unknown gateway → untrusted, and
+  #                          the journal says which MAC it saw
+  #                          (`journalctl -t trusted-networks`).
   #
   # On any other Wi-Fi (café, office, an imperative profile) those ports stay
   # closed. Stationary servers set `everywhere = true` and get plain global
@@ -31,7 +39,7 @@
   # of trusted networks (e.g. a `WE_93CBE9` profile next to `home`): they would
   # come up untrusted.
   #
-  # Debug: `ls /run/trusted-networks; doas iptables -S nixos-fw-trusted`.
+  # Debug: `cat /run/trusted-networks/*; doas iptables -S nixos-fw-trusted`.
   flake.nixosModules.trusted-networks = {
     config,
     lib,
@@ -79,16 +87,53 @@
       '';
     };
 
+    knownGateways = lib.filter (g: g.mac != null) cfg.gateways;
+    ip = "${pkgs.iproute2}/bin/ip";
+
+    # Exit 0 when $1's IPv4 gateway is a known one. The neighbour entry may
+    # not exist yet right after DHCP: one ping fills it.
+    gatewayCheck = pkgs.writeShellScript "trusted-networks-gateway" ''
+      iface=$1
+      gw=''${IP4_GATEWAY:-$(${ip} -4 route show default dev "$iface" | ${pkgs.gawk}/bin/awk '{ print $3; exit }')}
+      [ -n "$gw" ] || exit 1
+      mac() {
+        ${ip} neigh show "$gw" dev "$iface" \
+          | ${pkgs.gawk}/bin/awk '{ for (i = 1; i < NF; i++) if ($i == "lladdr") { print tolower($(i + 1)); exit } }'
+      }
+      m=$(mac)
+      if [ -z "$m" ]; then
+        ${pkgs.iputils}/bin/ping -c1 -W1 -I "$iface" "$gw" >/dev/null 2>&1 || true
+        m=$(mac)
+      fi
+      case "$gw $m" in
+        ${lib.concatMapStringsSep "|" (g: lib.escapeShellArg "${g.ip} ${lib.toLower g.mac}") knownGateways}${lib.optionalString (knownGateways == []) "\"\""}) echo "$gw $m"; exit 0 ;;
+      esac
+      ${pkgs.util-linux}/bin/logger -t trusted-networks \
+        "$CONNECTION_ID on $iface: gateway $gw (MAC ''${m:-unknown}) is not a trusted gateway; untrusted"
+      exit 1
+    '';
+
     dispatcher = pkgs.writeShellScript "trusted-networks-dispatcher" ''
       iface=$1
       action=$2
       [ -n "$iface" ] || exit 0
       ${pkgs.coreutils}/bin/mkdir -p ${stateDir}
       case "$action" in
-        up | reapply)
+        up | reapply | dhcp4-change)
           case " ${lib.concatMapStringsSep " " lib.escapeShellArg cfg.connections} " in
             *" $CONNECTION_ID "*) echo "$CONNECTION_ID" > ${stateDir}/"$iface" ;;
-            *) ${pkgs.coreutils}/bin/rm -f ${stateDir}/"$iface" ;;
+            *)
+              case " ${lib.concatMapStringsSep " " lib.escapeShellArg cfg.gatewayConnections} " in
+                *" $CONNECTION_ID "*)
+                  if via=$(${gatewayCheck} "$iface"); then
+                    echo "$CONNECTION_ID via $via" > ${stateDir}/"$iface"
+                  else
+                    ${pkgs.coreutils}/bin/rm -f ${stateDir}/"$iface"
+                  fi
+                  ;;
+                *) ${pkgs.coreutils}/bin/rm -f ${stateDir}/"$iface" ;;
+              esac
+              ;;
           esac
           ;;
         down | pre-down) ${pkgs.coreutils}/bin/rm -f ${stateDir}/"$iface" ;;
@@ -121,7 +166,44 @@
         type = lib.types.listOf lib.types.str;
         default = [];
         example = ["eno2"];
-        description = "Interfaces that are always trusted (a cable between own machines).";
+        description = ''
+          Interfaces that are always trusted, whatever they are plugged into.
+          Prefer `connections`/`gatewayConnections` for ports that also see
+          foreign networks.
+        '';
+      };
+
+      gatewayConnections = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [];
+        example = ["lan"];
+        description = ''
+          NetworkManager connection ids trusted only while their IPv4 gateway
+          is in `gateways` (DHCP profiles that match any wired network).
+        '';
+      };
+
+      gateways = lib.mkOption {
+        type = lib.types.listOf (lib.types.submodule {
+          options = {
+            ip = lib.mkOption {
+              type = lib.types.str;
+              description = "Gateway IPv4 address.";
+            };
+            mac = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              description = "Gateway MAC (`ip neigh show <ip>`); `null` = not known yet, never trusted.";
+            };
+          };
+        });
+        default = [
+          {
+            ip = self.networks.home.gateway;
+            mac = self.networks.home.gatewayMac;
+          }
+        ];
+        defaultText = lib.literalMD "the home router from `self.networks.home` (modules/hosts-registry.nix)";
+        description = "Gateways behind which `gatewayConnections` count as trusted.";
       };
 
       allowedTCPPorts = lib.mkOption {
@@ -170,6 +252,9 @@
           networking.firewall.extraStopCommands = ''
             ip46tables -F ${chain} 2>/dev/null || true
           '';
+
+          # Exists from boot, so readers (the bar's watcher) can inotify it.
+          systemd.tmpfiles.rules = ["d ${stateDir} 0755 root root -"];
 
           networking.networkmanager.dispatcherScripts = lib.mkIf config.networking.networkmanager.enable [
             {

@@ -59,6 +59,7 @@
       self.nixosModules.firefox
       self.nixosModules.chromium
       self.nixosModules.removable-media # udisks2 + udiskie automount, eject
+      self.nixosModules.network-ui # net-status (bar) + "Network" launcher picker
     ];
 
     # Turns on GUI bits of modules every host imports (gtk, tailscale tray).

@@ -1045,6 +1045,32 @@ tailnet DNS (MagicDNS, override-local, the four resolvers: imported unchanged), 
 the hosts' `tag:provisioner` OAuth client (imported) and, opt-in, registry-driven device tags. Bootstrap and runbook:
 `2026-11-17-tailnet-as-code.md` (`bash scripts/tailscale/store-admin.sh`, then `bash scripts/tailscale/plan.sh`).
 
+### 12.2 Wired port: LAN or cable, automatically (follow-up)
+
+Found live: butternut's `eno2` on the home router got the autoconnecting static `cable` (10.42.0.1/24) and no LAN address.
+Now (`features/cable-link.nix`): `lan` (DHCP, autoconnect-priority 60, `ipv4.dhcp-timeout=10`, `may-fail=no`,
+`autoconnect-retries=1`, rejects DHCP offers from 10.42.0.0/16) sits above `cable` (static, 50). On a router `lan` gets a lease. On the
+other laptop no DHCP answers, the activation fails, the single retry is used up, so `lan` is blocked on that device and NM autoconnects
+`cable` right away. Replugging resets the retries (NM 1.56 `nm-policy.c`: DISCONNECTED with reason CARRIER coming from UNAVAILABLE).
+NM never pre-empts an active device, so the 300 s retry reset is harmless. Rejected alternatives: one `auto` profile with a static
+extra address never activates while DHCP is pending (IPv4 state = pending until the lease); a dispatcher that picks profiles races NM.
+`wired-recheck` (timer, 5 min) retries `lan` when `cable` is up but the peer is silent (router slower than the laptop after a power cut).
+
+Trust: `cable` / `*-shares` by id; `lan` only behind a known gateway. `trusted-networks.gatewayConnections` + `gateways` (IP + MAC;
+default `self.networks.home` in `modules/hosts-registry.nix`, MAC still a TODO): the dispatcher checks `IP4_GATEWAY`'s neighbour
+entry on `up`/`dhcp4-change`. The static `interfaces = [eno2]` trust is gone; 53/67 for shared mode moved into the trusted set.
+`no-auto-default` is now set per interface (`interface-name:<nic>`). hazel's NIC is `enp4s0`. lan-cache adds
+`http://<registry lan>:5000` (priority 15) once butternut has a reservation.
+
+UI (`features/network-ui.nix`, in `desktop`): `net-status` + user service `net-status-watch` (nmcli monitor, `ip monitor address route`,
+inotify on /run/trusted-networks → SIGRTMIN+12) feed three waybar modules (`custom/wired`, `custom/wifi`, `custom/tailscale`) with
+one tooltip; `net-menu` ("Network" in vicinae, click on the glyphs) for Wi-Fi, wired reconnect, cable modes, `captive`, Tailscale
+up/down + exit nodes, copy an IP, nmtui.
+
+hazel NO-CARRIER against butternut: hazel runs `powertop --auto-tune` (butternut opts out), which puts its r8169 into runtime PM; a
+suspended r8169 often misses the link-up. `powersave.nix` now keeps PCI ethernet controllers (class 0x0200) at `power/control=on`
+(udev rule + powertop postStart). EEE/ASPM not changed; diagnostics in the user actions.
+
 ## Sources
 
 - Tailscale DNS (DoH for public global nameservers, split DNS): https://tailscale.com/kb/1054/dns

@@ -378,3 +378,84 @@ shared-checkout rules.
       npm cache clean --force; rm -rf ~/.cache/pnpm                     # U1 11 GB
       ```
       R1 (jazz build output) is covered by removing the old checkouts above.
+
+## Wired: LAN or cable, picked automatically (butternut, hazel)
+
+`lan` (DHCP) is tried first on the ethernet port; with no DHCP server within 10 s NM falls back to `cable`
+(static 10.42.0.1/.2). Details: network review §12.2. Fish-safe commands.
+
+**After switching butternut**
+
+- [ ] Remove the hand-made profile (eno2 then comes up on `lan` by itself), and any NM auto profile:
+
+  ```sh
+  nmcli con delete lan-dhcp
+  nmcli -f NAME,TYPE con show | grep -i 'wired connection'   # if listed: nmcli con delete 'Wired connection 1'
+  ```
+
+- [ ] Make the wired home LAN trusted: copy the router's MAC (the `lladdr` value) into
+      `flake.networks.home.gatewayMac` in `modules/hosts-registry.nix`, then switch again:
+
+  ```sh
+  ip neigh show 192.168.100.1        # 192.168.100.1 dev eno2 lladdr xx:xx:xx:xx:xx:xx REACHABLE
+  ```
+
+- [ ] Optional: reserve butternut's wired address on the router and put it in the registry as
+      `butternut.lan` (gives `butternut-lan` in /etc/hosts and a LAN cache URL for hazel).
+
+**Plugged into the router → LAN**
+
+```sh
+nmcli -f NAME,DEVICE,STATE con show --active   # lan  eno2 (hazel: enp4s0)  activated
+ip -4 -br addr show eno2                       # 192.168.100.x/24
+ip route show default                          # dev eno2 metric 100 listed before wlo1 metric 600
+cat /run/trusted-networks/eno2                 # "lan via 192.168.100.1 <router MAC>"; missing = untrusted
+journalctl -t trusted-networks -n 5            # why it is untrusted (MAC seen)
+```
+
+**Laptop to laptop → cable** (both switched; ~12 s after plugging in)
+
+```sh
+nmcli -f NAME,DEVICE,STATE con show --active   # cable on both ends
+journalctl -b -u NetworkManager --since -3min | grep -E "'(lan|cable)'"   # lan: DHCP timeout, then cable
+ping -c2 hazel-cable                           # from butternut (on hazel: ping -c2 butternut-cable)
+ssh -G hazel | grep '^hostname'                # 10.42.0.2 while the cable is up
+cat /run/trusted-networks/eno2                 # cable
+cable-mode status
+systemctl list-timers wired-recheck            # retries lan every 5 min when the peer is silent on the cable
+```
+
+Replug into the router afterwards: `lan` again. `cable-mode auto` = "reconnect wired" by hand.
+
+**Bar and launcher**
+
+```sh
+systemctl --user status net-status-watch
+net-status json | jq .
+nmcli radio wifi off; sleep 3; nmcli radio wifi on   # Wi-Fi glyph disappears / comes back without a click
+tailscale down; sleep 3; tailscale up                # Tailscale glyph faint, then back
+```
+
+Hover any of the three network glyphs (wired, Wi-Fi, Tailscale) for the tooltip; left click = Network picker;
+right click = nmtui. In vicinae, type "Network" for the same picker.
+
+**hazel: NO-CARRIER against butternut**
+
+Likely cause: hazel runs `powertop --auto-tune`, which runtime-suspends the idle r8169; the switch keeps
+ethernet controllers powered. Check, and if the link still does not come up, try one change at a time,
+replugging after each:
+
+```sh
+lspci -nnk | grep -A3 -i ethernet                  # expect Realtek RTL8111/8168, driver r8169
+cat /sys/class/net/enp4s0/device/power/control     # after the switch: on (auto = still suspended)
+cat /sys/class/net/enp4s0/carrier                  # 1 = link
+doas ethtool enp4s0                                # "Link detected", speed, link partner modes
+doas ethtool --show-eee enp4s0
+journalctl -k -b | grep -iE 'r8169|enp4s0'
+echo on | doas tee /sys/class/net/enp4s0/device/power/control   # 1. runtime PM off (what the switch does)
+doas ethtool --set-eee enp4s0 eee off                           # 2. EEE off
+doas ethtool -s enp4s0 advertise 0x008                          # 3. 100 Mbit full only (undo: advertise 0x02f)
+```
+
+Also plug hazel into the router once: carrier there but not to butternut points at the pairing
+(EEE/negotiation); no carrier anywhere points at hazel's NIC/driver.
