@@ -1,0 +1,7 @@
+# statix (just lint). The repo convention is `{...}:` for flake-parts modules and
+# split attribute paths (`boot.x = ...; boot.y = ...;`), so these two lints are
+# off.
+disabled = [
+  "empty_pattern",
+  "repeated_keys",
+]

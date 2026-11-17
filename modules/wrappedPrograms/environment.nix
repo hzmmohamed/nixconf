@@ -11,7 +11,7 @@
   }: {
     # My whole desktop in one package, includes kityy terminal
     packages.desktop =
-      (inputs.wrappers.wrapperModules.niri.apply ({config, ...}: {
+      (inputs.wrappers.wrapperModules.niri.apply ({...}: {
         inherit pkgs;
         imports = [self.wrapperModules.niri];
         terminal = lib.getExe self'.packages.terminal;

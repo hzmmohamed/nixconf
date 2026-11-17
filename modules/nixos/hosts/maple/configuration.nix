@@ -9,46 +9,34 @@
     ];
   };
 
-  flake.nixosModules.hostMaple = {pkgs, ...}: {
+  # maple: laptop whose screen died — runs headless as an always-on node
+  # (lid closed, on AC). No desktop stack; reach it over SSH (port 7654) or
+  # Tailscale SSH.
+  flake.nixosModules.hostMaple = {
+    config,
+    pkgs,
+    ...
+  }: {
     imports = [
       self.nixosModules.base
       self.nixosModules.general
-      self.nixosModules.desktop
 
-      # Switch between WMs by changing this one line:
-      # self.nixosModules.sway        # Sway + waybar (Catppuccin)
-      self.nixosModules.niri-desktop # Niri + Noctalia (Gruvbox)
-
-      self.nixosModules.discord
-      self.nixosModules.gimp
-      self.nixosModules.telegram
-      self.nixosModules.youtube-music
-
-      self.nixosModules.rbw
-      self.nixosModules.office
-      self.nixosModules.docker
-      self.nixosModules.media
-      self.nixosModules.adb
+      self.nixosModules.sops
+      self.nixosModules.openssh
       self.nixosModules.tailscale
-      self.nixosModules.vscode
+      self.nixosModules.syncthing
+      self.nixosModules.nix-serve
+      self.nixosModules.doas
+
+      # CLI / server tooling
+      self.nixosModules.docker
       self.nixosModules.k8s
       self.nixosModules.aws
       self.nixosModules.atuin
       self.nixosModules.zellij
       self.nixosModules.yazi
-      self.nixosModules.design
-      self.nixosModules.shared-zotero
       self.nixosModules.gpg
       self.nixosModules.nodejs
-      self.nixosModules.cad
-      self.nixosModules.doas
-
-      self.nixosModules.sops
-      self.nixosModules.openssh
-      self.nixosModules.nix-serve
-      self.nixosModules.syncthing
-
-      self.nixosModules.powersave
 
       # disko
       inputs.disko.nixosModules.disko
@@ -66,8 +54,6 @@
       kernelParams = ["quiet"];
     };
 
-    boot.plymouth.enable = true;
-
     networking = {
       hostName = "maple";
       networkmanager.enable = true;
@@ -76,23 +62,36 @@
     hardware.cpu.intel.updateMicrocode = true;
 
     services = {
-      flatpak.enable = true;
       udisks2.enable = true;
-      printing.enable = true;
+      thermald.enable = true;
+
+      # Laptop-as-server: closing the lid must never suspend.
+      logind.settings.Login = {
+        HandleLidSwitch = "ignore";
+        HandleLidSwitchExternalPower = "ignore";
+        HandleLidSwitchDocked = "ignore";
+      };
+
+      journald.extraConfig = ''
+        SystemMaxUse=1G
+        MaxRetentionSec=1month
+      '';
     };
+
+    # Never sleep, whatever asks for it.
+    systemd.targets = {
+      sleep.enable = false;
+      suspend.enable = false;
+      hibernate.enable = false;
+      hybrid-sleep.enable = false;
+    };
+
+    # Keep user services (agents, zellij sessions) running without a login.
+    users.users.${config.preferences.user.name}.linger = true;
 
     programs.nix-ld.enable = true;
 
-    hardware.graphics.enable = true;
-
     time.timeZone = "Africa/Cairo";
-
-    # Opt-in apps (off by default in their feature modules).
-    preferences.discord.officialClient.enable = true;
-    preferences.office.obsidian.enable = true;
-    preferences.office.element.enable = true;
-    preferences.media.extraApps.enable = true;
-    preferences.design.extraApps.enable = true;
 
     system.stateVersion = "24.11";
   };

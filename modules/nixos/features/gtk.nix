@@ -2,6 +2,8 @@
 # palette through a generated gtk.css (@define-color overrides of the
 # libadwaita named colours), so both toolkits match and follow light/dark.
 # Icons: Papirus / Papirus-Dark with folders tinted to the accent.
+# Imported by `general` on every host; only active when preferences.desktop.enable
+# (set by the `desktop` feature), so headless hosts get no GTK/dconf.
 {...}: {
   flake.nixosModules.gtk = {
     pkgs,
@@ -106,64 +108,65 @@
     importCss = ''
       @import url("file://${theme.stateDir}/current/gtk.css");
     '';
-  in {
-    programs.dconf = {
-      enable = lib.mkDefault true;
-      profiles.user.databases = [
-        {
-          lockAll = false;
-          settings."org/gnome/desktop/interface" = {
-            gtk-theme = lightTheme;
-            icon-theme = "Papirus";
-            color-scheme = "prefer-light";
-            # libadwaita's own accent setting; the generated gtk.css overrides
-            # the accent colours anyway. "blue" is closest to lavender.
-            accent-color = "blue";
-          };
-        }
+  in
+    lib.mkIf config.preferences.desktop.enable {
+      programs.dconf = {
+        enable = lib.mkDefault true;
+        profiles.user.databases = [
+          {
+            lockAll = false;
+            settings."org/gnome/desktop/interface" = {
+              gtk-theme = lightTheme;
+              icon-theme = "Papirus";
+              color-scheme = "prefer-light";
+              # libadwaita's own accent setting; the generated gtk.css overrides
+              # the accent colours anyway. "blue" is closest to lavender.
+              accent-color = "blue";
+            };
+          }
+        ];
+      };
+
+      environment.systemPackages = [
+        pkgs.adw-gtk3
+        iconPackage
+        pkgs.gtk3
+        pkgs.gtk4
       ];
-    };
 
-    environment.systemPackages = [
-      pkgs.adw-gtk3
-      iconPackage
-      pkgs.gtk3
-      pkgs.gtk4
-    ];
-
-    # Switched by theme-mode (and re-applied after every activation).
-    preferences.theme = {
-      files."gtk.css" = mkGtkCss;
-      dconf = {
-        "/org/gnome/desktop/interface/color-scheme" = {
-          light = "'prefer-light'";
-          dark = "'prefer-dark'";
-        };
-        "/org/gnome/desktop/interface/gtk-theme" = {
-          light = "'${lightTheme}'";
-          dark = "'${darkTheme}'";
-        };
-        "/org/gnome/desktop/interface/icon-theme" = {
-          light = "'Papirus'";
-          dark = "'Papirus-Dark'";
+      # Switched by theme-mode (and re-applied after every activation).
+      preferences.theme = {
+        files."gtk.css" = mkGtkCss;
+        dconf = {
+          "/org/gnome/desktop/interface/color-scheme" = {
+            light = "'prefer-light'";
+            dark = "'prefer-dark'";
+          };
+          "/org/gnome/desktop/interface/gtk-theme" = {
+            light = "'${lightTheme}'";
+            dark = "'${darkTheme}'";
+          };
+          "/org/gnome/desktop/interface/icon-theme" = {
+            light = "'Papirus'";
+            dark = "'Papirus-Dark'";
+          };
         };
       };
-    };
 
-    home-manager.users.${user}.gtk = {
-      enable = true;
-      theme = {
-        name = lightTheme;
-        package = pkgs.adw-gtk3;
+      home-manager.users.${user}.gtk = {
+        enable = true;
+        theme = {
+          name = lightTheme;
+          package = pkgs.adw-gtk3;
+        };
+        iconTheme = {
+          name = "Papirus";
+          package = iconPackage;
+        };
+        # libadwaita is not themed by name; it only gets the colour overrides.
+        gtk4.theme = null;
+        gtk3.extraCss = importCss;
+        gtk4.extraCss = importCss;
       };
-      iconTheme = {
-        name = "Papirus";
-        package = iconPackage;
-      };
-      # libadwaita is not themed by name; it only gets the colour overrides.
-      gtk4.theme = null;
-      gtk3.extraCss = importCss;
-      gtk4.extraCss = importCss;
     };
-  };
 }

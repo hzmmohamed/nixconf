@@ -18,7 +18,7 @@ flake.nix
               |
               +--> modules/nixos/base/       (option declarations: user, keymap, monitors, autostart, persistence)
               +--> modules/nixos/features/   (composable NixOS modules: desktop, sway, gaming, ...)
-              +--> modules/nixos/extra/      (integration layers: hjem, impermanence)
+              +--> modules/nixos/extra/      (integration layers: home-manager bridge, theme switch, impermanence)
               +--> modules/nixos/hosts/      (per-host configurations)
               |
               +--> modules/vms/             (purpose-built test VMs)
@@ -36,9 +36,10 @@ config. Hosts compose both.
 | File | Exports | Purpose |
 |------|---------|---------|
 | `user.nix` | `flake.user` | Username and home path. Change it here, it cascades everywhere. |
-| `theme.nix` | `flake.theme`, `flake.themeNoHash`, `flake.catppuccin` | Color palettes: Gruvbox (niri/hyprland desktop), Catppuccin Latte (sway desktop). |
-| `flake-parts.nix` | systems, options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
-| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age, claude-code. |
+| `theme.nix` | `flake.palettes`, `flake.fonts`, `flake.color`, `flake.theme`, `flake.catppuccin`, `flake.catppuccinMocha` | Palettes (Catppuccin Latte/Mocha `{light,dark}` consumed via `preferences.theme.palette`; legacy Gruvbox `theme` for the niri wrappers) and fonts. |
+| `flake-parts.nix` | systems (x86_64-linux), options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
+| `devshell.nix` | `perSystem.devShells.default`, treefmt | devenv shell (`nix develop --impure`) with nix tooling, sops, age, just, claude-code; alejandra + deadnix git hooks. |
+| `checks.nix` | `perSystem.checks.<host>-eval` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent). |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -47,11 +48,15 @@ These files all contribute to `flake.nixosModules.base`. They define the
 
 | File | Options defined |
 |------|-----------------|
-| `user.nix` | `preferences.user.name` (default: `self.user.name`) |
+| `user.nix` | `preferences.user.{name, passwordFromSops}` (default name: `self.user.name`) |
 | `keymap.nix` | `preferences.keymap` (nested keybinding tree with chord support) |
 | `monitors.nix` | `preferences.monitors` (width, height, refresh, position per output) |
 | `start.nix` | `preferences.autostart` (list of packages/commands to exec at login) |
 | `persistance.nix` | `persistance.{enable, data, cache, directories, files}` |
+| `keyboard.nix` | `preferences.keyboard.{layouts, toggle, extraOptions}` |
+| `theme.nix` | `preferences.theme.{source, palette, stateDir, files, dconf, reloadHooks}` |
+| `desktop-shell.nix` | `preferences.desktopShell` (`waybar` \| `noctalia`, Sway hosts) |
+| `profile.nix` | `preferences.desktop.enable` (set by `desktop`; gates GUI bits in always-imported modules) |
 
 ### `modules/nixos/features/` — composable feature modules
 
@@ -59,13 +64,13 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 
 | Module | What it does | Imports |
 |--------|-------------|---------|
-| `general` | Creates user, sets shell, persistence dirs | `extra_hjem`, `gtk`, `nix` |
-| `desktop` | WM-agnostic desktop base: fonts, polkit, bluetooth, graphics, pipewire, browsers, VT switching disabled (NAutoVTs=0) | `gtk`, `wallpaper`, `pipewire`, `firefox`, `chromium` |
-| `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, XDG portals (wlr+gtk), env import for systemd/dbus | `extra_hjem_sway` |
-| `hyprland` | Hyprland WM: keybinds, animations, monitors, dwindle layout | (uses `home.programs.hyprland` consumed by hjem) |
+| `general` | Creates user, sets shell, persistence dirs | `extra_hjem`, `extra_theme`, `fish`, `gtk` (inactive unless `preferences.desktop.enable`), `nix` |
+| `desktop` | WM-agnostic desktop base, sets `preferences.desktop.enable`: fonts, polkit, bluetooth, graphics, pipewire, browsers, VT switching disabled (NAutoVTs=0) | `gtk`, `wallpaper`, `pipewire`, `firefox`, `chromium` |
+| `sway` | Sway WM: keybinds, input (US+Arabic), gaps, brightness, XDG portals (wlr+gtk), env import for systemd/dbus | `wofi-theme` |
+| `hyprland` | Hyprland WM: keybinds, animations, monitors, dwindle layout | (home-manager `wayland.windowManager.hyprland`; unused, slated for removal) |
 | `waybar` | Right-side vertical status bar with Catppuccin Latte theme: rotated clock, persistent workspaces, expandable CPU/mem/temp drawer, battery | |
 | `swayidle` | Screen lock (swaylock-effects with blur, clock, Catppuccin Mocha theme) + idle timeout (5min lock, 10min DPMS off) | |
-| `cliphist` | Clipboard history daemon (wl-paste + cliphist) | |
+| `clipse` | Clipboard history (clipse); unused, slated for removal | |
 | `gammastep` | Blue light filter (Cairo coordinates) | |
 | `gaming` | Steam, Lutris, Heroic, Proton GE, DXVK, MangoHUD | |
 | `vr` | WiVRn, OpenXR, xrizer, OpenVR paths | |
@@ -78,7 +83,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `telegram` | Telegram Desktop | |
 | `youtube-music` | YouTube Music client | |
 | `gimp` | GIMP 3 | |
-| `gtk` | GTK/icon theme (Gruvbox) | |
+| `gtk` | adw-gtk3 + Papirus recoloured from the palette, light/dark via `theme-mode`; gated on `preferences.desktop.enable` | |
 | `nix` | direnv, nix-index, flakes, nix-ld, formatters, cuda-maintainers cachix | |
 | `wallpaper` | swww daemon with wallpaper image (used by sway/hyprland; niri uses noctalia wallpaper management) | |
 | `sops` | Enables sops-nix with age key path | `inputs.sops-nix` |
@@ -89,13 +94,13 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `docker` | Docker daemon + compose + lazydocker + dive | |
 | `media` | MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl | |
 | `adb` | Android Debug Bridge | |
-| `tailscale` | Tailscale VPN with SSH, firewall rules, system tray | |
+| `tailscale` | Tailscale VPN with SSH, firewall rules, system tray (desktop hosts only) | |
 | `vscode` | VSCodium with extensions (Nix, Python, GitLab, Claude Code), Catppuccin theme, gnome-keyring integration | |
 | `k8s` | kubectl, helm, kubectx, k9s, kind, stern, eksctl | |
 | `aws` | AWS CLI + aws-vault | |
-| `atuin` | Shell history sync with vim keybindings, config via hjem | |
+| `atuin` | Shell history sync with vim keybindings, config via home-manager | |
 | `zellij` | Terminal multiplexer | |
-| `yazi` | File manager with image/PDF preview, config via hjem | |
+| `yazi` | File manager with image/PDF preview, config via home-manager | |
 | `design` | Inkscape, Blender, FontForge, font-manager | |
 | `niri-desktop` | Niri + Noctalia shell: wrapped niri config via NIRI_CONFIG env, noctalia-shell as systemd user service (Restart=always), wallpaper via noctalia | |
 | `doas` | Replaces sudo with doas (passwordless, keepEnv) | |
@@ -113,9 +118,8 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `hjem/hjem.nix` | `nixosModules.extra_hjem` | Configures hjem (home file manager) for the user |
-| `hjem/hyprland.nix` | `nixosModules.extra_hjem` | Converts `home.programs.hyprland.settings` + `preferences.keymap` to `~/.config/hypr/hyprland.conf` |
-| `hjem/sway.nix` | `nixosModules.extra_hjem_sway` | Converts `home.programs.sway.settings` + `preferences.autostart` to `~/.config/sway/config` |
+| `hjem/hjem.nix` | `nixosModules.extra_hjem` | Home-manager bridge (despite the name): imports `home-manager.nixosModules.home-manager` + catppuccin modules, sets up `home-manager.users.<user>` |
+| `theme.nix` | `nixosModules.extra_theme` | Implements `preferences.theme.*`: per-mode palette files under `~/.local/state/theme`, `theme-mode light|dark` switch (driven by darkman) |
 | `impermanence.nix` | `nixosModules.extra_impermanence` | Btrfs subvolume setup, old root cleanup, `/persist` mounts |
 
 ### `modules/nixos/hosts/` — host configurations
@@ -126,16 +130,15 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 
 | Host | WM | Hardware | Notable features |
 |------|----|----------|------------------|
-| **main** | Hyprland + Niri | AMD CPU/GPU, NVMe, btrfs | Gaming, VR, impermanence, WiFi hotspot, OBS |
-| **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
-| **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet, email, reticulum, openrgb |
-| **maple** | Niri + Noctalia | Intel, LUKS ext4 | Workstation, SSH server, nix-serve-ng |
-| **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Deployed via nixos-anywhere (`scripts/install-host.sh peacelily <ip>`) |
+| **butternut** | Sway | ASUS TUF (Intel Alder Lake + RTX 3050), LUKS ext4 | Laptop used as a desktop (broken panel, external monitor, always on AC). NVIDIA PRIME offload with the dGPU kept awake for CUDA, LTS kernel. Split files: `gpu.nix`, `power.nix`, `audio.nix`, `games.nix`, `network.nix`. greetd, nix-serve, email, reticulum, openrgb, gaming |
+| **hazel** | Sway | ThinkPad E14 Gen 2 (i5-1135G7), LUKS NVMe | Carried laptop / client: greetd, battery notifications, lan-cache client, remote-deploy |
+| **maple** | None (headless) | Intel laptop, dead screen, LUKS ext4 | Always-on node: SSH, Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid switch ignored, sleep targets disabled, user lingering, journald capped |
+| **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Not yet redeployed with the current config. Deployed via nixos-anywhere (`scripts/install-host.sh peacelily <ip>`) |
 
 **Switching WMs:** Hosts choose their window manager by importing one line:
 ```nix
-self.nixosModules.sway          # Sway + waybar (Catppuccin)
-self.nixosModules.niri-desktop  # Niri + Noctalia (Gruvbox)
+self.nixosModules.sway          # Sway (+ waybar or noctalia via preferences.desktopShell)
+self.nixosModules.niri-desktop  # Niri + Noctalia (currently broken, unused)
 ```
 
 ### `modules/vms/` — test VMs
@@ -162,7 +165,7 @@ and optionally `flake.wrapperModules.*`.
 |--------|----------|---------------|
 | `environment.nix` | `desktop`, `terminal`, `environment` | Niri+Kitty+Fish bundle with ~30 runtime tools |
 | `fish.nix` | `fish` | Fish shell with prompt, zoxide, direnv, vi keys |
-| `kitty.nix` | `kitty` | Kitty terminal with Gruvbox colors, cursor trail |
+| `kitty.nix` | `kitty` | Kitty terminal; colours from `~/.local/state/theme/current/kitty.conf` (palette, light/dark), cursor trail |
 | `neovim/` | `neovim`, `neovimDynamic`, `devMode` | Neovim with LSP, treesitter, blink-cmp, custom VJXL language |
 | `niri.nix` | `niri` | Niri compositor with keybinds, which-key menus, hotkeys help (Mod+Shift+?), default terminal from wrapped package |
 | `noctalia/` | `noctalia-shell` | Desktop shell: bar, launcher, notifications, OSD, screen recorder, wallpaper management |
@@ -183,10 +186,11 @@ each host (not in the repo).
 ```
 secrets/
 ├── README.md               (documents each file and its usage)
-├── shared/
-│   └── librechat.yaml       (LibreChat credentials and JWT secrets)
-├── butternut/
-│   └── syncthing.yaml       (syncthing key/cert for butternut)
+├── atuin.yaml              (atuin sync key)
+├── shared/                 (librechat, tailscale auth key, home Wi-Fi)
+├── butternut/              (syncthing, nix-serve)
+├── hazel/                  (syncthing)
+├── maple/                  (syncthing, nix-serve)
 └── <hostname>/
     └── <service>.yaml
 ```
@@ -260,10 +264,10 @@ secrets and syncthing folders.
      };
 4. hostButternut imports: base → general → desktop → sway → [feature modules]
 5. base defines preferences.* options
-6. general creates the user, imports hjem
+6. general creates the user, imports the home-manager bridge (extra_hjem) and extra_theme
 7. desktop sets up fonts, hardware, browsers (WM-agnostic)
-8. sway sets WM config via home.programs.sway.settings
-9. hjem/sway.nix converts settings → ~/.config/sway/config
+8. sway configures the WM (programs.sway + home-manager)
+9. feature modules register palette files via preferences.theme.files
 10. Wrapped packages (terminal, fish, git, neovim, ...) are
     referenced by general.nix as the user's shell
 ```
@@ -274,10 +278,9 @@ secrets and syncthing folders.
   modules get it via `config.preferences.user.name`. Wrapped programs get it via
   `self.user`. Never hardcode a username.
 
-- **Themes live in one place.** `modules/theme.nix` defines `flake.theme`
-  (Gruvbox, used by niri/hyprland hosts) and `flake.catppuccin` (Catppuccin
-  Latte, used by sway hosts). Modules reference `self.theme` or
-  `self.catppuccin`. Never hardcode hex values.
+- **Themes live in one place.** `modules/theme.nix` defines the palettes;
+  NixOS modules read colours from `config.preferences.theme.palette.{light,dark}`
+  (wrapped programs may use the flake-level attrs). Never hardcode hex values.
 
 - **Feature modules are independent.** A feature module should not import another
   feature module (except `desktop` which aggregates shared desktop basics). Hosts
@@ -290,9 +293,8 @@ secrets and syncthing folders.
   They read `self.user` and `self.theme` from flake-level attrs, not from
   `config.preferences.*`.
 
-- **hjem, not home-manager.** User-level file generation uses
-  [hjem](https://github.com/feel-co/hjem), not home-manager. Config files are
-  written via `hjem.users.<name>.files`.
+- **home-manager, not hjem.** User-level config uses home-manager
+  (`home-manager.users.<name>`). The `extra_hjem` module name is historical.
 
 - **Features own their infrastructure.** When a feature needs syncthing
   folders or sops secrets, it declares them itself (like `shared-zotero.nix`

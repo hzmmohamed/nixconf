@@ -1,8 +1,13 @@
 {...}: {
-  flake.nixosModules.tailscale = {config, ...}: let
+  flake.nixosModules.tailscale = {
+    config,
+    lib,
+    ...
+  }: let
     user = config.preferences.user.name;
   in {
-    home-manager.users.${user} = {
+    # Tray icon only on hosts with a desktop.
+    home-manager.users.${user} = lib.mkIf config.preferences.desktop.enable {
       services.tailscale-systray.enable = true;
     };
 

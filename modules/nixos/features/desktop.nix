@@ -60,6 +60,9 @@
       self.nixosModules.chromium
     ];
 
+    # Turns on GUI bits of modules every host imports (gtk, tailscale tray).
+    preferences.desktop.enable = true;
+
     environment.systemPackages = [
       selfpkgs.terminal
       pkgs.file-roller # archive manager used by thunar-archive-plugin

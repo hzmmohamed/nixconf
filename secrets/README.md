@@ -4,7 +4,7 @@ Encrypted with [sops-nix](https://github.com/Mic92/sops-nix) using age encryptio
 
 ## Age key
 
-The private key must exist at `/home/hfahmi/.config/sops/age/keys.txt` on each host.
+The private key must exist at `~/.config/sops/age/keys.txt` (primary user) on each host.
 It is NOT stored in this repo.
 
 ## Secret files
@@ -15,6 +15,12 @@ It is NOT stored in this repo.
 | `butternut/nix-serve.yaml` | `nix-serve-secret-key` | Nix binary cache signing key on butternut |
 | `maple/syncthing.yaml` | `syncthing/key`, `syncthing/cert` | Syncthing service authentication on maple |
 | `maple/nix-serve.yaml` | `nix-serve-secret-key` | Nix binary cache signing key on maple |
+| `hazel/syncthing.yaml` | `syncthing/key`, `syncthing/cert` | Syncthing service authentication on hazel |
+| `shared/tailscale.yaml` | `tailscale_authkey` | Tailscale auth key (`tailscale` feature, all hosts) |
+| `shared/wifi.yaml` | `wifi_env` | Home Wi-Fi PSK for NetworkManager (`wifi-home` feature) |
+| `shared/librechat.yaml` | `librechat_creds_key`, `librechat_creds_iv`, `librechat_jwt_secret`, `librechat_jwt_refresh_secret` | LibreChat on peacelily (`ai-server`) |
+| `shared/ai-search.yaml` | `searx_secret_key` | SearXNG (`ai-server`). Referenced but not created yet |
+| `shared/user.yaml` | `user-hashed-password`, `syncthing-gui-password` | Opt-in (`preferences.user.passwordFromSops`, `preferences.syncthing.guiPasswordFromSops`). Not created yet |
 | `atuin.yaml` | `atuin_key` | Atuin shell history sync encryption key |
 
 ## Adding secrets
