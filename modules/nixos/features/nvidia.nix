@@ -1,5 +1,9 @@
 {...}: {
-  flake.nixosModules.nvidia = {pkgs, ...}: {
+  flake.nixosModules.nvidia = {
+    lib,
+    pkgs,
+    ...
+  }: {
     hardware.graphics = {
       enable = true;
       enable32Bit = true;
@@ -16,6 +20,7 @@
 
     hardware.nvidia-container-toolkit.enable = true;
 
-    boot.kernelPackages = pkgs.linuxPackages_latest;
+    # LTS by default: proprietary/open NVIDIA modules lag new kernels.
+    boot.kernelPackages = lib.mkDefault pkgs.linuxPackages;
   };
 }
