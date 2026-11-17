@@ -91,6 +91,11 @@
       "editor.fontSize" = self.fonts.size;
       "nix.serverPath" = "nil";
       "password-store" = "gnome-libsecret";
+      # Launch the Nix-managed `claude` (HM wrapper with --plugin-dir: the
+      # flake-pinned superpowers, MCP servers) instead of the extension's
+      # bundled binary, so VSCodium sessions get the same plugins as the CLI
+      # and T3, and no marketplace copies are needed.
+      "claudeCode.claudeProcessWrapper" = "/etc/profiles/per-user/${user}/bin/claude";
     };
 
     settingsPath = "/home/${user}/.config/VSCodium/User";
