@@ -40,6 +40,7 @@
         "number 5" = appIds [
           "codium|vscodium" # VSCodium
           "dev.zed.zed" # Zed
+          "chrome-.*.ts.net__.*" # T3 Code / OpenCode app windows (t3-open)
         ];
         "number 6" = appIds [
           "org.qgis.qgis|qgis.*" # QGIS (4.x: org.qgis.qgis)

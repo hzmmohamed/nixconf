@@ -15,7 +15,11 @@
 # breaks every write) — HM only merges a few keys into them on activation.
 #
 # Never run `t3 up`, `t3 service install`, `t3 update` or `t3 connect` here.
-{inputs, ...}: {
+{
+  inputs,
+  self,
+  ...
+}: {
   flake.nixosModules.agent-t3code = {
     config,
     lib,
@@ -132,6 +136,34 @@
       if agents.target != null && agents.tailnetDomain != null
       then "https://${agents.target}.${agents.tailnetDomain}/"
       else null;
+
+    # Launchers for every agent host in the registry (roles contain
+    # "agent-host"): `t3-open [host]` + one desktop entry each, opened as a
+    # standalone Chromium app window (falls back to the default browser).
+    t3Hosts = lib.filterAttrs (_: h: lib.elem "agent-host" (h.roles or [])) self.hosts;
+    t3HostUrl = name: h: "https://${h.tailnetName or name}.${agents.tailnetDomain}/";
+    defaultT3Host =
+      if agents.role == "host"
+      then config.networking.hostName
+      else agents.target;
+    hmChromium = config.home-manager.users.${user}.programs.chromium;
+    t3Open = pkgs.writeShellApplication {
+      name = "t3-open";
+      runtimeInputs = [pkgs.xdg-utils];
+      text = ''
+        # Usage: t3-open [host]   (default: ${toString defaultT3Host})
+        host=''${1:-${toString defaultT3Host}}
+        case "$host" in
+          ${lib.concatStringsSep "\n    " (lib.mapAttrsToList (n: h: "${n}) url=${t3HostUrl n h} ;;") t3Hosts)}
+          *) echo "t3-open: unknown agent host '$host' (known: ${lib.concatStringsSep " " (lib.attrNames t3Hosts)})" >&2; exit 1 ;;
+        esac
+        ${
+          if hmChromium.enable
+          then ''exec ${lib.getExe hmChromium.package} --app="$url"''
+          else ''exec xdg-open "$url"''
+        }
+      '';
+    };
 
     registerProjects = pkgs.writeShellApplication {
       name = "t3code-projects";
@@ -297,16 +329,26 @@
           # Environments -> Local environment, then pair each host
           # (`ssh <host> t3 pair --label <client>`).
           home.packages = [cfg.package.desktop];
+        };
+      })
 
-          xdg.desktopEntries = lib.mkIf (cfg.url != null) {
-            t3code-remote = {
-              name = "T3 Code web (${agents.target})";
+      # Launcher entries (vicinae lists them): "T3 Code" for this machine's
+      # default host, "T3 Code (<host>)" for the other agent hosts.
+      (lib.mkIf (config.preferences.desktop.enable && agents.tailnetDomain != null && agents.role != null) {
+        home-manager.users.${user} = {
+          home.packages = [t3Open];
+          xdg.desktopEntries = lib.mapAttrs' (n: _:
+            lib.nameValuePair "t3code-${n}" {
+              name =
+                if n == defaultT3Host
+                then "T3 Code"
+                else "T3 Code (${n})";
               genericName = "Coding agent inbox";
-              exec = "${lib.getExe' pkgs.xdg-utils "xdg-open"} ${cfg.url}";
+              exec = "${lib.getExe t3Open} ${n}";
               icon = "utilities-terminal";
               categories = ["Development"];
-            };
-          };
+            })
+          t3Hosts;
         };
       })
     ];
