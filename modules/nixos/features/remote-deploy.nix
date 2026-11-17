@@ -51,7 +51,10 @@ in {
         user=''${DEPLOY_USER:-${config.preferences.user.name}}
         [ -f "$flake/flake.nix" ] || die "no flake at $flake (set DEPLOY_FLAKE)"
 
-        ssh_opts=(-p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
+        # Keepalives: a target that vanishes (spot stop, Wi-Fi drop) fails the
+        # deploy within ~1 min instead of hanging on a dead connection.
+        ssh_opts=(-p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new
+          -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
         export NIX_SSHOPTS="''${ssh_opts[*]}"
 
         # 1. Find a reachable address before spending time on the build.
