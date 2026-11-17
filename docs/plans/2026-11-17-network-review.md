@@ -1038,6 +1038,13 @@ Docker containers now read resolved's upstream list (incl. 100.100.100.100). Whi
 `ssh hazel` from butternut in butternut-shares mode targets 10.42.0.2 (hazel has a DHCP address then): use `hazel.local`.
 The Tailscale SSH host key may differ from sshd's: `HostKeyAlias` plus strict checking can complain on `ssh -p 22 <host>`.
 
+### 12.1 Tailnet as code (follow-up)
+
+The policy (user step 1 above) is no longer pasted in the console. OpenTofu applies it from `infra/tailscale/`, together with the
+tailnet DNS (MagicDNS, override-local, the four resolvers: imported unchanged), the tailnet settings (imported; only HTTPS is pinned),
+the hosts' `tag:provisioner` OAuth client (imported) and, opt-in, registry-driven device tags. Bootstrap and runbook:
+`2026-11-17-tailnet-as-code.md` (`bash scripts/tailscale/store-admin.sh`, then `bash scripts/tailscale/plan.sh`).
+
 ## Sources
 
 - Tailscale DNS (DoH for public global nameservers, split DNS): https://tailscale.com/kb/1054/dns

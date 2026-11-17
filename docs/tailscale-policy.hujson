@@ -1,7 +1,9 @@
-// Tailscale policy DRAFT for tailnet tail1a9f7c.ts.net
-// (docs/plans/2026-11-17-network-review.md §4, §8). Documentation only: paste it
-// into the admin console (Access controls → JSON editor), check the "Preview"
-// tab and the `tests` below, then save. Nothing in the flake applies it.
+// Tailscale policy for tailnet tail1a9f7c.ts.net
+// (docs/plans/2026-11-17-network-review.md §4, §8). Single source of truth:
+// applied by OpenTofu (infra/tailscale/acl.tf). `bash scripts/tailscale/plan.sh`
+// validates it and its `tests` against the API and shows the live → repo diff;
+// `bash scripts/tailscale/apply.sh` pushes it (docs/plans/2026-11-17-tailnet-as-code.md).
+// Edits in the admin console are drift: the next apply reverts them.
 //
 // Tag model
 //   tag:server      maple, peacelily   (headless; OAuth-client login, no key expiry)

@@ -1,0 +1,7 @@
+# Written by scripts/tailscale/lib.sh (write_backend) from infra/aws/backend.hcl:
+# same bucket/region/locking, its own state key. Gitignored.
+bucket       = "REPLACE-state-bucket"
+key          = "tailscale/terraform.tfstate"
+region       = "eu-central-1"
+use_lockfile = true
+encrypt      = true

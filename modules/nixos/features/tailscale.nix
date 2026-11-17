@@ -1,6 +1,6 @@
 {self, ...}: {
-  # Tailscale on every host. ACL/grants draft: docs/tailscale-policy.hujson
-  # (applied by hand in the admin console).
+  # Tailscale on every host. ACL/grants: docs/tailscale-policy.hujson, applied
+  # with OpenTofu (infra/tailscale, docs/plans/2026-11-17-tailnet-as-code.md).
   #
   # Login: by default the shared reusable auth key (secrets/shared/tailscale.yaml,
   # key `tailscale_authkey`; expires after <= 90 days). Headless servers can

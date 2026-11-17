@@ -76,6 +76,11 @@ peacelily (the OAuth path is now active for all three). It updates
 
 ### Phase 2b (only if the tags were missing): apply the tailnet policy
 
+> **Superseded:** the policy is now applied with OpenTofu
+> (`2026-11-17-tailnet-as-code.md`): `bash scripts/tailscale/store-admin.sh`
+> once, then `bash scripts/tailscale/plan.sh` and `bash scripts/tailscale/apply.sh`.
+> The flow below still works as a fallback (it prints a deprecation notice).
+
 The agent's `docs/tailscale-policy.hujson` defines all the tags. To push it,
 you need a **second, temporary** OAuth client with **General → Policy File →
 Write** (no tags needed). That secret is prompted for and **never stored**: the

@@ -81,3 +81,17 @@ fern-enroll *args:
 # Phase 5: role / S3 / units / login checks on fern (raw: bash scripts/fern/verify.sh)
 fern-verify *args:
     bash scripts/fern/verify.sh {{args}}
+
+# --- tailnet as code (OpenTofu, infra/tailscale): docs/plans/2026-11-17-tailnet-as-code.md
+
+# Store the admin OAuth client (tofu credential) in sops (raw: bash scripts/tailscale/store-admin.sh)
+tailnet-store-admin *args:
+    bash scripts/tailscale/store-admin.sh {{args}}
+
+# Validate the policy + plan the tailnet, imports included; read-only (raw: bash scripts/tailscale/plan.sh)
+tailnet-plan:
+    bash scripts/tailscale/plan.sh
+
+# Plan, y/N, apply (raw: bash scripts/tailscale/apply.sh)
+tailnet-apply:
+    bash scripts/tailscale/apply.sh

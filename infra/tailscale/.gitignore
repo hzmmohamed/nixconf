@@ -1,0 +1,13 @@
+# Generated / local only (public repo).
+backend.hcl
+hosts.auto.tfvars.json
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+crash.log
+# .terraform.lock.hcl IS committed (provider pins).

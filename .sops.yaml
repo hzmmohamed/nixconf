@@ -16,6 +16,13 @@ creation_rules:
     - age:
       - *primary
       # fern-recipient
+  # Admin credentials for the operator's machine only (tailnet-as-code:
+  # docs/plans/2026-11-17-tailnet-as-code.md). Primary key ONLY: never add a
+  # host key or a fern-recipient marker here.
+  - path_regex: secrets/admin/.*\.yaml$
+    key_groups:
+    - age:
+      - *primary
   - path_regex: secrets/.*\.yaml$
     key_groups:
     - age:
