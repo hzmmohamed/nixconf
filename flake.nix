@@ -34,6 +34,10 @@
 
     catppuccin.url = "github:catppuccin/nix";
 
+    # Noctalia v5 (native C++ shell). Deliberately NOT following our nixpkgs:
+    # upstream builds against nixos-unstable and publishes to noctalia.cachix.org.
+    noctalia.url = "github:noctalia-dev/noctalia";
+
     claude-code.url = "github:sadjow/claude-code-nix";
 
     reticulum-flake = {
