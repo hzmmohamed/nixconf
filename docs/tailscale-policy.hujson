@@ -110,6 +110,9 @@
   // Harmless until such a node exists. No `funnel` attribute anywhere: Funnel
   // stays denied.
   "nodeAttrs": [
+    // Kept from the tailnet's default policy: Taildrive, newer SSH behaviour.
+    {"target": ["autogroup:member"], "attr": ["drive:share", "drive:access"]},
+    {"target": ["autogroup:member"], "attr": ["ssh-behavior-v2"]},
     {"target": ["*"], "app": {"tailscale.com/app-connectors": [
       {"name": "egypt-blocked", "connectors": ["tag:connector"],
        "domains": ["search.nixos.org", "nixos-search.netlify.app"]},
