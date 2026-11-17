@@ -18,6 +18,7 @@
       self.nixosModules.ai-server
 
       self.nixosModules.sops
+      self.nixosModules.openssh
       self.nixosModules.wifi-home
       self.nixosModules.tailscale
       self.nixosModules.doas
@@ -46,16 +47,6 @@
     };
 
     hardware.cpu.intel.updateMicrocode = true;
-
-    services.openssh = {
-      enable = true;
-      ports = [7654];
-      settings = {
-        PasswordAuthentication = true;
-        KbdInteractiveAuthentication = true;
-        PermitRootLogin = "no";
-      };
-    };
 
     programs.nix-ld.enable = true;
 

@@ -14,11 +14,11 @@
 
       self.nixosModules.sway
       self.nixosModules.swayidle
-      self.nixosModules.clipse
+      self.nixosModules.vicinae
       self.nixosModules.gammastep
       self.nixosModules.waybar
       self.nixosModules.darkman
-      self.nixosModules.mako
+      self.nixosModules.swaync
 
       self.nixosModules.powersave
 

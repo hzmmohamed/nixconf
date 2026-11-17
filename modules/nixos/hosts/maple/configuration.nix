@@ -44,6 +44,8 @@
       self.nixosModules.doas
 
       self.nixosModules.sops
+      self.nixosModules.openssh
+      self.nixosModules.nix-serve
       self.nixosModules.syncthing
 
       self.nixosModules.powersave
@@ -76,22 +78,6 @@
       flatpak.enable = true;
       udisks2.enable = true;
       printing.enable = true;
-
-      openssh = {
-        enable = true;
-        ports = [7654];
-        settings = {
-          PasswordAuthentication = true;
-          KbdInteractiveAuthentication = true;
-          PermitRootLogin = "no";
-        };
-      };
-
-      nix-serve = {
-        enable = true;
-        package = pkgs.nix-serve-ng;
-        openFirewall = true;
-      };
     };
 
     programs.nix-ld.enable = true;
@@ -99,6 +85,13 @@
     hardware.graphics.enable = true;
 
     time.timeZone = "Africa/Cairo";
+
+    # Opt-in apps (off by default in their feature modules).
+    preferences.discord.officialClient.enable = true;
+    preferences.office.obsidian.enable = true;
+    preferences.office.element.enable = true;
+    preferences.media.extraApps.enable = true;
+    preferences.design.extraApps.enable = true;
 
     system.stateVersion = "24.11";
   };

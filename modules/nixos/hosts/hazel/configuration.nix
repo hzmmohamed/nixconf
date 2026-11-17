@@ -22,15 +22,14 @@
 
       self.nixosModules.sway
       self.nixosModules.swayidle
-      self.nixosModules.clipse
       self.nixosModules.gammastep
       self.nixosModules.waybar
       self.nixosModules.darkman
-      self.nixosModules.foot
       self.nixosModules.btop
-      self.nixosModules.mako
+      self.nixosModules.swaync
       self.nixosModules.blueman
-      self.nixosModules.wofi-emoji
+      self.nixosModules.vicinae
+      self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor
 
       self.nixosModules.discord
@@ -62,6 +61,10 @@
 
       self.nixosModules.tailscale
       self.nixosModules.sops
+      self.nixosModules.openssh
+      self.nixosModules.lan-discovery
+      self.nixosModules.lan-cache
+      self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
       self.nixosModules.syncthing
 
@@ -91,6 +94,13 @@
 
     preferences.bibata-cursor.enable = true;
 
+    # Opt-in apps (off by default in their feature modules).
+    preferences.discord.officialClient.enable = true;
+    preferences.office.obsidian.enable = true;
+    preferences.office.element.enable = true;
+    preferences.media.extraApps.enable = true;
+    preferences.design.extraApps.enable = true;
+
     networking = {
       hostName = "hazel";
       networkmanager.enable = true;
@@ -103,41 +113,9 @@
       flatpak.enable = true;
       udisks2.enable = true;
       printing.enable = true;
-
-      openssh = {
-        enable = true;
-        ports = [7654];
-        settings = {
-          PasswordAuthentication = true;
-          KbdInteractiveAuthentication = true;
-          PermitRootLogin = "no";
-        };
-      };
     };
 
     programs.nix-ld.enable = true;
-
-    # SSH client config for reaching other hosts over Tailscale
-    home-manager.users.${config.preferences.user.name}.programs.ssh = {
-      enable = true;
-      matchBlocks = {
-        "butternut" = {
-          hostname = "butternut";
-          port = 7654;
-          user = config.preferences.user.name;
-        };
-        "peacelily" = {
-          hostname = "peacelily";
-          port = 7654;
-          user = config.preferences.user.name;
-        };
-        "maple" = {
-          hostname = "maple";
-          port = 7654;
-          user = config.preferences.user.name;
-        };
-      };
-    };
 
     services.greetd = {
       enable = true;
@@ -147,16 +125,40 @@
       };
     };
 
-    # 14" 1080p built-in panel — slight scale bump for readability
-    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.output."eDP-1" = {
-      scale = "1.25";
-    };
+    home-manager.users.${config.preferences.user.name} = {
+      # SSH client config for reaching other hosts over Tailscale
+      programs.ssh = {
+        enable = true;
+        matchBlocks = {
+          "butternut" = {
+            hostname = "butternut";
+            port = 7654;
+            user = config.preferences.user.name;
+          };
+          "peacelily" = {
+            hostname = "peacelily";
+            port = 7654;
+            user = config.preferences.user.name;
+          };
+          "maple" = {
+            hostname = "maple";
+            port = 7654;
+            user = config.preferences.user.name;
+          };
+        };
+      };
 
-    # Host-specific sway keybindings
-    home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
-      "Mod4+v" = "exec ${lib.getExe pkgs.foot} --app-id clipse -e clipse";
-      "Mod4+Shift+t" = "exec ${lib.getExe pkgs.darkman} toggle";
-      "Mod4+period" = "exec wofi-emoji";
+      # 14" 1080p built-in panel — slight scale bump for readability
+      wayland.windowManager.sway.config.output."eDP-1" = {
+        scale = "1.25";
+      };
+
+      # Host-specific sway keybindings
+      wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
+        "Mod4+v" = "exec vicinae deeplink 'vicinae://launch/clipboard/history?toggle=true'";
+        "Mod4+Shift+t" = "exec ${lib.getExe pkgs.darkman} toggle";
+        "Mod4+period" = "exec vicinae deeplink 'vicinae://launch/core/search-emojis?toggle=true'";
+      };
     };
 
     system.stateVersion = "25.05";

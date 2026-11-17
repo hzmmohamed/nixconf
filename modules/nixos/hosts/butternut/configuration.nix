@@ -22,21 +22,20 @@
 
       self.nixosModules.sway
       self.nixosModules.swayidle
-      self.nixosModules.clipse
       self.nixosModules.gammastep
       self.nixosModules.waybar
       self.nixosModules.darkman
-      self.nixosModules.foot
       self.nixosModules.btop
-      self.nixosModules.mako
+      self.nixosModules.swaync
+      self.nixosModules.noctalia
       self.nixosModules.blueman
-      self.nixosModules.wofi-emoji
+      self.nixosModules.vicinae
+      self.nixosModules.swayosd
+      self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor
 
       self.nixosModules.discord
       self.nixosModules.gimp
-      self.nixosModules.telegram
-      self.nixosModules.obs
 
       self.nixosModules.email
       self.nixosModules.rbw
@@ -55,7 +54,6 @@
       self.nixosModules.shared-zotero
       self.nixosModules.gpg
       self.nixosModules.nodejs
-      self.nixosModules.cad
       self.nixosModules.ai
       self.nixosModules.music
       self.nixosModules.doas
@@ -64,13 +62,20 @@
       self.nixosModules.whisper-live
       self.nixosModules.openrgb
       self.nixosModules.activitywatch
+      self.nixosModules.spotify
+      self.nixosModules.gis
+      self.nixosModules.gaming
 
       self.nixosModules.sops
+      self.nixosModules.openssh
+      self.nixosModules.nix-serve
+      self.nixosModules.ethernet-share
+      self.nixosModules.lan-discovery
+      self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
       self.nixosModules.syncthing
 
       self.nixosModules.powersave
-      self.nixosModules.battery-notify
 
       # disko
       inputs.disko.nixosModules.disko
@@ -78,7 +83,8 @@
     ];
 
     boot = {
-      kernelPackages = pkgs.linuxPackages_latest;
+      # LTS kernel: NVIDIA 595 does not build against 7.3 (strncpy removal).
+      kernelPackages = pkgs.linuxPackages;
 
       loader.systemd-boot.enable = true;
       loader.systemd-boot.configurationLimit = 5;
@@ -96,6 +102,28 @@
 
     preferences.bibata-cursor.enable = true;
 
+    # Music production stack (Ardour, plugins, yabridge, plugin paths).
+    preferences.music.enable = true;
+
+    # OpenRGB: no polling server; apply this profile at boot/resume.
+    preferences.openrgb.profile = "night-time-coding";
+
+    # Gaming: Steam games auto-offload to the RTX 3050; the gamescope greeter
+    # session composites on the Intel iGPU (it drives the display).
+    preferences.gaming.gamescopeVkDevice = "8086:46a6";
+
+    # Desktop shell: "waybar" (waybar + swaync) or "noctalia" (Noctalia v5).
+    preferences.desktopShell = "waybar";
+
+    # Auto-place apps on fixed workspaces (2 files/office, 3 audio, 4 browser,
+    # 5 editor, 6 QGIS) — see modules/nixos/features/sway-workspaces.nix.
+    preferences.sway.workspaceAssignments = true;
+
+    # Direct cable to hazel: share eno2 (DHCP + NAT, butternut = 10.42.0.1)
+    # and serve the binary cache on it only. `deploy hazel` pushes over it.
+    preferences.ethernet-share.interface = "eno2";
+    preferences.nix-serve.firewallInterfaces = ["eno2"];
+
     networking = {
       hostName = "butternut";
       networkmanager.enable = true;
@@ -110,34 +138,16 @@
 
       asusd.enable = true;
       vnstat.enable = true;
-
-      openssh = {
-        enable = true;
-        ports = [7654];
-        settings = {
-          PasswordAuthentication = true;
-          KbdInteractiveAuthentication = true;
-          PermitRootLogin = "no";
-        };
-      };
-
-      nix-serve = {
-        enable = true;
-        package = pkgs.nix-serve-ng;
-        openFirewall = true;
-      };
     };
-
-    networking.firewall.allowedTCPPorts = [2222];
 
     programs.nix-ld.enable = true;
     programs.wayvnc.enable = true;
 
     # Host-specific sway keybindings
     home-manager.users.${config.preferences.user.name}.wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
-      "Mod4+v" = "exec ${lib.getExe pkgs.foot} --app-id clipse -e clipse";
+      "Mod4+v" = "exec vicinae deeplink 'vicinae://launch/clipboard/history?toggle=true'";
       "Mod4+Shift+t" = "exec ${lib.getExe pkgs.darkman} toggle";
-      "Mod4+period" = "exec wofi-emoji";
+      "Mod4+period" = "exec vicinae deeplink 'vicinae://launch/core/search-emojis?toggle=true'";
       "Mod4+n" = "exec dnd-toggle";
     };
 
