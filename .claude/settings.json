@@ -47,7 +47,15 @@
       "Bash(sudo wipefs:*)",
       "Bash(docker system prune:*)",
       "Bash(docker volume prune:*)",
-      "Bash(docker builder prune:*)"
+      "Bash(docker builder prune:*)",
+      "Bash(doas:*)",
+      "Bash(sudo:*)",
+      "Bash(age:*)",
+      "Bash(deploy:*)",
+      "Bash(just deploy:*)",
+      "Bash(nix copy:*)",
+      "Bash(rm -r:*)",
+      "Read(~/.config/sops/**)"
     ]
   }
 }

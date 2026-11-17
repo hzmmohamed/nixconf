@@ -20,7 +20,8 @@
       trustedInterfaces = [config.services.tailscale.interfaceName];
       checkReversePath = "loose";
       allowedUDPPorts = [config.services.tailscale.port];
-      allowedTCPPorts = [22];
+      # No global TCP 22: sshd listens on 7654 (openssh.nix) and Tailscale SSH
+      # arrives over tailscale0, which is trusted above.
     };
   };
 }

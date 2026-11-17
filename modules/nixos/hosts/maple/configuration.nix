@@ -60,6 +60,7 @@
 
       loader.systemd-boot.enable = true;
       loader.systemd-boot.configurationLimit = 5;
+      loader.systemd-boot.editor = false;
       loader.efi.canTouchEfiVariables = true;
 
       kernelParams = ["quiet"];
