@@ -25,6 +25,7 @@ It is NOT stored in this repo.
 | `shared/user.yaml` | `user-hashed-password`, `syncthing-gui-password` | Opt-in (`preferences.user.passwordFromSops`, `preferences.syncthing.guiPasswordFromSops`). Not created yet |
 | `atuin.yaml` | `atuin_key` | Atuin shell history sync encryption key |
 | `fern/workspace.yaml` | `git-ssh-key`, `remotes` | fern (AWS agent host): read-only GitLab deploy key + clone URLs (`<name> <url>` lines), `workspace-bootstrap`. Encrypted for `primary` + fern's host key (ssh-to-age); fern also needs `shared/tailscale.yaml` (+ `tailscale-oauth.yaml`) re-encrypted for it. Written by `scripts/fern/deploy-key.sh` (docs/plans/2026-11-17-fern-runbook.md). Not created yet |
+| `shared/aws-sso.yaml` | `account_id`, `start_url`, `region` | AWS Identity Center client settings: `features/aws.nix` renders the `tfc-*` SSO profiles into `~/.aws/config` (`preferences.aws.sso.enable`: butternut, hazel). Not credentials, but kept out of the public repo. `.sops.yaml` rule: primary only, **never fern** (instance role). Written by `scripts/aws-sso/store-config.sh` (docs/plans/2026-11-17-aws-sso-runbook.md). Not created yet |
 
 ## Adding secrets
 

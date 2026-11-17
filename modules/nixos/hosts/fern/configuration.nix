@@ -43,6 +43,9 @@
       self.nixosModules.agent-host
       self.nixosModules.agent-t3code
       self.nixosModules.agent-opencode
+      # Project secrets: file:///run/secrets/secretspec (none needed yet).
+      # AWS comes from the instance role, never from secretspec.
+      self.nixosModules.secretspec
 
       # Cloud box specifics
       self.nixosModules.cloud-idle-stop

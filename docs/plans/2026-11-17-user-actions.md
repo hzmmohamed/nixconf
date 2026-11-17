@@ -459,3 +459,10 @@ doas ethtool -s enp4s0 advertise 0x008                          # 3. 100 Mbit fu
 
 Also plug hazel into the router once: carrier there but not to butternut points at the pairing
 (EEE/negotiation); no carrier anywhere points at hazel's NIC/driver.
+
+## AWS SSO + secretspec (hazel / fern without static keys)
+
+Paste-only phases in `docs/plans/2026-11-17-aws-sso-runbook.md`: sign-in check (phase 0), then on
+butternut `bash scripts/aws-sso/setup.sh --dry-run && bash scripts/aws-sso/setup.sh` (permission sets
+Admin / Operator / CloudBox), `bash scripts/aws-sso/store-config.sh` (sops), rebuild butternut + hazel,
+then `aws-login` and `bash scripts/aws-sso/verify.sh` on hazel. Static keys are retired later (phase 5).

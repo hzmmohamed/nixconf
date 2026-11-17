@@ -6,7 +6,13 @@
       self.nixosModules.agent-client
       self.nixosModules.agent-t3code
       self.nixosModules.agent-opencode
+      self.nixosModules.secretspec
     ];
+
+    # AWS Identity Center profiles (tfc-admin/-operator/-cloudbox) in
+    # ~/.aws/config; `aws-login` (docs/plans/2026-11-17-aws-sso-runbook.md).
+    # The aws feature itself is imported in configuration.nix.
+    preferences.aws.sso.enable = true;
 
     preferences.agents = {
       target = "butternut";

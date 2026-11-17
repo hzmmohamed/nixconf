@@ -5,21 +5,29 @@
 #   cloud-box status     EC2 state + tailnet reachability + idle report
 #   cloud-box ssh [cmd]  ssh to the box
 #   cloud-box hold <min> keep it up despite idleness (long unattended job)
-# Uses YOUR AWS identity (AWS_PROFILE), never the box's role; the instance is
-# found by its Name tag.
+# Uses YOUR AWS identity, never the box's role; the instance is found by its
+# Name tag. Profile: $AWS_PROFILE if set, else `tfc-cloudbox` (Identity Center
+# permission set CloudBox: describe + start/stop this box only, rendered into
+# ~/.aws/config by features/aws.nix) when it exists, else the AWS default
+# chain (static keys) as before. An expired SSO session prints the login hint.
 #   CLOUD_BOX_NAME    instance Name tag and tailnet name (default fern)
 #   CLOUD_BOX_REGION  default eu-central-1
 {self, ...}: {
   perSystem = {pkgs, ...}: {
     packages.cloud-box = pkgs.writeShellApplication {
       name = "cloud-box";
-      runtimeInputs = with pkgs; [awscli2 openssh tailscale curl coreutils xdg-utils];
+      runtimeInputs = with pkgs; [awscli2 openssh tailscale curl coreutils gnugrep xdg-utils];
       text = ''
         name=''${CLOUD_BOX_NAME:-fern}
         region=''${CLOUD_BOX_REGION:-eu-central-1}
         url="https://$name.${self.tailnet.domain}/"
         aws_() { aws --region "$region" "$@"; }
         die() { echo "cloud-box: $*" >&2; exit 1; }
+
+        if [ -z "''${AWS_PROFILE:-}" ] && aws configure list-profiles 2>/dev/null | grep -qx tfc-cloudbox; then
+          export AWS_PROFILE=tfc-cloudbox
+        fi
+        login_hint="aws-login  (= aws sso login --sso-session tfc)"
 
         # JMESPath literal in backticks, not a shell expansion.
         # shellcheck disable=SC2016
@@ -31,7 +39,20 @@
             --output text
         }
 
-        info=$(instance) || die "describe-instances failed (AWS_PROFILE? aws sso login?)"
+        # (No EXIT trap for the temp file: ssh/hold exec away.)
+        errf=$(mktemp)
+        if ! info=$(instance 2>"$errf"); then
+          err=$(cat "$errf")
+          rm -f "$errf"
+          case "$err" in
+            *SSO* | *sso* | *[Tt]oken*expired* | *"Token has expired"*)
+              die "AWS SSO session expired or missing (profile ''${AWS_PROFILE:-default}): run $login_hint" ;;
+            *)
+              printf '%s\n' "$err" >&2
+              die "describe-instances failed (profile ''${AWS_PROFILE:-default chain})" ;;
+          esac
+        fi
+        rm -f "$errf"
         [ -n "$info" ] || die "no instance tagged Name=$name in $region"
         read -r id state itype market launched <<<"$info"
 
@@ -73,7 +94,7 @@
             echo ">> stopping $name"
             ;;
           status)
-            echo "$name  $id  $state  $itype  $market  launched $launched"
+            echo "$name  $id  $state  $itype  $market  launched $launched  (AWS_PROFILE=''${AWS_PROFILE:-default chain})"
             if [ "$state" = running ]; then
               if on_tailnet; then
                 echo "tailnet: up  ($url)"

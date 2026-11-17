@@ -95,3 +95,18 @@ tailnet-plan:
 # Plan, y/N, apply (raw: bash scripts/tailscale/apply.sh)
 tailnet-apply:
     bash scripts/tailscale/apply.sh
+
+# --- AWS Identity Center (SSO): docs/plans/2026-11-17-aws-sso-runbook.md -----
+# Pass --dry-run to preview (setup/store).
+
+# Permission sets Admin/Operator/CloudBox + assignments (raw: bash scripts/aws-sso/setup.sh)
+aws-sso-setup *args:
+    bash scripts/aws-sso/setup.sh {{args}}
+
+# account_id/start_url/region -> sops secrets/shared/aws-sso.yaml (raw: bash scripts/aws-sso/store-config.sh)
+aws-sso-store *args:
+    bash scripts/aws-sso/store-config.sh {{args}}
+
+# Read-only checks of the SSO profiles after `aws-login` (raw: bash scripts/aws-sso/verify.sh)
+aws-sso-verify:
+    bash scripts/aws-sso/verify.sh

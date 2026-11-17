@@ -23,6 +23,14 @@ creation_rules:
     key_groups:
     - age:
       - *primary
+  # AWS Identity Center client settings (account_id, start_url, region) for
+  # ~/.aws/config on butternut and hazel (features/aws.nix). Both decrypt with
+  # the primary key today; add their own recipients here when per-host keys
+  # land. NEVER fern (it uses its instance role): no fern-recipient marker.
+  - path_regex: secrets/shared/aws-sso\.yaml$
+    key_groups:
+    - age:
+      - *primary
   - path_regex: secrets/.*\.yaml$
     key_groups:
     - age:
