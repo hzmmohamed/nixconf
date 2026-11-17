@@ -8,13 +8,17 @@ Work top to bottom. Tick items off as you go (`[ ]` → `[x]`).
 ## 1. Switch butternut to the new config
 
 - [ ] Wait for Claude to confirm the combined build succeeded (the NVIDIA kernel module compiles locally the first time).
-- [ ] Switch:
+- [ ] Activate the verified build (kernel 6.18.63 LTS + NVIDIA 595.71, built 2026-11-17).
+      Use the store path directly while other work is in progress in the repo:
 
   ```sh
-  doas nixos-rebuild switch --flake ~/nixconf#butternut
+  doas nix-env -p /nix/var/nix/profiles/system --set /nix/store/z3xb3d4a5m766sdq3xzr8p0b03i1k7dv-nixos-system-butternut-26.05.20261115.b349185
+  doas /nix/store/z3xb3d4a5m766sdq3xzr8p0b03i1k7dv-nixos-system-butternut-26.05.20261115.b349185/bin/switch-to-configuration boot
   ```
 
-- [ ] **Reboot** (new kernel 7.3.4, NVIDIA driver, keyring change). A re-login is not enough this time.
+  (Later, normal switching is `doas nixos-rebuild switch --flake ~/nixconf#butternut`.)
+
+- [ ] **Reboot** (kernel 7.2 → 6.18 LTS, NVIDIA driver, keyring change). A re-login is not enough this time.
 
 **If login fails after reboot:** pick the previous generation in the boot menu, then tell Claude.
 Most likely cause: sway can't find `/dev/dri/igpu` → remove the `WLR_DRM_DEVICES` line in

@@ -119,6 +119,16 @@ apply (download + sidecar + `set-wallpaper`), favourite.
 6. Wallpaper: single image, or a light/dark pair? Rotation on or off?
 7. Where to trial wallpaper-reactive mode first: hazel or butternut?
 
+## Notes for phases 4–5 (from Ryoku-on-NixOS, GPL-3 — reference only)
+
+- Template coverage to aim for: gtk3/gtk4 colours, qt6ct, papirus-color, kitty, btop, zed, fish.
+- Split core templates (always rendered) from app templates (behind a toggle).
+- matugen invocation: `matugen image IMG -m light|dark` (+ source-index); optional fallback
+  that picks light/dark from wallpaper mean brightness when darkman isn't running.
+- Build-time check that palette files contain only colour definitions.
+- Seed curated wallpapers once without re-adding ones the user deleted.
+- Not importable: forces Hyprland/niri, JSON Hub owns `~/.config`, no HM module, no Sway.
+
 ## References
 
 Survey clones in `.repos/survey/` (misterio77 Material You, mostlykiguess
