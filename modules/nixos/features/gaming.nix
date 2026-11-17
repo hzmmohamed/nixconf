@@ -35,6 +35,26 @@
       Exec=steam-gamescope
       Type=Application
     '';
+
+    # Non-Steam Windows games: one launcher per game, run with umu + GE-Proton
+    # on an existing Wine prefix, offloaded to the dGPU, under gamemode.
+    mkGameLauncher = id: g:
+      pkgs.writeShellApplication {
+        name = "game-${id}";
+        runtimeInputs = [pkgs.umu-launcher pkgs.gamemode];
+        text = ''
+          ${lib.concatStringsSep "\n" (lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg v}")
+              ((lib.optionalAttrs cfg.primeOffload offloadEnv) // g.env))}
+          export WINEPREFIX="$HOME/${g.prefix}"
+          export PROTONPATH=${pkgs.proton-ge-bin.steamcompattool}
+          export GAMEID=${lib.escapeShellArg g.gameId}
+          exe="$WINEPREFIX/${g.exe}"
+          cd "$(dirname "$exe")"
+          exec gamemoderun umu-run "$exe" ${lib.escapeShellArgs g.args} "$@"
+        '';
+      };
+
+    gameLaunchers = lib.mapAttrs mkGameLauncher cfg.games;
   in {
     options.preferences.gaming = {
       primeOffload = lib.mkOption {
@@ -51,6 +71,44 @@
           greeter session. On hybrid laptops set it to the GPU that drives the
           display; games are still offloaded to the dGPU.
         '';
+      };
+      games = lib.mkOption {
+        default = {};
+        description = ''
+          Non-Steam Windows games with an existing Wine prefix. Each gets a
+          `game-<id>` command and a launcher entry (umu + GE-Proton, dGPU,
+          gamemode).
+        '';
+        type = lib.types.attrsOf (lib.types.submodule {
+          options = {
+            name = lib.mkOption {type = lib.types.str;};
+            prefix = lib.mkOption {
+              type = lib.types.str;
+              description = "Wine prefix, relative to $HOME.";
+            };
+            exe = lib.mkOption {
+              type = lib.types.str;
+              description = "Game executable, relative to the prefix.";
+            };
+            args = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [];
+            };
+            env = lib.mkOption {
+              type = lib.types.attrsOf lib.types.str;
+              default = {};
+            };
+            gameId = lib.mkOption {
+              type = lib.types.str;
+              default = "umu-default";
+              description = "umu-protonfixes game id (umu-<id> enables per-game fixes).";
+            };
+            icon = lib.mkOption {
+              type = lib.types.str;
+              default = "applications-games";
+            };
+          };
+        });
       };
     };
 
@@ -79,13 +137,24 @@
 
       environment.pathsToLink = ["/share/wayland-sessions"];
 
-      environment.systemPackages = with pkgs; [
-        gamescopeSessionEntry
-        lutris # GOG/wine games (BioShock Remastered) + existing PS2 entries
-        pcsx2 # PS2 emulator; needs a user-dumped BIOS in ~/.config/PCSX2/bios
-        mangohud
-        evtest-qt # controller tester
-      ];
+      home-manager.users.${config.preferences.user.name}.xdg.desktopEntries =
+        lib.mapAttrs (id: g: {
+          inherit (g) name icon;
+          exec = lib.getExe gameLaunchers.${id};
+          categories = ["Game"];
+        })
+        cfg.games;
+
+      environment.systemPackages = with pkgs;
+        lib.attrValues gameLaunchers
+        ++ [
+          umu-launcher
+          gamescopeSessionEntry
+          lutris # GOG/wine games (BioShock Remastered) + existing PS2 entries
+          pcsx2 # PS2 emulator; needs a user-dumped BIOS in ~/.config/PCSX2/bios
+          mangohud
+          evtest-qt # controller tester
+        ];
 
       # Xbox One/Series controllers over Bluetooth. USB uses in-kernel xpad.
       hardware.xpadneo.enable = true;
