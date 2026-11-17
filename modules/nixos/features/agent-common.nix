@@ -265,6 +265,9 @@
           llm.tuicr
           pkgs.difftastic
           pkgs.lazygit
+          # Claude Code voice dictation records via SoX (`rec`) or arecord;
+          # without one it fails silently.
+          pkgs.sox
           agentNotify
         ];
       };

@@ -55,10 +55,11 @@
             }
             {
               # A connected headset's mic becomes the default microphone
-              # (above the denoised laptop mic at 1000); recording from it makes
+              # (3000: WirePlumber gives the C-Media mic ~2109, so 2000 lost to it);
+              # recording from it makes
               # WirePlumber switch the headset to HSP/HFP and back afterwards.
               matches = [{"node.name" = "~bluez_input.*";}];
-              actions.update-props."priority.session" = 2000;
+              actions.update-props."priority.session" = 3000;
             }
           ];
         };
