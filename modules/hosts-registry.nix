@@ -32,7 +32,16 @@ in {
   #   tags         Tailscale ACL tags (docs/tailscale-policy.hujson). Only advertised
   #                when the host logs in with the OAuth client (tailscale.nix)
   #   buildOnTarget  `deploy` builds on the host itself instead of locally + nix copy
-  #                (cloud boxes: only derivations cross the uplink)
+  #                (cloud boxes: only derivations cross the uplink; butternut: hazel
+  #                must not fill its small disk with butternut's closure)
+  #   builderFor   hosts whose nix-daemon offloads builds to this one (features/
+  #                nix-builder.nix): this host serves `nix-ssh` (nix.sshServe, ssh-ng,
+  #                forced `nix-daemon --stdio`) for their `builderKey`s, they get it in
+  #                nix.buildMachines. `deploy` from such a client builds other hosts'
+  #                closures here too. builderMaxJobs / builderSpeedFactor tune it.
+  #   builderKey   public half of this host's ROOT builder key (generated at activation
+  #                in /root/.ssh/nix-builder_ed25519 when the host is in a `builderFor`;
+  #                the switch prints it). null = not authorized yet: no offloading
   flake.tailnet.domain = "tail1a9f7c.ts.net";
 
   # The home LAN (WE router). A wired DHCP connection (cable-link `lan`) is
@@ -59,8 +68,14 @@ in {
       hostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPF8xUY7XvBEex4yjlcG51O8dhXiRFT+yp0LE393WD+J";
       userKey = userKeys.butternut or null;
       syncthingId = "MRJSBVI-MRVAT7V-WHLSZBC-5LX6KFD-VGCYP4E-W265N3K-B5URBIH-RPUTWQK";
-      roles = ["desktop" "agent-host" "cache"];
+      roles = ["desktop" "agent-host" "cache" "builder"];
       tags = [];
+      # Home build server: hazel offloads its builds here (nix.buildMachines),
+      # and `deploy butternut` from hazel builds on butternut itself.
+      builderFor = ["hazel"];
+      builderMaxJobs = 8; # i7-12700H, 20 threads; each job may use every core
+      builderSpeedFactor = 4;
+      buildOnTarget = true;
     };
 
     hazel = {
@@ -76,6 +91,10 @@ in {
       syncthingId = "ZOEBYES-RFID2ZK-7CWRNXP-5TTQ5LO-GC6HQK2-H25UYNX-UPYBP7T-KHOI7AV";
       roles = ["desktop" "client" "t3"]; # t3: own T3 Code environment (agent-t3code)
       tags = [];
+      # Root's builder key for butternut (features/nix-builder.nix). TODO(user):
+      # after hazel's next switch, paste the line it prints:
+      #   doas cat /root/.ssh/nix-builder_ed25519.pub | cut -d' ' -f1,2
+      builderKey = null;
     };
 
     maple = {

@@ -13,8 +13,8 @@ automatically. Single user (name in `modules/user.nix`). Public repo.
 
 | Host | Role | Notes |
 |------|------|-------|
-| butternut | Main workstation | ASUS TUF laptop used as a **desktop**: broken internal panel, external monitor, always on AC. Sway. NVIDIA RTX 3050 (PRIME offload, dGPU kept awake for CUDA), LTS kernel. Split files: `hosts/butternut/{gpu,power,audio,games,network}.nix` |
-| hazel | Carried laptop / client | ThinkPad E14 Gen 2 (i5-1135G7). Sway, greetd, battery-aware |
+| hazel | **Primary device**, carried | ThinkPad E14 Gen 2 (i5-1135G7), **256 GB disk: no big builds** (nix daemon offloads to butternut, `deploy` builds elsewhere). Sway, greetd, battery-aware. Edits the config and deploys any host |
+| butternut | Home desk: build server, agent host, cache | ASUS TUF laptop used as a **desktop**: broken internal panel, 21" external monitor, always on AC. Remote builder for hazel (`builderFor`), harmonia cache, builds its own closure on deploy (`buildOnTarget`). Sway. NVIDIA RTX 3050 (PRIME offload, dGPU kept awake for CUDA), LTS kernel. Split files: `hosts/butternut/{gpu,power,audio,games,network}.nix` |
 | maple | Headless always-on node | Laptop with a dead screen, lid closed. No desktop: SSH/Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid/suspend ignored, user lingering |
 | peacelily | Headless GPU AI server | NVIDIA, llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. **Not yet redeployed** with the current config |
 | fern | On-demand EC2 agent host (eu-central-1) | Headless agent-host + T3 next to the d_abm S3 data; `cloud-box up/down`, idle auto-stop; IaC in `infra/aws/` (never `tofu apply` from an agent). **Not created yet**: `docs/plans/2026-11-17-aws-agent-host.md` |
@@ -51,8 +51,19 @@ Building (only when asked; NVIDIA/CUDA builds are long):
 **Never run from an agent** (denied in `.claude/settings.json`; the user does
 these): `nixos-rebuild`, `deploy` / `just deploy`, `scripts/install-host.sh`,
 `nixos-anywhere`, `disko`, `sops`, `age`, `nix copy`, `doas`/`sudo`,
-`git push`, `rm -r`. Deploys: `just deploy <host> [switch|boot|test]`
-(`remote-deploy` feature); installs: `scripts/install-host.sh <host> <ip>`.
+`git push`, `rm -r`. Deploys: `just deploy <host> [switch|boot|test] [--dry-run]`,
+`just deploy-all`, `just deploy-plan <host>` (prints where it builds, runs
+nothing; agents: `nix run .#deploy -- --plan <host>`, as `just deploy*` is
+denied), from hazel or butternut (`modules/packages/deploy.nix`);
+repo sync between them: `just sync` (`nixconf-sync`, no GitHub needed);
+installs: `scripts/install-host.sh <host> <ip>`.
+
+Where builds happen (registry `modules/hosts-registry.nix`): hazel's daemon
+offloads to butternut (`builderFor`/`builderKey`, `features/nix-builder.nix`,
+local fallback); `deploy` builds on the target for `buildOnTarget` hosts
+(butternut, fern), on the deploying machine's builder otherwise (the target
+then substitutes from butternut's cache), locally when there is no builder.
+Deploying the machine you are on switches locally.
 
 ## Layout
 

@@ -131,8 +131,8 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 
 | Host | WM | Hardware | Notable features |
 |------|----|----------|------------------|
-| **butternut** | Sway | ASUS TUF (Intel Alder Lake + RTX 3050), LUKS ext4 | Laptop used as a desktop (broken panel, external monitor, always on AC). NVIDIA PRIME offload with the dGPU kept awake for CUDA, LTS kernel. Split files: `gpu.nix`, `power.nix`, `audio.nix`, `games.nix`, `network.nix`. greetd, nix-serve, email, reticulum, openrgb, gaming |
-| **hazel** | Sway | ThinkPad E14 Gen 2 (i5-1135G7), LUKS NVMe | Carried laptop / client: greetd, battery notifications, lan-cache client, remote-deploy |
+| **butternut** | Sway | ASUS TUF (Intel Alder Lake + RTX 3050), LUKS ext4 | Laptop used as a desktop (broken panel, external monitor, always on AC). NVIDIA PRIME offload with the dGPU kept awake for CUDA, LTS kernel. Split files: `gpu.nix`, `power.nix`, `audio.nix`, `games.nix`, `network.nix`. Home build server for hazel (`nix-builder`: `nix-ssh` via nix.sshServe) and binary cache (nix-serve/harmonia). greetd, email, reticulum, openrgb, gaming |
+| **hazel** | Sway | ThinkPad E14 Gen 2 (i5-1135G7), LUKS NVMe | **Primary device**, carried; 256 GB disk, so builds go to butternut (`nix-builder` client, `deploy` plans the build location). greetd, battery notifications, lan-cache client, remote-deploy |
 | **maple** | None (headless) | Intel laptop, dead screen, LUKS ext4 | Always-on node: SSH, Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid switch ignored, sleep targets disabled, user lingering, journald capped |
 | **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Not yet redeployed with the current config. Deployed via nixos-anywhere (`scripts/install-host.sh peacelily <ip>`) |
 

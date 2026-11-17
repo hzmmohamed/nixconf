@@ -5,9 +5,28 @@
 default:
     @just --list
 
-# `just deploy hazel [boot|test]` — see modules/nixos/features/remote-deploy.nix
-deploy host action="switch":
-    DEPLOY_FLAKE={{justfile_directory()}} deploy {{host}} {{action}}
+# --- deploy + repo sync (modules/packages/deploy.nix; from hazel or butternut) ---
+# Runs the repo's own `deploy` (nix run), so registry edits apply at once.
+
+# `just deploy <host> [switch|boot|test|dry-activate] [--dry-run] [--plan]` (raw: nix run .#deploy -- <host> ...)
+deploy host *args:
+    DEPLOY_FLAKE={{justfile_directory()}} nix run {{justfile_directory()}}#deploy -- {{host}} {{args}}
+
+# Every reachable host, this machine last, then an OK/unreachable/failed table (raw: nix run .#deploy -- all ...)
+deploy-all *args:
+    DEPLOY_FLAKE={{justfile_directory()}} nix run {{justfile_directory()}}#deploy -- all {{args}}
+
+# Where would `deploy <host>` build/copy/activate? Runs nothing (raw: nix run .#deploy -- --plan <host>)
+deploy-plan host="all":
+    DEPLOY_FLAKE={{justfile_directory()}} nix run {{justfile_directory()}}#deploy -- --plan {{host}}
+
+# Fetch the other desktop's repo, fast-forward main, push this branch to its side ref (raw: nix run .#nixconf-sync -- [--dry-run])
+sync *args:
+    NIXCONF_SYNC_REPO={{justfile_directory()}} nix run {{justfile_directory()}}#nixconf-sync -- {{args}}
+
+# Dry run of the GitHub history scrub (raw: bash scripts/repo/scrub-unpushed-history.sh [--apply])
+scrub-history *args:
+    bash scripts/repo/scrub-unpushed-history.sh {{args}}
 
 # Format everything with treefmt/alejandra (raw: nix fmt)
 fmt:

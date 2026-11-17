@@ -16,6 +16,9 @@
       self.nixosModules.dns
       self.nixosModules.hosts-registry
       self.nixosModules.trusted-networks
+
+      # Distributed builds from the registry (builderFor/builderKey).
+      self.nixosModules.nix-builder
     ];
 
     users.users.${config.preferences.user.name} = {

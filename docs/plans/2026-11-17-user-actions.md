@@ -466,3 +466,100 @@ Paste-only phases in `docs/plans/2026-11-17-aws-sso-runbook.md`: sign-in check (
 butternut `bash scripts/aws-sso/setup.sh --dry-run && bash scripts/aws-sso/setup.sh` (permission sets
 Admin / Operator / CloudBox), `bash scripts/aws-sso/store-config.sh` (sops), rebuild butternut + hazel,
 then `aws-login` and `bash scripts/aws-sso/verify.sh` on hazel. Static keys are retired later (phase 5).
+
+## Deploy from hazel: builds on butternut, repo sync (hazel is the primary device)
+
+hazel's nix daemon offloads builds to butternut (`features/nix-builder.nix`), `deploy` builds
+where there is room (`just deploy-plan <host>` prints it), and `just sync` keeps both
+`~/nixconf` checkouts in step without GitHub. Commands are fish; each says where it runs.
+
+- [ ] **hazel**: get the new code, preview the sync (adds a remote `butternut`; origin stays):
+
+  ```fish
+  cd ~/nixconf; git pull --ff-only origin main
+  just sync --dry-run; and just sync
+  ```
+
+- [ ] **butternut**: the same once, so it has a remote `hazel`:
+
+  ```fish
+  cd ~/nixconf; just sync
+  ```
+
+- [ ] **butternut**: switch hazel (built here, copied over the cable/tailnet). hazel's activation
+      creates `/root/.ssh/nix-builder_ed25519` and prints a `builderKey = "…"` line:
+
+  ```fish
+  cd ~/nixconf; just deploy hazel
+  ```
+
+- [ ] **hazel**: put the key in the registry, commit, sync (public half only; the private key never leaves hazel):
+
+  ```fish
+  cd ~/nixconf
+  set key (doas cut -d' ' -f1,2 /root/.ssh/nix-builder_ed25519.pub)
+  sed -i "s|      builderKey = null;|      builderKey = \"$key\";|" modules/hosts-registry.nix
+  git diff modules/hosts-registry.nix
+  git commit modules/hosts-registry.nix -m "hazel: nix builder key"
+  just sync
+  ```
+
+- [ ] **hazel**: deploy butternut from hazel (built ON butternut: `buildOnTarget`), then hazel itself
+      (local switch; afterwards its daemon offloads to butternut):
+
+  ```fish
+  cd ~/nixconf
+  just deploy-plan butternut; and just deploy butternut
+  just deploy hazel
+  ```
+
+- [ ] **hazel**: check the builder (the test build must say `on 'ssh-ng://nix-ssh@butternut-builder'`):
+
+  ```fish
+  cat /etc/nix/machines
+  doas nix store info --store ssh-ng://butternut-builder
+  nix build --no-link -L --max-jobs 0 --impure --expr '(builtins.getFlake "nixpkgs").legacyPackages.x86_64-linux.runCommand "builder-test-'(date +%s)'" {} "echo ok > $out"'
+  ```
+
+- [ ] **butternut**: fast-forward its `main` to hazel's commits: `cd ~/nixconf; just sync`
+      (or from hazel: `ssh butternut nixconf-sync`).
+
+Day to day, from either machine (`deploy` with no `just` works too once switched):
+
+```fish
+just deploy-plan maple            # where it would build / copy / activate; runs nothing
+just deploy butternut --dry-run   # build + dry-activate: what would change
+just deploy butternut             # out with hazel: builds on butternut, switches it
+just deploy-all                   # every reachable host, this machine last; OK / unreachable / failed table
+just deploy-all --skip peacelily  # leave a host out
+just sync                         # after committing: fetch, fast-forward main, push to the peer
+```
+
+`just sync` never touches the other machine's working tree: it pushes to
+`refs/remotes/<this host>/<branch>` there, and the other machine fast-forwards its `main` on its
+own next `just sync`. On divergence it refuses and says how to rebase/merge.
+
+Where builds go: hazel → butternut/fern build on the target; hazel → maple/peacelily build on
+butternut and the target substitutes from butternut's cache (`http://<butternut ts4>:5000`,
+falling back to `nix copy butternut → target` through hazel); butternut → anything else builds on
+butternut and copies. butternut away: hazel builds locally (fallback, ~3 s connect timeout).
+
+### Later: push to GitHub (history scrub first)
+
+The unpushed commits still carry AWS identifiers in early docs commits. Before any push, on
+**butternut** (its `origin` is GitHub), with a clean tree:
+
+```fish
+cd ~/nixconf; git fetch origin
+$EDITOR scripts/repo/scrub-strings.local    # gitignored: one literal per line, e.g. 123456789012==>ACCOUNT_ID
+just scrub-history                          # dry run: counts per string, filter-repo --dry-run
+just scrub-history --apply                  # backup ref + typed confirmation, rewrites origin/main..main
+git log --oneline origin/main..main | head
+git push origin main
+```
+
+Then on **hazel**, whose history is now the old one (commit or push your work first):
+
+```fish
+cd ~/nixconf; git fetch butternut; git checkout main; git reset --hard butternut/main
+```
