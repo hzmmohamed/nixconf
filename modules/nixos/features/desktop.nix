@@ -126,6 +126,10 @@
     systemd.services."autovt@".enable = false;
 
     security.polkit.enable = true;
+    # Graphical polkit agent (Sway has none): without it pkexec/admin actions
+    # (gnome-disks on internal disks, virt-manager, nm system connections,
+    # fwupd) fail with "Not authorized". Noctalia's own agent stays off.
+    security.soteria.enable = true;
 
     hardware = {
       enableAllFirmware = true;
