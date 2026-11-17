@@ -25,13 +25,17 @@
 // (tailscale.nix); per-port lists on tailscale0 are a backlog item.
 {
   "tagOwners": {
-    "tag:server":     ["autogroup:admin"],
-    "tag:gpu":        ["autogroup:admin"],
-    "tag:agent-host": ["autogroup:admin"],
-    "tag:client":     ["autogroup:admin"],
-    "tag:phone":      ["autogroup:admin"],
-    "tag:cloud":      ["autogroup:admin"],
-    "tag:connector":  ["autogroup:admin"],
+    // tag:provisioner is the only tag on the hosts' OAuth client (auth_keys
+    // scope). Keys minted by a client must carry all its tags or tags owned
+    // by them, so it owns every host tag and can mint any subset.
+    "tag:provisioner": ["autogroup:admin"],
+    "tag:server":     ["autogroup:admin", "tag:provisioner"],
+    "tag:gpu":        ["autogroup:admin", "tag:provisioner"],
+    "tag:agent-host": ["autogroup:admin", "tag:provisioner"],
+    "tag:client":     ["autogroup:admin", "tag:provisioner"],
+    "tag:phone":      ["autogroup:admin", "tag:provisioner"],
+    "tag:cloud":      ["autogroup:admin", "tag:provisioner"],
+    "tag:connector":  ["autogroup:admin", "tag:provisioner"],
   },
 
   "grants": [

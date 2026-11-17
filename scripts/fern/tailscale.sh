@@ -6,7 +6,7 @@
 #       against the API, stores it with sops in secrets/shared/tailscale-oauth.yaml
 #       (key tailscale_oauth, what features/tailscale.nix reads) and git-adds it.
 #       Client: https://login.tailscale.com/admin/settings/oauth
-#         scope "Auth Keys" write, tags tag:cloud tag:agent-host tag:server tag:gpu.
+#         scope "Auth Keys" write, tag tag:provisioner only.
 #
 #   bash scripts/fern/tailscale.sh acl [--apply-acl] [--dry-run]
 #       Validates docs/tailscale-policy.hujson (syntax + its `tests`) with the

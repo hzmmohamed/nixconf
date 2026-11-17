@@ -46,7 +46,7 @@ shows `OK` (the two `TODO`s about phase 2 are expected), it hands you phase 2.
 1. Open <https://login.tailscale.com/admin/settings/oauth> → **Generate OAuth client…**
 2. Description: `nixconf hosts`.
 3. Scopes: **Keys → Auth Keys → Write**, and nothing else.
-4. Tags: **`tag:cloud`, `tag:agent-host`, `tag:server`, `tag:gpu`**. maple and
+4. Tag: **`tag:provisioner`** only (it owns every host tag, so the client can mint keys for any host). maple and
    peacelily use the same client.
 5. Click **Generate client** and keep the page open. The secret
    (`tskey-client-…`) is shown only once. Paste it at the hidden prompt below.

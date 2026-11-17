@@ -17,7 +17,7 @@ It is NOT stored in this repo.
 | `maple/nix-serve.yaml` | `nix-serve-secret-key` | Nix binary cache signing key on maple |
 | `hazel/syncthing.yaml` | `syncthing/key`, `syncthing/cert` | Syncthing service authentication on hazel |
 | `shared/tailscale.yaml` | `tailscale_authkey` | Tailscale auth key (`tailscale` feature, all hosts) |
-| `shared/tailscale-oauth.yaml` | `tailscale_oauth` | Tailscale OAuth client secret (Auth Keys write; tags tag:server tag:gpu tag:cloud tag:agent-host) for tagged logins (`preferences.tailscale.oauth.enable`: maple, peacelily, fern). Written by `scripts/fern/tailscale.sh store`; also encrypted for fern |
+| `shared/tailscale-oauth.yaml` | `tailscale_oauth` | Tailscale OAuth client secret (Auth Keys write; tag tag:provisioner only, which owns every host tag) for tagged logins (`preferences.tailscale.oauth.enable`: maple, peacelily, fern). Written by `scripts/fern/tailscale.sh store`; also encrypted for fern |
 | `shared/wifi.yaml` | `wifi_env` | Home Wi-Fi PSK for NetworkManager (`wifi-home` feature) |
 | `shared/librechat.yaml` | `librechat_creds_key`, `librechat_creds_iv`, `librechat_jwt_secret`, `librechat_jwt_refresh_secret` | LibreChat on peacelily (`ai-server`) |
 | `shared/ai-search.yaml` | `searx_secret_key` | SearXNG (`ai-server`). Referenced but not created yet |

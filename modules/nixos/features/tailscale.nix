@@ -8,7 +8,7 @@
   # it never expires and mints a pre-authorized, TAGGED node key on login, so
   # the node never needs re-auth and has no key expiry.
   #   Admin console → Settings → OAuth clients → scope "Auth Keys" (write),
-  #   tags tag:server tag:gpu tag:cloud tag:agent-host →
+  #   tag tag:provisioner only (owns every host tag in the policy) →
   #   secrets/shared/tailscale-oauth.yaml, key `tailscale_oauth` =
   #   tskey-client-… (`bash scripts/fern/tailscale.sh store` writes it).
   #   Keep that client auth-keys only: every OAuth host can read it.
