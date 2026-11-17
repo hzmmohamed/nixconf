@@ -84,10 +84,16 @@
     mantle = "#181825";
     crust = "#11111b";
   };
+  # One family for the whole desktop (design-system signature, see
+  # docs/plans/2026-11-17-design-system.md §2.3): IBM Plex Sans for UI, Plex
+  # Mono (as the BlexMono Nerd Font build, for the bar glyphs) in terminals,
+  # Plex Sans Arabic as the Arabic fallback drawn to the same rhythm, Plex
+  # Serif for documents. Packages: features/desktop.nix.
   fonts = {
-    sansSerif = "Inter";
-    serif = "Noto Serif";
-    monospace = "JetBrainsMono Nerd Font";
+    sansSerif = "IBM Plex Sans";
+    serif = "IBM Plex Serif";
+    monospace = "BlexMono Nerd Font";
+    arabic = "IBM Plex Sans Arabic";
     size = 12;
     barSize = 12;
   };
@@ -139,43 +145,86 @@
   # Every themed module consumes this shape (via
   # config.preferences.theme.palette.{light,dark}):
   #   - the 26 Catppuccin slot names (rosewater … crust)
-  #   - semantic aliases (accent, onAccent, Material-style surface roles)
+  #   - colour roles with a contrast contract (docs/plans/2026-11-17-design-
+  #     system.md §2; enforced for generated palettes by extra/theme-palette.py
+  #     and verified for these by checks.design-contrast):
+  #       surface, surfaceContainerLow/Container/High/Highest   opaque surfaces
+  #       fg (≥7:1 on surface, ≥4.5 on the three text surfaces)
+  #       ansiRed/Green/Yellow/Blue/Magenta/Cyan (≥4.5)  terminal colours 1–6
+  #       fgMuted (≥4.5 on text surfaces)   secondary text
+  #       fgFaint (≥3 on surface/Low)        indicators, disabled; never text
+  #       outline (≥3)  visible borders/rings; outlineVariant  hairlines only
+  #       accent (≥3 on surfaces, onAccent ≥3)   glyphs, borders, small fills
+  #       accentText (≥4.5)                      accent as text, links
+  #       selection / onSelection (≥3 / ≥4.5)    selected rows, toggles, fills
+  #       focus (= accent)                       the 2 px focus ring
+  #       error/warning/success/info (≥4.5 on surface/Low) + onX (≥4.5)
+  #       inverseSurface / onInverseSurface (≥7) emphasis by inversion
   #   - contrast-tiered text roles fg/fgDim/fgMuted/fgFaint
   #   - derived opaque mixes: hairline{Soft,,Strong}, tint{5,10,16}
   #   - isDark: whether this is the dark variant
   #   - accentName: a Catppuccin accent name (lookup key for packages that
   #     only accept named colours, e.g. papirus-folders); null if unknown
   #   - noHash: the same attrset with every colour's leading "#" stripped
-  # A future wallpaper (matugen) palette must provide the same keys.
+  # A wallpaper (matugen) palette provides the same keys.
+  #
+  # `roles` overrides the slot-derived defaults where a Catppuccin slot
+  # misses its guarantee. The hex values were produced by the same OKLCH
+  # lightness step the runtime generator uses (theme-palette.py `step`), so
+  # a Latte lavender stays a lavender, only deep enough to pass.
   mkPalette = {
     slots,
     onAccent,
     isDark,
     accentName ? "lavender",
+    roles ? {},
   }: let
+    pole =
+      if isDark
+      then slots.crust
+      else slots.base;
     p =
       slots
       // rec {
         accent = slots.${accentName};
         inherit onAccent;
         primary = accent;
+        accentText = accent;
+        focus = accent;
+        selection = accent;
+        onSelection = pole;
+
         error = slots.red;
+        warning = slots.peach;
+        success = slots.green;
+        info = slots.blue;
+
+        # Terminal ANSI 1–6 (text-grade, ≥4.5:1 on surface/Low): the
+        # Catppuccin hues; Latte's are stepped in `roles` below.
+        ansiRed = slots.red;
+        ansiGreen = slots.green;
+        ansiYellow = slots.yellow;
+        ansiBlue = slots.blue;
+        ansiMagenta = slots.pink;
+        ansiCyan = slots.teal;
+        onError = pole;
+        onWarning = pole;
+        onSuccess = pole;
+        onInfo = pole;
 
         surface = slots.base;
         surfaceContainerLow = slots.mantle;
         surfaceContainer = slots.surface0;
         surfaceContainerHigh = slots.surface1;
+        surfaceContainerHighest = slots.surface2;
         onSurface = slots.text;
         onSurfaceVariant = slots.subtext0;
-        outline = slots.overlay0;
+        outline = slots.overlay1;
         outlineVariant = slots.surface1;
         inverseSurface = slots.text;
         onInverseSurface = slots.base;
 
         # Text tiers (design targets 12 / 9 / 6.6 / 4.6 : 1 on surface).
-        # Catppuccin slots only approximate them — Latte tops out at ~7:1 and
-        # its fgFaint (overlay2) is ~3.5:1; the WCAG guard (phase 5) will
-        # enforce minimums for generated palettes.
         fg = slots.text;
         fgDim = slots.subtext1;
         fgMuted = slots.subtext0;
@@ -187,12 +236,14 @@
         tint5 = mix slots.text slots.base 0.05;
         tint10 = mix slots.text slots.base 0.10;
         tint16 = mix slots.text slots.base 0.16;
-      };
+      }
+      // roles;
+    final = p // {focus = p.accent;};
   in
-    p
+    final
     // {
       inherit accentName isDark;
-      noHash = builtins.mapAttrs (_: stripHash) p;
+      noHash = builtins.mapAttrs (_: stripHash) final;
     };
 
   palettes.catppuccin = {
@@ -200,11 +251,31 @@
       slots = catppuccin;
       onAccent = catppuccin.base;
       isDark = false;
+      # Latte's mid-tone accents sit at 2.3–3.5:1 on base; stepped deeper.
+      roles = {
+        accent = "#5768da"; # lavender, L 0.66 → 0.56 (3:1 on base/mantle/surface0)
+        accentText = "#4c5bcd"; # lavender, L 0.52 (4.5:1)
+        selection = "#5161d4"; # lavender, L 0.54 (4.5:1 against base text)
+        fgMuted = "#56586d"; # subtext0, L 0.47 (4.5:1 on surface0)
+        outline = catppuccin.overlay2; # 3.5:1 (overlay1 is 2.3:1)
+        error = "#ce0436"; # red, 4.46 → 4.5:1
+        warning = "#af4816"; # peach, 2.6 → 4.5:1
+        success = "#297816"; # green, 3.0 → 4.5:1
+        info = "#135cea"; # blue, 4.3 → 4.5:1
+        ansiRed = "#ce0436";
+        ansiGreen = "#297816";
+        ansiYellow = "#925c13"; # yellow 2.3 → 4.9:1
+        ansiBlue = "#135cea";
+        ansiMagenta = "#a93a8f"; # pink 2.3 → 5:1
+        ansiCyan = "#097277"; # teal 3.3 → 5:1
+      };
     };
     dark = mkPalette {
       slots = catppuccinMocha;
       onAccent = catppuccinMocha.crust;
       isDark = true;
+      # Mocha's pastels pass everywhere; only the hairline needs a step up.
+      roles.outline = catppuccinMocha.overlay1; # 3.6:1 (overlay0 is 2.8:1)
     };
   };
 in {

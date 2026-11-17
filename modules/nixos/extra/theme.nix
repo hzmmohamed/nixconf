@@ -212,6 +212,12 @@
         preferences.theme = {
           package = themeMode;
           switchCommand = lib.mkDefault (lib.getExe themeMode);
+          rendered = {
+            light = renderDir "light";
+            dark = renderDir "dark";
+            light-template = templateDir "light";
+            dark-template = templateDir "dark";
+          };
         };
       }
 

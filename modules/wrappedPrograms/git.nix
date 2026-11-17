@@ -26,7 +26,7 @@
           "interactive.diffFilter=delta --color-only"
           "delta.navigate=true"
           "delta.line-numbers=true"
-          "delta.syntax-theme=GitHub"
+          "delta.detect-dark-light=auto"
           "merge.conflictstyle=diff3"
           "diff.colorMoved=default"
           "safe.directory=*"

@@ -110,6 +110,18 @@
         description = "The `theme-mode` command (set by extra/theme.nix).";
       };
 
+      rendered = lib.mkOption {
+        type = lib.types.attrsOf lib.types.package;
+        readOnly = true;
+        internal = true;
+        description = ''
+          The registered files rendered with the build-time palette
+          (`light`, `dark`) and over the placeholder palette
+          (`light-template`, `dark-template`); set by extra/theme.nix. For
+          inspection: `nix build .#nixosConfigurations.<host>.config.preferences.theme.rendered.dark`.
+        '';
+      };
+
       dconf = lib.mkOption {
         type = lib.types.attrsOf perMode;
         default = {};

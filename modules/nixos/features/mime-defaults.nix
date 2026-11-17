@@ -113,7 +113,7 @@
       set notification-error-bg "${p.surface}"
       set notification-error-fg "${p.error}"
       set notification-warning-bg "${p.surface}"
-      set notification-warning-fg "${p.peach}"
+      set notification-warning-fg "${p.warning}"
       set highlight-color "${p.hairlineStrong}"
       set highlight-active-color "${p.accent}"
       set completion-bg "${p.surfaceContainerLow}"
@@ -133,7 +133,7 @@
         include ${config.preferences.theme.stateDir}/current/zathura
         set recolor true
         set recolor-keephue true
-        set font "${self.fonts.sansSerif} ${toString self.fonts.size}"
+        set font "${self.design.type.family.ui} ${toString self.design.type.size.body}"
       '';
 
       mimeApps = {

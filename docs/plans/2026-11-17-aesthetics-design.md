@@ -1,7 +1,10 @@
 # Aesthetics & wallpaper-reactive theming — design draft (2026-11-17)
 
-Status: **draft, awaiting taste decisions** (see "Open decisions"). Implement
-after butternut is switched to the current build and stable.
+Status: architecture and phases 1–5 implemented. **The look (colour roles,
+contrast contract, tokens, typography, signature) now lives in
+`2026-11-17-design-system.md`**, which supersedes "The look" below and
+answers open decisions 1, 4 and 5 (Plex instead of Inter; no workspace
+module; emphasis by inversion, accent as a 2 px "ink" rule).
 
 Constraints: Sway, vertical collapsible bar on the right, **no blur, no
 transparency**, calm and legible, automatic light/dark via darkman.

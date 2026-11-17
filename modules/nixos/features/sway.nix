@@ -14,17 +14,21 @@
     swayExtraOptions = lib.optional (lib.elem "nvidia" config.services.xserver.videoDrivers) "--unsupported-gpu";
     kb = config.preferences.keyboard;
     theme = config.preferences.theme;
+    d = self.design;
 
     # Window decoration colours as sway commands — palette-only, included by
     # the config and replayed over IPC on a mode switch (no `swaymsg reload`,
     # which would reset the keyboard layout and re-run exec_always).
-    # Focused = accent, everything else = surface0; 2px, no title bars.
+    # Focused = the focus ring (accent, ≥3:1 on every surface), everything
+    # else a hairline in outlineVariant; urgent = error. No title bars, so
+    # only border / indicator / child_border show; the title colours are set
+    # for the day they are (onSelection on selection for the focused one).
     mkSwayColors = p: ''
-      client.focused ${p.accent} ${p.surface} ${p.fg} ${p.accent} ${p.accent}
-      client.focused_inactive ${p.surface0} ${p.surfaceContainerLow} ${p.fgMuted} ${p.surface0} ${p.surface0}
-      client.unfocused ${p.surface0} ${p.surfaceContainerLow} ${p.fgFaint} ${p.surface0} ${p.surface0}
-      client.urgent ${p.error} ${p.surface} ${p.error} ${p.error} ${p.error}
-      client.placeholder ${p.crust} ${p.crust} ${p.fg} ${p.crust} ${p.crust}
+      client.focused ${p.focus} ${p.selection} ${p.onSelection} ${p.accent} ${p.focus}
+      client.focused_inactive ${p.outlineVariant} ${p.surfaceContainerLow} ${p.fgMuted} ${p.outlineVariant} ${p.outlineVariant}
+      client.unfocused ${p.outlineVariant} ${p.surfaceContainerLow} ${p.fgMuted} ${p.outlineVariant} ${p.outlineVariant}
+      client.urgent ${p.error} ${p.error} ${p.onError} ${p.error} ${p.error}
+      client.placeholder ${p.surfaceContainerLow} ${p.surfaceContainerLow} ${p.fg} ${p.surfaceContainerLow} ${p.surfaceContainerLow}
       client.background ${p.surface}
     '';
   in {
@@ -42,7 +46,7 @@
       '';
     };
 
-    # wofi-theme: still used by wofi --dmenu prompts (e.g. whisper-live).
+    # wofi-theme: still used by wofi --dmenu prompts (e.g. wofi-emoji).
     imports = [self.nixosModules.wofi-theme];
 
     programs.sway = {
@@ -99,22 +103,24 @@
             };
           };
 
-          # Calm tiling: small inner gaps, none at the screen edge, and no
-          # gaps/borders at all when a workspace holds a single window.
+          # Calm tiling: the design system's gap (= the bar's edge padding)
+          # between windows, none at the screen edge, and no gaps/borders at
+          # all when a workspace holds a single window.
           gaps = {
-            inner = 6;
+            inner = d.window.gap;
             outer = 0;
             smartGaps = true;
             smartBorders = "on";
           };
 
-          # Pixel borders only, no title bars (zellij/waybar handle identification)
+          # Pixel borders only (the focus ring width), no title bars
+          # (zellij/waybar handle identification).
           window = {
-            border = 2;
+            border = d.window.border;
             titlebar = false;
           };
 
-          floating.border = 2;
+          floating.border = d.window.border;
 
           focus.followMouse = "yes";
 
@@ -217,8 +223,8 @@
 
           # Title bar font (visible if titlebar is ever re-enabled)
           fonts = {
-            names = [self.fonts.sansSerif];
-            size = self.fonts.size * 0.8;
+            names = [d.type.family.ui];
+            size = d.type.size.body * 0.75; # pt
           };
 
           # Disable sway's built-in bar — waybar is used instead

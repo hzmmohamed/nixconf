@@ -28,17 +28,18 @@
       p.surface # Base
       p.surfaceContainerLow # Window
       p.crust # Shadow
-      p.inverseSurface # Highlight (emphasis by inversion)
-      p.onInverseSurface # HighlightedText
-      p.accent # Link
+      p.selection # Highlight (toolkit selection: selected rows, text)
+      p.onSelection # HighlightedText
+      p.accentText # Link
       p.mauve # LinkVisited
       p.surfaceContainerLow # AlternateBase
       p.surface # NoRole
       p.surface # ToolTipBase
       p.fg # ToolTipText
-      p.fgFaint # PlaceholderText
-      p.accent # Accent
+      p.fgMuted # PlaceholderText (it is text: ≥4.5:1)
+      p.accent # Accent (focus frames)
     ];
+    # Disabled text is exempt from WCAG; fgFaint (≥3:1) keeps it readable.
     disabled = p:
       lib.imap0 (i: c:
         if lib.elem i [0 6 8]
@@ -65,8 +66,8 @@
       style=Fusion
 
       [Fonts]
-      fixed="${self.fonts.monospace},${toString self.fonts.size},-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
-      general="${self.fonts.sansSerif},${toString self.fonts.size},-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
+      fixed="${self.design.type.family.mono},${toString self.design.type.size.body},-1,5,${toString self.design.type.weight.regular},0,0,0,0,0,0,0,0,0,0,1"
+      general="${self.design.type.family.ui},${toString self.design.type.size.body},-1,5,${toString self.design.type.weight.regular},0,0,0,0,0,0,0,0,0,0,1"
     '';
   in {
     # qt.enable wires QT_PLUGIN_PATH for the system profile; the qt5ct

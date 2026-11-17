@@ -10,24 +10,24 @@
 
     mkFootColors = p: ''
       [colors]
-      foreground=${p.noHash.text}
-      background=${p.noHash.base}
-      regular0=${p.noHash.surface1}
-      regular1=${p.noHash.red}
-      regular2=${p.noHash.green}
-      regular3=${p.noHash.yellow}
-      regular4=${p.noHash.blue}
-      regular5=${p.noHash.pink}
-      regular6=${p.noHash.teal}
-      regular7=${p.noHash.subtext1}
-      bright0=${p.noHash.surface2}
-      bright1=${p.noHash.red}
-      bright2=${p.noHash.green}
-      bright3=${p.noHash.yellow}
-      bright4=${p.noHash.blue}
-      bright5=${p.noHash.pink}
-      bright6=${p.noHash.teal}
-      bright7=${p.noHash.subtext0}
+      foreground=${p.noHash.fg}
+      background=${p.noHash.surface}
+      regular0=${p.noHash.surfaceContainerHigh}
+      regular1=${p.noHash.ansiRed}
+      regular2=${p.noHash.ansiGreen}
+      regular3=${p.noHash.ansiYellow}
+      regular4=${p.noHash.ansiBlue}
+      regular5=${p.noHash.ansiMagenta}
+      regular6=${p.noHash.ansiCyan}
+      regular7=${p.noHash.fgDim}
+      bright0=${p.noHash.surfaceContainerHighest}
+      bright1=${p.noHash.ansiRed}
+      bright2=${p.noHash.ansiGreen}
+      bright3=${p.noHash.ansiYellow}
+      bright4=${p.noHash.ansiBlue}
+      bright5=${p.noHash.ansiMagenta}
+      bright6=${p.noHash.ansiCyan}
+      bright7=${p.noHash.fg}
     '';
   in {
     environment.systemPackages = [pkgs.foot];
@@ -41,7 +41,7 @@
 
         [main]
         font=${font}:size=${toString fontSize}
-        pad=8x4 center
+        pad=${toString self.design.space.md}x${toString self.design.space.sm} center
 
         [scrollback]
         lines=2000

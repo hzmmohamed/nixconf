@@ -23,15 +23,17 @@
     wallpaperSource = theme.source == "wallpaper";
     noctalia = config.home-manager.users.${user}.programs.noctalia.package;
 
+    # Noctalia fills primary/secondary/tertiary with text on them: the
+    # selection fill (≥4.5:1 with its on-colour) and the status roles.
     mkVariant = c: {
-      primary = c.accent;
-      on_primary = c.onAccent;
-      secondary = c.blue;
-      on_secondary = c.onAccent;
-      tertiary = c.peach;
-      on_tertiary = c.onAccent;
+      primary = c.selection;
+      on_primary = c.onSelection;
+      secondary = c.info;
+      on_secondary = c.onInfo;
+      tertiary = c.warning;
+      on_tertiary = c.onWarning;
       inherit (c) error surface;
-      on_error = c.onAccent;
+      on_error = c.onError;
       on_surface = c.onSurface;
       surface_container = c.surfaceContainer;
       on_surface_variant = c.onSurfaceVariant;
@@ -42,23 +44,29 @@
       terminal = {
         background = c.surface;
         foreground = c.fg;
-        cursor = c.rosewater;
-        cursor_text = c.surface;
-        selection_bg = c.surface2;
-        selection_fg = c.fg;
+        cursor = c.selection;
+        cursor_text = c.onSelection;
+        selection_bg = c.inverseSurface;
+        selection_fg = c.onInverseSurface;
         normal = {
-          black = c.surface1;
-          inherit (c) red green yellow blue;
-          magenta = c.pink;
-          cyan = c.teal;
-          white = c.subtext1;
+          black = c.surfaceContainerHigh;
+          red = c.ansiRed;
+          green = c.ansiGreen;
+          yellow = c.ansiYellow;
+          blue = c.ansiBlue;
+          magenta = c.ansiMagenta;
+          cyan = c.ansiCyan;
+          white = c.fgDim;
         };
         bright = {
-          black = c.surface2;
-          inherit (c) red green yellow blue;
-          magenta = c.pink;
-          cyan = c.teal;
-          white = c.subtext0;
+          black = c.surfaceContainerHighest;
+          red = c.ansiRed;
+          green = c.ansiGreen;
+          yellow = c.ansiYellow;
+          blue = c.ansiBlue;
+          magenta = c.ansiMagenta;
+          cyan = c.ansiCyan;
+          white = c.fg;
         };
       };
     };

@@ -4,7 +4,7 @@
 # Icons: Papirus / Papirus-Dark with folders tinted to the accent.
 # Imported by `general` on every host; only active when preferences.desktop.enable
 # (set by the `desktop` feature), so headless hosts get no GTK/dconf.
-{...}: {
+{self, ...}: {
   flake.nixosModules.gtk = {
     pkgs,
     lib,
@@ -41,23 +41,25 @@
     iconPackage = pkgs.papirus-icon-theme.override {color = papirusFolderColor;};
 
     # libadwaita / adw-gtk3 named colours. Shades/borders are opaque palette
-    # mixes, never alpha.
+    # mixes, never alpha. accent_color (text, links, focus rings) is the
+    # text-grade accent; accent_bg_color (filled buttons, selected rows) is
+    # the selection fill with its guaranteed on-colour.
     mkGtkCss = p: ''
-      @define-color accent_color ${p.accent};
-      @define-color accent_bg_color ${p.accent};
-      @define-color accent_fg_color ${p.onAccent};
-      @define-color destructive_color ${p.red};
-      @define-color destructive_bg_color ${p.red};
-      @define-color destructive_fg_color ${p.surface};
-      @define-color success_color ${p.green};
-      @define-color success_bg_color ${p.green};
-      @define-color success_fg_color ${p.surface};
-      @define-color warning_color ${p.peach};
-      @define-color warning_bg_color ${p.peach};
-      @define-color warning_fg_color ${p.surface};
-      @define-color error_color ${p.red};
-      @define-color error_bg_color ${p.red};
-      @define-color error_fg_color ${p.surface};
+      @define-color accent_color ${p.accentText};
+      @define-color accent_bg_color ${p.selection};
+      @define-color accent_fg_color ${p.onSelection};
+      @define-color destructive_color ${p.error};
+      @define-color destructive_bg_color ${p.error};
+      @define-color destructive_fg_color ${p.onError};
+      @define-color success_color ${p.success};
+      @define-color success_bg_color ${p.success};
+      @define-color success_fg_color ${p.onSuccess};
+      @define-color warning_color ${p.warning};
+      @define-color warning_bg_color ${p.warning};
+      @define-color warning_fg_color ${p.onWarning};
+      @define-color error_color ${p.error};
+      @define-color error_bg_color ${p.error};
+      @define-color error_fg_color ${p.onError};
 
       @define-color window_bg_color ${p.surface};
       @define-color window_fg_color ${p.fg};
@@ -91,17 +93,28 @@
       @define-color thumbnail_fg_color ${p.fg};
       @define-color shade_color ${p.hairlineSoft};
       @define-color scrollbar_outline_color ${p.hairlineSoft};
+      @define-color borders ${p.outlineVariant};
 
-      /* GTK3 legacy selection names (Thunar & co.): selected items must use
-         the dark on-accent text, not the normal foreground. */
-      @define-color theme_selected_bg_color ${p.accent};
-      @define-color theme_selected_fg_color ${p.onAccent};
-      @define-color selected_bg_color ${p.accent};
-      @define-color selected_fg_color ${p.onAccent};
+      /* GTK3 legacy selection names (Thunar & co.): selected items use the
+         selection fill with its on-colour (≥4.5:1), never the normal
+         foreground over the accent. */
+      @define-color theme_selected_bg_color ${p.selection};
+      @define-color theme_selected_fg_color ${p.onSelection};
+      @define-color selected_bg_color ${p.selection};
+      @define-color selected_fg_color ${p.onSelection};
+      @define-color theme_unfocused_selected_bg_color ${p.selection};
+      @define-color theme_unfocused_selected_fg_color ${p.onSelection};
       .view:selected, .view text:selected, iconview:selected,
-      .view:selected:focus, treeview:selected, flowboxchild:selected {
-        background-color: ${p.accent};
-        color: ${p.onAccent};
+      .view:selected:focus, treeview:selected, flowboxchild:selected,
+      row:selected, .sidebar row:selected, treeview.view:selected {
+        background-color: ${p.selection};
+        color: ${p.onSelection};
+      }
+      /* Keyboard focus: the shared 2 px ring in the focus colour (adw-gtk3
+         otherwise draws a translucent accent outline). */
+      *:focus-visible, *:focus:focus-visible {
+        outline: ${toString self.design.border.focus}px solid ${p.focus};
+        outline-offset: -${toString self.design.border.focus}px;
       }
     '';
 

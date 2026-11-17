@@ -32,6 +32,7 @@
     user = config.preferences.user.name;
     swaymsg = "${pkgs.sway}/bin/swaymsg";
     minutes = s: "${toString (s / 60)} min";
+    d = self.design;
 
     # swaylock has no include directive, so its whole (small, appearance-only)
     # config is rendered per mode and ~/.config/swaylock/config links to the
@@ -43,8 +44,8 @@
         color = c.surface;
         scaling = "fill";
 
-        font = self.fonts.sansSerif;
-        font-size = 32; # clock + layout box; the date is drawn at radius/6
+        font = d.type.family.ui;
+        font-size = d.type.size.display; # clock + layout box; the date is drawn at radius/6
 
         clock = true;
         timestr = "%H:%M";
@@ -53,8 +54,8 @@
         # An always-visible opaque disc: legible on any wallpaper.
         indicator = true;
         indicator-idle-visible = true;
-        indicator-radius = 120;
-        indicator-thickness = 8;
+        indicator-radius = d.lock.ringRadius;
+        indicator-thickness = d.lock.ringThickness;
         indicator-caps-lock = true;
         show-keyboard-layout = true; # us / ara, shown while typing
         show-failed-attempts = true;
@@ -74,24 +75,26 @@
         line-wrong-color = c.surface;
         separator-color = c.surface;
 
-        ring-color = c.outlineVariant; # idle / typing
+        # Ring states: outline (≥3:1) idle, accent while a key lights a
+        # segment / verifying, warning for caps lock, error when wrong.
+        ring-color = c.outline; # idle / typing
         ring-clear-color = c.fgFaint; # input cleared
-        ring-caps-lock-color = c.peach;
+        ring-caps-lock-color = c.warning;
         ring-ver-color = c.accent; # verifying
         ring-wrong-color = c.error;
         key-hl-color = c.accent; # one segment per key press
         bs-hl-color = c.fgMuted;
-        caps-lock-key-hl-color = c.peach;
+        caps-lock-key-hl-color = c.warning;
         caps-lock-bs-hl-color = c.fgMuted;
 
         text-color = c.fg;
         text-clear-color = c.fgMuted;
-        text-caps-lock-color = c.peach;
-        text-ver-color = c.accent;
+        text-caps-lock-color = c.warning;
+        text-ver-color = c.accentText;
         text-wrong-color = c.error;
 
         layout-bg-color = c.surface;
-        layout-border-color = c.outlineVariant;
+        layout-border-color = c.outline;
         layout-text-color = c.fg;
       };
     in

@@ -2,7 +2,12 @@
 # Gated on preferences.desktopShell == "waybar" (Noctalia draws its own OSD, so
 # in "noctalia" mode the plain wpctl/brightnessctl keys from sway.nix stay).
 # Hosts can import it unconditionally.
-{
+#
+# Look: the shared panel (opaque surface, hairline border, panel radius — the
+# stock stylesheet is translucent), glyph in fg, level bar in accent on a
+# surface-container trough. The stylesheet is palette-only and lives in the
+# theme state dir; swayosd reads it at start, so the reload hook restarts it.
+{self, ...}: {
   flake.nixosModules.swayosd = {
     config,
     lib,
@@ -12,10 +17,59 @@
     user = config.preferences.user.name;
     client = "${pkgs.swayosd}/bin/swayosd-client";
     vol = arg: "exec ${client} --output-volume ${arg} --max-volume 100";
+    theme = config.preferences.theme;
+    d = self.design;
+    px = n: "${toString n}px";
+
+    mkStyle = p: ''
+      window#osd {
+        background: ${p.surface};
+        border: ${px d.panel.border} solid ${p.outlineVariant};
+        border-radius: ${px d.panel.radius};
+        box-shadow: none;
+        min-width: ${px d.osd.width};
+      }
+      window#osd #container { margin: ${px d.osd.margin}; }
+      window#osd image, window#osd label {
+        color: ${p.fg};
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.body};
+        -gtk-icon-size: ${px d.type.size.glyph};
+      }
+      window#osd progressbar:disabled, window#osd image:disabled { color: ${p.fgFaint}; }
+      window#osd progressbar, window#osd segmentedprogress {
+        min-height: ${px d.osd.barHeight};
+        border-radius: ${px d.radius.pill};
+        background: transparent;
+        border: none;
+      }
+      window#osd trough, window#osd segment {
+        min-height: inherit;
+        border-radius: inherit;
+        border: none;
+        background: ${p.surfaceContainerHigh};
+      }
+      window#osd progress, window#osd segment.active {
+        min-height: inherit;
+        border-radius: inherit;
+        border: none;
+        background: ${p.accent};
+      }
+      window#osd segment { margin-left: ${px d.space.md}; }
+      window#osd segment:first-child { margin-left: 0; }
+    '';
   in {
     config = lib.mkIf (config.preferences.desktopShell == "waybar") {
+      preferences.theme = {
+        files."swayosd.css" = mkStyle;
+        reloadHooks.swayosd = "${pkgs.systemd}/bin/systemctl --user try-restart swayosd.service 2>/dev/null || true";
+      };
+
       home-manager.users.${user} = {
-        services.swayosd.enable = true;
+        services.swayosd = {
+          enable = true;
+          stylePath = "${theme.stateDir}/current/swayosd.css";
+        };
 
         # Same session binding as the blueman/nm applets: only run inside sway,
         # after it has imported WAYLAND_DISPLAY into the user environment.

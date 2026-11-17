@@ -36,12 +36,15 @@
       then t3code.url
       else "http://127.0.0.1:${toString (t3code.port or 3773)}";
 
-    # One glyph family (Material Design icons from the Nerd Font "Propo"
-    # variant: proportional, so glyphs are centred and not clipped) at one
-    # size; values sit under their glyph, smaller, only when relevant.
-    glyphFont = "${self.fonts.monospace} Propo";
-    glyphSize = 16;
-    value = s: "<span size='small'>${s}</span>";
+    # Design tokens (modules/design-tokens.nix): one glyph family (Material
+    # Design icons from the Nerd Font "Propo" variant: proportional, so glyphs
+    # are centred and not clipped) at one size; values sit under their glyph
+    # at caption size, only when relevant.
+    d = self.design;
+    glyphFont = d.type.family.glyph;
+    glyphSize = d.type.size.glyph;
+    px = n: "${toString n}px";
+    value = s: "<span size='${px d.type.size.caption}'>${s}</span>";
 
     # Signal the running waybar (main process only — never its module children).
     waybarSignal = sig: "systemctl --user kill --kill-whom=main -s ${sig} waybar.service";
@@ -56,13 +59,17 @@
       @define-color hairline ${p.hairline};
       @define-color hairline-strong ${p.hairlineStrong};
       @define-color tint ${p.tint10};
+      @define-color tint-pressed ${p.tint16};
+      @define-color outline ${p.outline};
       @define-color outline-variant ${p.outlineVariant};
       @define-color inverse ${p.inverseSurface};
       @define-color on-inverse ${p.onInverseSurface};
       @define-color accent ${p.accent};
+      @define-color accent-text ${p.accentText};
+      @define-color focus ${p.focus};
       @define-color error ${p.error};
-      @define-color warning ${p.peach};
-      @define-color success ${p.green};
+      @define-color warning ${p.warning};
+      @define-color success ${p.success};
     '';
 
     # Calendar markup can't use CSS colors, so its colors live in a small
@@ -70,11 +77,11 @@
     mkCalendarColors = p:
       builtins.toJSON {
         clock.calendar.format = {
-          months = "<span color='${p.accent}'><b>{}</b></span>";
+          months = "<span color='${p.accentText}'><b>{}</b></span>";
           days = "<span color='${p.fg}'>{}</span>";
-          weeks = "<span color='${p.fgFaint}'>W{}</span>";
+          weeks = "<span color='${p.fgMuted}'>W{}</span>";
           weekdays = "<span color='${p.fgMuted}'><b>{}</b></span>";
-          today = "<span color='${p.peach}'><b><u>{}</u></b></span>";
+          today = "<span background='${p.selection}' color='${p.onSelection}'><b>{}</b></span>";
         };
       };
 
@@ -160,7 +167,7 @@
       # mixers' peak meters. Hidden while nothing captures.
       privacy = {
         icon-size = glyphSize;
-        icon-spacing = 4;
+        icon-spacing = d.space.sm;
         transition-duration = 0;
         modules = [
           {type = "screenshare";}
@@ -441,7 +448,7 @@
       "group/tray" = {
         orientation = "inherit";
         drawer = {
-          transition-duration = 170;
+          transition-duration = d.motion.base;
           children-class = "tray-child";
           transition-left-to-right = false;
           click-to-reveal = true;
@@ -454,7 +461,7 @@
       };
       tray = {
         icon-size = glyphSize;
-        spacing = 8;
+        spacing = d.bar.traySpacing;
       };
 
       # Battery: only while discharging or low — hidden on AC (butternut is
@@ -483,7 +490,7 @@
       @import url("file://${theme.stateDir}/current/waybar.css");
 
       * {
-        font-size: ${toString glyphSize}px;
+        font-size: ${px glyphSize};
         font-family: "${glyphFont}";
         color: @fg;
         border: none;
@@ -491,44 +498,50 @@
         min-height: 0;
         box-shadow: none;
         text-shadow: none;
+        transition: background-color ${toString d.motion.fast}ms ease-out;
       }
 
       window#waybar {
         background: @bar-bg;
-        border-left: 1px solid @hairline;
+        border-left: ${px d.bar.rule} solid @hairline;
       }
 
       tooltip {
         background: @surface;
-        border: 1px solid @outline-variant;
-        border-radius: 8px;
+        border: ${px d.panel.border} solid @outline-variant;
+        border-radius: ${px d.panel.radius};
       }
       tooltip label {
         color: @fg;
-        font-family: "${self.fonts.sansSerif}";
-        font-size: ${toString self.fonts.size}px;
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.body};
       }
 
       .modules-left, .modules-center, .modules-right {
-        padding: 8px 0;
+        padding: ${px d.bar.edgePadding} 0;
       }
 
-      /* One vertical rhythm: every item is the same box (6px above/below,
-         4px gap), glyphs centred, values in the same box underneath. */
+      /* One vertical rhythm (design tokens `bar`): every item is the same
+         box (glyph + itemPaddingY above/below, itemMarginY between), glyphs
+         centred, values in the same box underneath. */
       #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
       #cpu, #memory, #custom-disk, #temperature, #network, #custom-wired, #custom-wifi,
       #custom-tailscale, #wireplumber, #bluetooth,
       #custom-removable, #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
       #custom-nix-build, #privacy, #custom-camera {
-        padding: 6px 0;
-        margin: 2px 4px;
-        border-radius: 6px;
+        padding: ${px d.bar.itemPaddingY} 0;
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
       }
 
-      #clock { font-size: ${toString (glyphSize - 2)}px; }
+      #clock {
+        font-family: "${d.type.family.ui}";
+        font-size: ${px (d.type.size.body + 2)};
+      }
       #language {
         color: @fg-muted;
-        font-size: ${toString (glyphSize - 4)}px;
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.body};
       }
       #custom-tray-handle { color: @fg-muted; }
 
@@ -538,6 +551,10 @@
       #bluetooth:hover, #custom-removable:hover, #custom-tray-handle:hover, #battery:hover,
       #custom-agents:hover, #custom-agents-input:hover {
         background: @tint;
+      }
+      #clock:active, #custom-notification:active, #custom-mail:active, #mpris:active,
+      #wireplumber:active, #bluetooth:active, #custom-tray-handle:active {
+        background: @tint-pressed;
       }
 
       #custom-notification.dnd-notification,
@@ -566,8 +583,8 @@
       #custom-agents-input { color: @warning; }
       #custom-nix-build.build { color: @accent; }
       #custom-nix-build.busy { color: @fg-muted; }
-      #privacy { padding: 4px 0; }
-      #privacy-item { color: @error; padding: 2px 0; }
+      #privacy { padding: ${px d.space.sm} 0; }
+      #privacy-item { color: @error; padding: ${px d.space.xs} 0; }
       #custom-camera { color: @error; }
 
       #network.disconnected, #network.linked { color: @warning; }
@@ -590,9 +607,9 @@
 
       /* Caffeine: same box as the other items; faint off, accent on. */
       #custom-caffeine {
-        padding: 6px 0;
-        margin: 2px 4px;
-        border-radius: 6px;
+        padding: ${px d.bar.itemPaddingY} 0;
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
         color: @fg-faint;
       }
       #custom-caffeine:hover { background: @tint; }

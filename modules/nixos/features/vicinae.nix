@@ -1,7 +1,12 @@
-{
+{self, ...}: {
   # Vicinae — Raycast-style launcher (apps, file search, calculator, emoji,
   # extensions). Runs as a user daemon bound to the graphical session; the
   # compositor only needs to bind `vicinae toggle`.
+  #
+  # Theme: one TOML rendered per mode from the palette (preferences.theme.files)
+  # and linked as ~/.config/vicinae/themes/nixconf-{light,dark}.toml; vicinae
+  # picks the variant from the portal colour scheme (written by theme-mode),
+  # and the reload hook re-applies it after a wallpaper palette changed.
   flake.nixosModules.vicinae = {
     config,
     lib,
@@ -9,7 +14,98 @@
     ...
   }: let
     user = config.preferences.user.name;
+    theme = config.preferences.theme;
+    d = self.design;
+
+    # Panel conventions: surface + hairline border, cards on surface-low, the
+    # chosen row by inversion (≥7:1), toolkit text selection in selection /
+    # on-selection, focus ring in the focus colour.
+    mkVicinaeTheme = p: ''
+      [meta]
+      version = 1
+      name = "Nixconf ${
+        if p.isDark
+        then "Dark"
+        else "Light"
+      }"
+      description = "Generated from the desktop palette (preferences.theme)."
+      variant = "${
+        if p.isDark
+        then "dark"
+        else "light"
+      }"
+
+      [colors.core]
+      background = "${p.surface}"
+      foreground = "${p.fg}"
+      secondary_background = "${p.surfaceContainerLow}"
+      border = "${p.outlineVariant}"
+      accent = "${p.accent}"
+      accent_foreground = "${p.onAccent}"
+
+      [colors.main_window]
+      border = "${p.outlineVariant}"
+
+      [colors.settings_window]
+      border = "${p.outlineVariant}"
+
+      [colors.accents]
+      blue = "${p.info}"
+      green = "${p.success}"
+      magenta = "${p.pink}"
+      orange = "${p.warning}"
+      purple = "${p.mauve}"
+      red = "${p.error}"
+      yellow = "${p.yellow}"
+      cyan = "${p.teal}"
+
+      [colors.shortcut]
+      border = "${p.outlineVariant}"
+
+      [colors.text]
+      default = "${p.fg}"
+      muted = "${p.fgMuted}"
+      danger = "${p.error}"
+      success = "${p.success}"
+      placeholder = "${p.fgMuted}"
+      selection = { background = "${p.selection}", foreground = "${p.onSelection}" }
+
+      [colors.text.links]
+      default = "${p.accentText}"
+      visited = "${p.mauve}"
+
+      [colors.input]
+      border = "${p.outlineVariant}"
+      border_focus = "${p.focus}"
+      border_error = "${p.error}"
+
+      [colors.button.primary]
+      background = "${p.surfaceContainer}"
+      foreground = "${p.fg}"
+      hover = { background = "${p.surfaceContainerHigh}" }
+      focus = { outline = "${p.focus}" }
+
+      [colors.list.item.hover]
+      foreground = "${p.fg}"
+      secondary_foreground = "${p.fgMuted}"
+
+      [colors.list.item.selection]
+      background = "${p.inverseSurface}"
+      foreground = "${p.onInverseSurface}"
+      secondary_background = "${p.inverseSurface}"
+      secondary_foreground = "${p.onInverseSurface}"
+
+      [colors.grid.item]
+      background = "${p.surfaceContainerLow}"
+      hover = { outline = "${p.outline}" }
+      selection = { outline = "${p.focus}" }
+    '';
   in {
+    preferences.theme = {
+      files."vicinae.toml" = mkVicinaeTheme;
+      reloadHooks.vicinae = "${lib.getExe pkgs.vicinae} theme set \"nixconf-$mode\" >/dev/null 2>&1 || true";
+    };
+
     # vicinae's input server injects keystrokes through /dev/uinput for
     # "paste to active window" (emoji picker, snippets). Without it, actions
     # fall back to copying to the clipboard.
@@ -19,6 +115,15 @@
     home-manager.users.${user} = {config, ...}: let
       home = config.home.homeDirectory;
     in {
+      # Both variants, each pointing at its mode's rendered file (Catppuccin
+      # store paths, or the wallpaper palette cache).
+      home.file = {
+        ".config/vicinae/themes/nixconf-light.toml".source =
+          config.lib.file.mkOutOfStoreSymlink "${theme.stateDir}/light/vicinae.toml";
+        ".config/vicinae/themes/nixconf-dark.toml".source =
+          config.lib.file.mkOutOfStoreSymlink "${theme.stateDir}/dark/vicinae.toml";
+      };
+
       # No extra resource controls on vicinae.service: the file indexer is
       # already a separate helper process (libexec/vicinae-file-indexer)
       # whose scan threads drop themselves to nice 19 + idle I/O class and
@@ -38,23 +143,23 @@
           pop_to_root_on_close = true;
           favicon_service = "none";
 
-          # Built-in catppuccin themes. vicinae follows the portal's
+          # Palette themes (above). vicinae follows the portal's
           # org.freedesktop.appearance color-scheme (written by darkman via
           # dconf → xdg-desktop-portal-gtk), so this switches live.
           theme = {
-            light.name = "catppuccin-latte";
-            dark.name = "catppuccin-mocha";
+            light.name = "nixconf-light";
+            dark.name = "nixconf-dark";
           };
 
-          # Opaque, no blur/glass. Same chrome as swaync and tooltips:
-          # 8px radius, 1px border, no shadow.
+          # Opaque, no blur/glass. Same chrome as swaync and tooltips: the
+          # panel radius, a hairline border, no shadow.
           launcher_window = {
             opacity = 1.0;
             material = "none";
-            rounding = 8;
+            rounding = d.panel.radius;
             client_side_decorations = {
               enabled = true;
-              border_width = 1;
+              border_width = d.panel.border;
               shadow_size = 0;
             };
           };

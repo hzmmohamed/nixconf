@@ -10,17 +10,17 @@
     mkZellijTheme = name: cat: ''
       themes {
         ${name} {
-          bg "${cat.base}"
-          fg "${cat.text}"
-          red "${cat.red}"
-          green "${cat.green}"
-          blue "${cat.blue}"
-          yellow "${cat.yellow}"
-          magenta "${cat.pink}"
-          orange "${cat.peach}"
-          cyan "${cat.teal}"
-          black "${cat.crust}"
-          white "${cat.text}"
+          bg "${cat.surface}"
+          fg "${cat.fg}"
+          red "${cat.ansiRed}"
+          green "${cat.ansiGreen}"
+          blue "${cat.ansiBlue}"
+          yellow "${cat.ansiYellow}"
+          magenta "${cat.ansiMagenta}"
+          orange "${cat.warning}"
+          cyan "${cat.ansiCyan}"
+          black "${cat.surfaceContainerLow}"
+          white "${cat.fg}"
         }
       }
     '';

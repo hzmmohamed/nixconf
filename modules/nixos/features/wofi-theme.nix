@@ -1,95 +1,58 @@
 {self, ...}: {
   flake.nixosModules.wofi-theme = {...}: let
+    d = self.design;
+    px = n: "${toString n}px";
+
+    # The shared panel: surface, hairline border, panel radius, no shadow;
+    # the chosen row by inversion; no fades (motion only where functional).
     mkWofiCss = cat: ''
       * {
-        font-family: '${self.fonts.monospace}', monospace;
-        font-size: ${toString self.fonts.size}px;
+        font-family: '${d.type.family.ui}';
+        font-size: ${px d.type.size.body};
       }
 
       window {
-        margin: 0px;
-        padding: 10px;
-        border: 1px solid ${cat.outlineVariant};
-        border-radius: 8px;
-        background-color: ${cat.base};
-        animation: slideIn 0.2s ease-in-out both;
+        margin: 0;
+        padding: ${px d.space.sm};
+        border: ${px d.panel.border} solid ${cat.outlineVariant};
+        border-radius: ${px d.panel.radius};
+        background-color: ${cat.surface};
       }
 
-      @keyframes slideIn {
-        0% { opacity: 0; }
-        100% { opacity: 1; }
-      }
-
-      #inner-box {
-        margin: 5px;
-        padding: 10px;
+      #inner-box, #outer-box, #scroll {
+        margin: 0;
+        padding: ${px d.space.sm};
         border: none;
-        background-color: ${cat.base};
-        animation: fadeIn 0.2s ease-in-out both;
-      }
-
-      @keyframes fadeIn {
-        0% { opacity: 0; }
-        100% { opacity: 1; }
-      }
-
-      #outer-box {
-        margin: 5px;
-        padding: 10px;
-        border: none;
-        background-color: ${cat.base};
-      }
-
-      #scroll {
-        margin: 0px;
-        padding: 10px;
-        border: none;
-        background-color: ${cat.base};
+        background-color: ${cat.surface};
       }
 
       #input {
-        margin: 5px 20px;
-        padding: 10px;
-        border: none;
-        border-radius: 0.1em;
-        color: ${cat.text};
-        background-color: ${cat.base};
-        animation: fadeIn 0.5s ease-in-out both;
+        margin: ${px d.space.sm};
+        padding: ${px d.space.md} ${px d.space.lg};
+        border: ${px d.border.hairline} solid ${cat.outlineVariant};
+        border-radius: ${px d.radius.control};
+        color: ${cat.fg};
+        background-color: ${cat.surfaceContainerLow};
       }
-
-      #input image {
-        border: none;
-        color: ${cat.red};
-      }
+      #input:focus { border-color: ${cat.focus}; }
+      #input image { border: none; color: ${cat.fgMuted}; }
 
       #text {
-        margin: 5px;
+        margin: ${px d.space.xs} ${px d.space.md};
         border: none;
-        color: ${cat.text};
-        animation: fadeIn 0.5s ease-in-out both;
+        color: ${cat.fg};
       }
 
       #entry {
-        background-color: ${cat.base};
+        padding: ${px d.space.sm} ${px d.space.md};
+        border-radius: ${px d.radius.control};
+        background-color: ${cat.surface};
       }
-
-      #entry arrow {
-        border: none;
-        color: ${cat.lavender};
-      }
-
-      #entry:selected {
-        background-color: ${cat.inverseSurface};
-        border-radius: 6px;
-      }
-
-      #entry:selected #text {
-        color: ${cat.onInverseSurface};
-      }
-
-      #entry:drop(active) {
-        background-color: ${cat.lavender};
-      }
+      #entry arrow { border: none; color: ${cat.accentText}; }
+      #entry:selected { background-color: ${cat.inverseSurface}; }
+      #entry:selected #text { color: ${cat.onInverseSurface}; }
+      #entry:drop(active) { background-color: ${cat.selection}; }
+      #entry:drop(active) #text { color: ${cat.onSelection}; }
     '';
   in {
     # wofi only reads ~/.config/wofi/style.css: link it to the current mode.

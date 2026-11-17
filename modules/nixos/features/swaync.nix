@@ -14,20 +14,29 @@
     client = "${swaync}/bin/swaync-client";
 
     theme = config.preferences.theme;
+    d = self.design;
+    px = n: "${toString n}px";
 
     # Palette-only CSS, included from the theme state dir.
     mkColorsCss = p: ''
       @define-color surface ${p.surface};
       @define-color surface-low ${p.surfaceContainerLow};
       @define-color surface-container ${p.surfaceContainer};
+      @define-color surface-container-high ${p.surfaceContainerHigh};
+      @define-color outline ${p.outline};
       @define-color outline-variant ${p.outlineVariant};
       @define-color fg ${p.fg};
       @define-color fg-muted ${p.fgMuted};
       @define-color fg-faint ${p.fgFaint};
+      @define-color tint ${p.tint10};
       @define-color inverse ${p.inverseSurface};
       @define-color on-inverse ${p.onInverseSurface};
       @define-color accent ${p.accent};
+      @define-color focus ${p.focus};
+      @define-color selection ${p.selection};
+      @define-color on-selection ${p.onSelection};
       @define-color error ${p.error};
+      @define-color on-error ${p.onError};
     '';
 
     # `dnd on|off|toggle|status` — backend-specific; the same CLI exists in
@@ -57,12 +66,19 @@
       exit 0
     '';
 
+    # Panel conventions (design tokens `panel`): surface + hairline border in
+    # outlineVariant, panel radius, no shadow; cards inside a panel sit on
+    # surface-low; controls use the control radius; hover = tint, the
+    # focused control gets the focus ring; toggles use selection/on-selection.
     style = ''
       @import url("file://${theme.stateDir}/current/swaync.css");
 
       * {
-        font-family: "${self.fonts.sansSerif}";
-        font-size: ${toString self.fonts.size}px;
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.body};
+        box-shadow: none;
+        text-shadow: none;
+        transition: background-color ${toString d.motion.fast}ms ease-out;
       }
 
       /* Layer-shell host windows: not visible surfaces themselves. */
@@ -76,69 +92,75 @@
       .notification {
         background: @surface;
         color: @fg;
-        border: 1px solid @outline-variant;
-        border-radius: 8px;
-        margin: 6px;
+        border: ${px d.panel.border} solid @outline-variant;
+        border-radius: ${px d.panel.radius};
+        margin: ${px d.panel.margin};
         padding: 0;
-        box-shadow: none;
       }
       .notification.critical { border-color: @error; }
-      .notification-content { padding: 10px; }
-      .summary { color: @fg; font-weight: bold; }
+      .notification-row:focus .notification { border-color: @focus; }
+      .notification-content { padding: ${px d.panel.padding}; }
+      .summary { color: @fg; font-weight: ${toString d.type.weight.medium}; }
       .body { color: @fg-muted; }
-      .time { color: @fg-faint; }
+      .time { color: @fg-muted; font-size: ${px d.type.size.caption}; }
 
       .notification-action {
         background: @surface-low;
         color: @fg;
-        border: 1px solid @surface-container;
-        border-radius: 6px;
-        margin: 4px;
+        border: ${px d.border.hairline} solid @outline-variant;
+        border-radius: ${px d.radius.control};
+        margin: ${px d.panel.gap};
       }
-      .notification-action:hover { background: @surface-container; }
+      .notification-action:hover { background: @tint; }
+      .notification-action:focus { border-color: @focus; }
 
       .close-button {
         background: @surface-container;
         color: @fg;
-        border-radius: 100%;
-        min-width: 20px;
-        min-height: 20px;
-        margin: 6px;
+        border-radius: ${px d.radius.pill};
+        min-width: ${px (d.space.xl + d.space.sm)};
+        min-height: ${px (d.space.xl + d.space.sm)};
+        margin: ${px d.space.md};
       }
-      .close-button:hover { background: @error; color: @surface; }
+      .close-button:hover { background: @error; color: @on-error; }
 
       .control-center {
         background: @surface-low;
         color: @fg;
-        border: 1px solid @outline-variant;
-        border-radius: 8px;
-        box-shadow: none;
+        border: ${px d.panel.border} solid @outline-variant;
+        border-radius: ${px d.panel.radius};
       }
       .control-center-list { background: none; }
 
-      .widget-title { color: @fg; margin: 10px 10px 4px 10px; }
-      .widget-title > label { font-size: ${toString (self.fonts.size + 3)}px; font-weight: bold; }
+      .widget-title { color: @fg; margin: ${px d.panel.padding} ${px d.panel.padding} ${px d.panel.gap} ${px d.panel.padding}; }
+      .widget-title > label { font-size: ${px d.type.size.title}; font-weight: ${toString d.type.weight.medium}; }
       .widget-title > button {
         background: @surface-container;
         color: @fg;
-        border: none;
-        border-radius: 6px;
-        padding: 2px 10px;
+        border: ${px d.border.hairline} solid transparent;
+        border-radius: ${px d.radius.control};
+        padding: ${px d.space.xs} ${px d.space.lg};
       }
-      .widget-title > button:hover { background: @outline-variant; }
+      .widget-title > button:hover { background: @surface-container-high; }
+      .widget-title > button:focus { border-color: @focus; }
 
-      .widget-dnd { color: @fg; margin: 4px 10px; }
-      .widget-dnd > switch { background: @outline-variant; border-radius: 12px; }
-      .widget-dnd > switch:checked { background: @inverse; }
-      .widget-dnd > switch slider { background: @surface; border-radius: 12px; }
-      .widget-dnd > switch:checked slider { background: @on-inverse; }
+      .widget-dnd { color: @fg; margin: ${px d.panel.gap} ${px d.panel.padding}; }
+      .widget-dnd > switch {
+        background: @surface-container;
+        border: ${px d.border.hairline} solid @outline;
+        border-radius: ${px d.radius.pill};
+      }
+      .widget-dnd > switch:checked { background: @selection; border-color: @selection; }
+      .widget-dnd > switch slider { background: @fg; border-radius: ${px d.radius.pill}; }
+      .widget-dnd > switch:checked slider { background: @on-selection; }
 
       .widget-mpris {
         background: @surface;
         color: @fg;
-        border-radius: 8px;
-        margin: 6px 10px;
-        padding: 6px;
+        border: ${px d.border.hairline} solid @outline-variant;
+        border-radius: ${px d.panel.radius};
+        margin: ${px d.panel.gap} ${px d.panel.padding};
+        padding: ${px d.space.md};
       }
     '';
   in {
@@ -177,9 +199,9 @@
             cssPriority = "user";
             control-center-positionX = "right";
             control-center-positionY = "top";
-            control-center-margin-top = 8;
-            control-center-margin-bottom = 8;
-            control-center-margin-right = 8;
+            control-center-margin-top = d.panel.margin;
+            control-center-margin-bottom = d.panel.margin;
+            control-center-margin-right = d.panel.margin;
             control-center-width = 380;
             notification-window-width = 360;
             notification-icon-size = 48;
@@ -191,7 +213,7 @@
             fit-to-screen = true;
             hide-on-clear = true;
             hide-on-action = true;
-            transition-time = 120;
+            transition-time = d.motion.base;
             widgets = ["title" "dnd" "mpris" "notifications"];
             widget-config = {
               title = {

@@ -10,16 +10,17 @@
       settings = {
         inherit menu;
 
-        font = "JetBrainsMono Nerd Font 12";
-        background = self.theme.base00;
-        color = self.theme.base06;
-        border = self.theme.base0F;
+        # No runtime mode switch here (static wrapper): the dark palette.
+        font = "${self.design.type.family.mono} ${toString self.design.type.size.body}";
+        background = self.palettes.catppuccin.dark.surface;
+        color = self.palettes.catppuccin.dark.fg;
+        border = self.palettes.catppuccin.dark.outlineVariant;
         separator = " ➜ ";
-        border_width = 2;
-        corner_r = 15;
-        padding = 15;
+        border_width = self.design.panel.border;
+        corner_r = self.design.panel.radius;
+        padding = self.design.panel.padding;
         rows_per_column = 5;
-        column_padding = 25;
+        column_padding = self.design.space.xxl;
 
         anchor = "bottom-right";
         margin_right = 0;
