@@ -311,6 +311,9 @@
           # Claude Code voice dictation records via SoX (`rec`) or arecord;
           # without one it fails silently.
           pkgs.sox
+          # GitLab CLI: both work projects live on GitLab (T3 Code uses it to
+          # browse merge requests; agents use it for MRs/issues/CI).
+          pkgs.glab
           agentNotify
           agentStatus
         ];
