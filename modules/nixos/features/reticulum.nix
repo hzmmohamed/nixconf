@@ -42,6 +42,10 @@
         "PYTHONPATH=${lxmfPath}"
       ];
 
+    # Don't start rnsd at login; start on demand with
+    # `systemctl --user start rnsd` (stop with `systemctl --user stop rnsd`).
+    systemd.user.services.rnsd.wantedBy = pkgs.lib.mkForce [];
+
     # UDP ports required by Reticulum AutoInterface for local discovery
     networking.firewall.allowedUDPPorts = [29716 42671];
 

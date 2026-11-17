@@ -45,6 +45,24 @@ def is_server_running():
         return False
 
 
+def ensure_server_running(timeout=60):
+    """The server is not started at login; start its user unit on demand."""
+    if is_server_running():
+        return True
+
+    notify("Starting WhisperLive server…")
+    subprocess.run(
+        ["systemctl", "--user", "start", "whisper-live-server.service"],
+        check=False,
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if is_server_running():
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def stop_session():
     try:
         with open(PIDFILE) as f:
@@ -212,8 +230,8 @@ def main():
             stop_session()
         sys.exit(0)
 
-    if not is_server_running():
-        notify("WhisperLive server not running")
+    if not ensure_server_running():
+        notify("WhisperLive server failed to start")
         sys.exit(1)
 
     mode = show_menu_start()

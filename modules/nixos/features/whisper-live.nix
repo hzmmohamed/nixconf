@@ -69,6 +69,7 @@
           pkgs.wtype
           pkgs.wl-clipboard
           pkgs.libnotify
+          pkgs.systemd
         ]}
       '';
     };
@@ -89,9 +90,8 @@
           Restart = "on-failure";
           RestartSec = 5;
         };
-        Install = {
-          WantedBy = ["default.target"];
-        };
+        # No [Install]: not started at login. `whisper-transcribe` starts it
+        # on demand (or: `systemctl --user start whisper-live-server`).
       };
 
       programs.waybar.settings.mainBar = {
