@@ -21,8 +21,10 @@
         fsType = "vfat";
       };
 
-      # TODO(step 3-4): test the greetd skip/hotplug with a screen attached.
-      detectDisplay.enable = false;
+      # No external monitor at boot: greetd is skipped and the keyboard
+      # backlight goes dark; plugging a monitor in starts the greeter.
+      # Override: `doas touch /run/headless-boot/force-greeter`.
+      detectDisplay.enable = true;
 
       # TODO(step 5): generate /etc/secrets/initrd/ssh_host_ed25519_key first
       # and add hazel's key to modules/ssh-keys.nix, then enable.

@@ -58,6 +58,12 @@
         [ "$tries" -gt 0 ] && sleep 0.5
       done
       echo "no external display connected: staying headless (greetd skipped)"
+      ${lib.optionalString cfg.detectDisplay.keyboardBacklightOff ''
+        # Headless: dark keyboard (nothing reads the console anyway).
+        for led in /sys/class/leds/*::kbd_backlight/brightness; do
+          [ -w "$led" ] && echo 0 > "$led"
+        done
+      ''}
       exit 1
     '';
 
@@ -218,6 +224,11 @@
           type = lib.types.ints.unsigned;
           default = 5;
           description = "How long to wait for a connected display before skipping greetd.";
+        };
+        keyboardBacklightOff = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Switch the keyboard backlight off (/sys/class/leds/*::kbd_backlight) when booting headless.";
         };
       };
 
