@@ -52,7 +52,10 @@
               name = "butternut/headset-default.lua";
               type = "script/lua";
               provides = "custom.butternut.headset-default";
-              requires = ["metadata.default"];
+              # No `requires`: WirePlumber keeps the JSON quotes on generated
+              # requires entries ('"metadata.default"'), fails dependency
+              # resolution and refuses to start. The hook only touches the
+              # default metadata on node-added, long after startup.
             }
           ];
           "wireplumber.profiles".main."custom.butternut.headset-default" = "required";
