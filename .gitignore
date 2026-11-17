@@ -7,3 +7,6 @@ result-*
 
 .devenv
 .pre-commit-config.yaml
+# Local reference clones (not part of the config; submodules are tracked separately)
+.repos/survey/
+.repos/CQL/

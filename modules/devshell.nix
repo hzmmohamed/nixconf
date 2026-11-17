@@ -50,6 +50,8 @@
     treefmt.config = {
       projectRootFile = "flake.nix";
       programs.alejandra.enable = true;
+      # Third-party reference clones/submodules: never reformat them.
+      settings.global.excludes = [".repos/**"];
     };
   };
 }
