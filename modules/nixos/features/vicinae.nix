@@ -19,6 +19,13 @@
     home-manager.users.${user} = {config, ...}: let
       home = config.home.homeDirectory;
     in {
+      # The file indexer runs inside the daemon: lowest best-effort I/O
+      # priority so its startup scan yields to everything else at login.
+      systemd.user.services.vicinae.Service = {
+        IOSchedulingClass = "best-effort";
+        IOSchedulingPriority = 7;
+      };
+
       programs.vicinae = {
         enable = true;
         systemd = {
@@ -81,10 +88,20 @@
             # state dirs it doesn't know about.
             files.preferences = {
               indexingPaths = [home];
+              # (2026-11: the startup scan walked 517k files in 14 s and made
+              # the first launcher toggles lag; app data and toolchains are
+              # never what you search for.)
               excludedIndexingPaths = map (p: "${home}/${p}") [
-                ".local/share/Steam"
-                ".local/share/containers"
+                ".local/share" # app data, Steam, containers, reference-repos store
                 ".local/state"
+                ".npm"
+                ".cargo"
+                ".rustup"
+                ".gradle"
+                ".android"
+                "go"
+                "Games"
+                "work/tfc/repos/.agentic-onboarding" # agent worktrees duplicate the repos
                 ".mozilla"
                 ".thunderbird"
                 ".config/chromium"
