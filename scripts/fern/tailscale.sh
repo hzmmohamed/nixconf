@@ -9,7 +9,9 @@
 #         scope "Auth Keys" write, tag tag:provisioner only.
 #
 #   bash scripts/fern/tailscale.sh acl [--apply-acl] [--dry-run]
-#       Validates docs/tailscale-policy.hujson (syntax + its `tests`) with the
+#       DEPRECATED: the policy is now applied by OpenTofu (infra/tailscale,
+#       bash scripts/tailscale/plan.sh / apply.sh; docs/plans/2026-11-17-tailnet-as-code.md).
+#       Kept working as a fallback. Validates docs/tailscale-policy.hujson (syntax + its `tests`) with the
 #       API, backs up the live policy to ~/.local/state/nixconf/, shows the
 #       diff and, ONLY with --apply-acl and a y/N, replaces the tailnet policy.
 #       Needs a client with the "Policy File" write scope. That secret is asked
@@ -53,7 +55,7 @@ case "$cmd" in
       *) die "the client lacks the 'auth_keys' scope (Keys → Auth Keys → Write)" ;;
     esac
     case " $TS_SCOPES " in
-      *policy_file* | *all*) warn "this client can also rewrite the ACL; a host-wide secret should be auth_keys only (recreate it narrower if you can)" ;;
+      *policy_file* | *dns* | *devices:core* | *all*) die "this client has more than auth_keys ($TS_SCOPES). Every OAuth host can read this secret: store the 'nixconf hosts' client (Auth Keys write, tag:provisioner only), not the admin one" ;;
     esac
     rel=secrets/shared/tailscale-oauth.yaml
     if [ -e "$OAUTH_FILE" ]; then
@@ -103,6 +105,12 @@ case "$cmd" in
     ;;
 
   acl)
+    warn "DEPRECATED: 'tailscale.sh acl' is superseded by OpenTofu (infra/tailscale):"
+    warn "  bash scripts/tailscale/store-admin.sh   (once: the admin OAuth client into sops)"
+    warn "  bash scripts/tailscale/plan.sh          (validate + tests + diff; replaces this command)"
+    warn "  bash scripts/tailscale/apply.sh         (replaces --apply-acl)"
+    warn "  docs/plans/2026-11-17-tailnet-as-code.md. Continuing with the old flow."
+    warn "  Once tofu manages the policy, an apply from here is drift the next tofu apply reverts."
     policy="$REPO/docs/tailscale-policy.hujson"
     secret=
     read_secret "Paste a client secret with the Policy File scope (hidden, not stored): " secret

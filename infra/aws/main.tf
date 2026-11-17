@@ -58,8 +58,10 @@ resource "aws_instance" "agent_host" {
   # Needed for outbound (cache.nixos.org, GitHub, GitLab) without a NAT gateway.
   associate_public_ip_address = true
 
-  # `systemctl poweroff` (cloud-idle-stop) = stopped, not terminated.
-  instance_initiated_shutdown_behavior = "stop"
+  # `systemctl poweroff` (cloud-idle-stop) = stopped, not terminated. Spot
+  # rejects this attribute; a persistent spot request with interruption
+  # behaviour "stop" already treats an OS shutdown as instance-stopped-by-user.
+  instance_initiated_shutdown_behavior = var.market == "spot" ? null : "stop"
 
   user_data                   = local.user_data
   user_data_replace_on_change = false
