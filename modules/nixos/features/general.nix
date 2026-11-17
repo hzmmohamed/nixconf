@@ -2,6 +2,7 @@
   flake.nixosModules.general = {
     pkgs,
     config,
+    lib,
     ...
   }: {
     imports = [
@@ -17,8 +18,13 @@
       extraGroups = ["wheel" "networkmanager"];
       shell = self.packages.${pkgs.stdenv.hostPlatform.system}.environment;
 
-      hashedPassword = ''
-        $6$cH3.3pfi3t/.1q.y$xsVbp6gVp2OtOTDsJaPZga1wvHCBOrMwOEu.Cn/gGQRII8sqs5pOIprNY4Lobkax5PmodprHGhDtPVvIk6IIi1'';
+      # SECURITY TODO: this hash is committed to a PUBLIC repo. Once
+      # `preferences.user.passwordFromSops = true` is switched and verified on
+      # every host, DELETE it. It stays in git history, so the sops-managed
+      # password must be a NEW one.
+      hashedPassword =
+        lib.mkIf (!config.preferences.user.passwordFromSops) ''
+          $6$cH3.3pfi3t/.1q.y$xsVbp6gVp2OtOTDsJaPZga1wvHCBOrMwOEu.Cn/gGQRII8sqs5pOIprNY4Lobkax5PmodprHGhDtPVvIk6IIi1'';
     };
 
     persistance.data.directories = [
