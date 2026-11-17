@@ -367,7 +367,8 @@ disabled `fgFaint`, urgent `error`. Elevation without shadow: a panel is
   Plex Sans `title` medium with `tnum`; `error` recording dot (as the bar);
   input level = 4 px `accent` line on a `surfaceContainer` trough; the 2 px
   ink rule under the timer for 2 s at each full minute; text `fg` (latest
-  segment) / `fgMuted` (older, status, notes, caption). Every pair is
+  segment) / `fgMuted` (older, status, notes, caption); the timer (panel
+  and bar) turns `warning` past `overlay.longSessionMinutes`. Every pair is
   already in the contract; palette file `dictation-overlay.css`, read at
   each session start.
 - **swaylock** (`swayidle.nix`): idle ring `outline`, caps `warning`,

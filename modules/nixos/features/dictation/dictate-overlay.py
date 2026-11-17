@@ -1,17 +1,20 @@
 """dictate-overlay: live feedback for a dictation session (GTK4, layer shell).
 
 A small opaque panel at the top right, next to the vertical bar: a dot and a
-running timer (mm:ss), the input level, language and backend, the last
-committed text, and what is in flight. It never takes keyboard focus and
+running timer (mm:ss; warning colour past --long-session-sec, with a note
+that it is a good moment to stop), the input level, language and backend,
+the last committed text (stream mode) or the draft's progress (batch mode),
+and the transcription progress after stop. It never takes keyboard focus and
 lets pointer input through, so wtype keeps typing into the focused window.
 
 Input: one JSON object per line on stdin, sent by dictate-stream ~15 times a
-second ({t, level, speech, lang, backend, lines, pending, state}); EOF
+second ({t, level, speech, lang, mode, backend, lines, done, total, failed,
+state}); EOF
 closes it. Look: the palette CSS rendered per mode by the dictation feature
 (--css, from the theme state dir); every colour and size lives there.
 
-  --demo [--snapshot PNG]   render sample content (tests); with --snapshot,
-                            write a PNG of the panel and exit
+  --demo [--demo-mode batch|stream] [--demo-t SEC]
+                            render sample content (tests)
 """
 
 import argparse
@@ -33,7 +36,8 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 DEMO = {
     "t": 754.0, "level": 0.62, "speech": True, "lang": "EN",
-    "backend": "butternut GPU", "pending": 1, "state": "recording",
+    "backend": "butternut GPU", "mode": "batch", "done": 3, "total": 4,
+    "failed": 0, "state": "recording",
     "lines": ["Ask not what your country can do for you.",
               "Ask what you can do for your country.",
               "And so, my fellow Americans, the segment that is being "
@@ -114,7 +118,9 @@ class Overlay:
         self.status = self.label("status", lines=1, chars=width_chars)
         self.note = self.label("note", lines=2, chars=width_chars)
         self.note.set_ellipsize(0)
-        self.note.set_text("Long session: every segment is already saved.")
+        mins = int(args.long_session_sec // 60)
+        self.note.set_text(f"Past {mins} min: a good moment to stop. "
+                           "Everything so far is saved in the draft.")
         self.note.set_visible(False)
         for w in (self.older, self.latest, self.status, self.note):
             root.append(w)
@@ -153,16 +159,28 @@ class Overlay:
         self.older.set_visible(len(lines) > 1)
         self.latest.set_text(lines[-1] if lines else "")
         self.latest.set_visible(bool(lines))
-        pending = int(msg.get("pending", 0))
-        finishing = self.state == "finishing"
-        if pending:
-            status = "Transcribing…" if pending == 1 else f"Transcribing {pending} segments…"
+        done, total = int(msg.get("done", 0)), int(msg.get("total", 0))
+        failed = int(msg.get("failed", 0))
+        finishing = self.state in ("finishing", "typing")
+        batch = msg.get("mode") == "batch"
+        if self.state == "typing":
+            status = "Typing…"
+        elif finishing and done < total:
+            status = f"Transcribing {done + 1}/{total} segments…"
         elif finishing:
             status = "Finishing…"
+        elif batch:
+            status = ("Recording to a draft; the text is typed when you stop."
+                      if not total else
+                      f"Draft saved · {done} of {total} segments transcribed")
+        elif done < total:
+            status = "Transcribing…"
         elif not lines:
             status = "Speak; text is typed at each pause."
         else:
             status = ""
+        if failed:
+            status += f" ({failed} failed, kept in the draft)"
         self.status.set_text(status)
         self.status.set_visible(bool(status))
         for w, cls in ((self.dot, "finishing"), (self.timer, "finishing")):
@@ -185,19 +203,10 @@ class Overlay:
             self.cue_until = now + 2.0
         cue = now < self.cue_until
         (self.timer.add_css_class if cue else self.timer.remove_css_class)("minute")
-        self.note.set_visible(t >= self.args.long_session_sec)
+        long = t >= self.args.long_session_sec
+        (self.timer.add_css_class if long else self.timer.remove_css_class)("long")
+        self.note.set_visible(long and self.state == "recording")
         return True
-
-    def snapshot(self, path):
-        root = self.win.get_child()
-        w, h = root.get_width(), root.get_height()
-        paintable = Gtk.WidgetPaintable.new(self.win)
-        snap = Gtk.Snapshot()
-        paintable.snapshot(snap, self.win.get_width(), self.win.get_height())
-        node = snap.to_node()
-        tex = self.win.get_renderer().render_texture(node, None)
-        tex.save_to_png(path)
-        print(f"{path}: panel {w}x{h}")
 
 
 def main():
@@ -207,7 +216,8 @@ def main():
     ap.add_argument("--margin", type=int, default=8)
     ap.add_argument("--long-session-sec", type=float, default=600)
     ap.add_argument("--demo", action="store_true")
-    ap.add_argument("--snapshot")
+    ap.add_argument("--demo-mode", default="batch")
+    ap.add_argument("--demo-t", type=float, default=DEMO["t"])
     args = ap.parse_args()
 
     app = Gtk.Application(application_id=None)
@@ -227,9 +237,10 @@ def main():
         app.hold()
         ov = Overlay(app, args)
         if args.demo:
-            ov.update(DEMO)
-            if args.snapshot:
-                GLib.timeout_add(600, lambda: (ov.snapshot(args.snapshot), app.quit()))
+            demo = dict(DEMO, mode=args.demo_mode, t=args.demo_t)
+            if args.demo_mode == "batch":
+                demo["lines"] = []
+            ov.update(demo)
         else:
             threading.Thread(target=reader, args=(ov,), daemon=True).start()
 

@@ -6,12 +6,17 @@
 #   Mod4+Ctrl+d  cancel: the text already typed stays, the segment in
 #                flight is discarded
 #
-# Segment streaming ("commit on pause", dictation/dictate-stream.py): one
-# recording runs continuously; Silero VAD cuts it at natural pauses
-# (`pauseMs`) or, in continuous speech, at the quietest point before
-# `maxSegmentSec`. Each segment is transcribed as soon as it closes, while
-# recording goes on, and typed with wtype in order (a space between
-# segments, none before punctuation). The engine, chosen once per session:
+#   Mod4+Alt+d   switch the mode of the next sessions (also in the picker)
+#
+# Modes (`mode`, dictation/dictate-stream.py): one recording runs
+# continuously; Silero VAD cuts it at natural pauses (`pauseMs`) or, in
+# continuous speech, at the quietest point before `maxSegmentSec`, and each
+# segment is transcribed as soon as it closes, while recording goes on.
+#   batch   the whole text is typed once you stop (default: record, watch the
+#           timer, stop around `overlay.longSessionMinutes`, continue)
+#   stream  each segment is typed with wtype at its pause, in order
+# (a space between segments, none before punctuation). The engine, chosen
+# once per session:
 #   1. the first reachable `servers` entry: whisper.cpp `whisper-server`
 #      (dictation-server feature; butternut's RTX 3050 runs Whisper
 #      large-v3-turbo, multilingual), over the cable or the tailnet; kept
@@ -21,22 +26,30 @@
 #      small (Vulkan iGPU or CPU) for other languages.
 # The language follows the active keyboard layout (`layoutLanguages`).
 #
-# Crash safety: every committed segment is appended to
-# ~/.local/state/dictation/YYYY-MM-DD.md (time + session id); a session's
-# raw audio stays in $XDG_RUNTIME_DIR/dictate/sessions/ until every segment
-# is committed, so a crash loses at most the segment in flight and
-# `dictate recover` transcribes what is left.
+# Drafts: every recording is written to ~/<journalDir>/drafts/<date_time-id>/
+# on persistent disk as it happens (raw PCM, fsynced every 2 s and after
+# each segment; a power cut loses at most the last 2 s), with meta.json
+# (status), the segment transcripts and transcript.txt. A draft is `pending`
+# until its text is typed or copied (failed transcription, empty result,
+# crash, dead battery: the audio is there); delivered and cancelled drafts
+# are compressed to Opus and pruned after `drafts.keepDays`. `dictate
+# drafts` lists them, `dictate recover` delivers them, the launcher entry
+# "Dictation drafts" does both; pending drafts are announced at login and
+# at each session start. Delivered text is also appended to
+# ~/<journalDir>/YYYY-MM-DD.md (time + session id).
 #
 # Feedback (dictation/dictate-overlay.py): a GTK4 layer-shell panel at the
 # top right, next to the bar, while a session runs: timer, input level,
-# language and backend, the last committed text and what is in flight; the
-# timer shows the 2 px ink rule at each full minute, and past
-# `overlay.longSessionMinutes` a note says the segments are saved. It never
-# takes keyboard focus. The waybar module shows the running mm:ss, refreshed
-# by signal once a second during a session only. Colours: `surface` paper,
-# `outlineVariant` hairline, `fg`/`fgMuted` text, `error` recording dot (as
-# in the bar), `accent` for the level and the minute rule on `surface` and
-# `surfaceContainer`: all pairs in the contrast contract
+# language and backend, the last committed text (stream) or the draft's
+# progress (batch), and "Transcribing 3/12 segments" after stop; the timer
+# shows the 2 px ink rule at each full minute and turns `warning` past
+# `overlay.longSessionMinutes` (a cue, no stop). It never takes keyboard
+# focus. The waybar module shows the running mm:ss, refreshed
+# by signal once a second during a session only (`warning` past the cue).
+# Colours: `surface` paper, `outlineVariant` hairline, `fg`/`fgMuted` text,
+# `error` recording dot (as in the bar), `warning` long timer, `accent` for
+# the level and the minute rule on `surface` and `surfaceContainer`: all
+# pairs in the contrast contract
 # (extra/theme-palette.py CONTRACT); sizes from `self.design`.
 #
 # Battery: no model is resident while idle. The local engine is a
@@ -173,6 +186,7 @@
         transition: border-color ${toString d.motion.base}ms ease-out;
       }
       window.dictation .timer.minute { border-bottom-color: ${p.accent}; }
+      window.dictation .timer.long { color: ${p.warning}; }
       window.dictation .dot.finishing, window.dictation .timer.finishing { color: ${p.fgMuted}; }
       window.dictation .meta, window.dictation .status, window.dictation .note {
         color: ${p.fgMuted};
@@ -199,6 +213,8 @@
 
     streamConfig = pkgs.writeText "dictate.json" (builtins.toJSON {
       inherit (cfg) servers threads output prompt;
+      inherit (cfg) mode;
+      keep_days = cfg.drafts.keepDays;
       default_lang = cfg.defaultLanguage;
       local_lang = "en";
       whisper_model = lib.optionalString cfg.localMultilingual "${whisperSmall}";
@@ -222,6 +238,8 @@
         notify-send = lib.getExe' pkgs.libnotify "notify-send";
         systemctl = lib.getExe' pkgs.systemd "systemctl";
         whisper-server = lib.getExe' cfg.localWhisperPackage "whisper-server";
+        opusenc = lib.getExe' pkgs.opus-tools "opusenc";
+        opusdec = lib.getExe' pkgs.opus-tools "opusdec";
         overlay = "${lib.getExe overlay} --width ${toString d.osd.width} --margin ${toString d.panel.margin}";
       };
     });
@@ -245,6 +263,9 @@
         else "0"
       }
       cfg_tap_ms=${toString cfg.tapMs}
+      cfg_mode="${cfg.mode}"
+      cfg_mode_file="$HOME/${cfg.journalDir}/mode"
+      cfg_long_sec=${toString (cfg.overlay.longSessionMinutes * 60)}
       cfg_waybar_signal=${toString waybarSignal}
       cfg_caption_px=${toString d.type.size.caption}
 
@@ -261,6 +282,7 @@
       runtimeInputs = [
         pkgs.coreutils
         pkgs.curl
+        pkgs.gawk
         pkgs.jq
         pkgs.libnotify
         pkgs.sway # swaymsg
@@ -289,6 +311,33 @@
         type = lib.types.str;
         default = "Mod4+d";
         description = "Sway key: hold to dictate, tap to latch. `Mod4+Ctrl+<key>` cancels.";
+      };
+
+      mode = lib.mkOption {
+        type = lib.types.enum ["batch" "stream"];
+        default = "batch";
+        description = ''
+          `batch`: the text is typed once, when you stop (segments are still
+          transcribed while you speak, so it is quick). `stream`: each
+          segment is typed at its pause. `dictate mode toggle` (or
+          `modeKey`) switches the next sessions at runtime.
+        '';
+      };
+
+      modeKey = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = "Mod4+Mod1+d";
+        description = "Sway key that switches batch/stream for the next sessions (Mod4+Shift+d is sway reload).";
+      };
+
+      drafts.keepDays = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 7;
+        description = ''
+          Delivered and cancelled drafts (Opus audio + transcript) are kept
+          this long, so a mis-delivered text can still be recovered.
+          Undelivered drafts are never pruned.
+        '';
       };
 
       defaultLanguage = lib.mkOption {
@@ -402,8 +451,15 @@
         };
         longSessionMinutes = lib.mkOption {
           type = lib.types.ints.positive;
-          default = 10;
-          description = "After this long the panel notes that every segment is already saved (not a limit).";
+          default =
+            if cfg.mode == "batch"
+            then 6
+            else 10;
+          defaultText = lib.literalExpression ''if mode == "batch" then 6 else 10'';
+          description = ''
+            Past this, the timer (panel and bar) turns `warning` and the
+            panel suggests stopping: a cue, not a limit.
+          '';
         };
       };
 
@@ -457,7 +513,21 @@
     config = lib.mkMerge [
       {
         home-manager.users.${user} = {
-          home.packages = [dictate];
+          home.packages = [
+            dictate
+            # "Dictation drafts" in the launcher: copy / type / retranscribe /
+            # discard a draft, switch the mode.
+            (pkgs.makeDesktopItem {
+              name = "dictation-drafts";
+              desktopName = "Dictation drafts";
+              genericName = "Recover dictated text";
+              comment = "Copy, type, retranscribe or discard a dictation draft; switch batch/stream";
+              icon = "audio-input-microphone";
+              exec = "${exe} menu";
+              categories = ["Utility"];
+              keywords = ["dictation" "dictate" "voice" "speech" "transcript" "draft" "recover"];
+            })
+          ];
 
           # Local engine: socket-activated, exits when idle.
           systemd.user.sockets.dictate-local = {
@@ -485,13 +555,48 @@
 
           # mkOptionDefault: merge with HM's defaults and the other features'
           # bindings (a plain definition would replace them all).
-          wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
-            # HM's default Mod4+d (menu, same as Mod4+space) would override
-            # the --no-repeat binding: sway treats them as one binding.
-            ${cfg.key} = lib.mkForce null;
-            "--no-repeat ${cfg.key}" = "exec ${exe} press";
-            "--release ${cfg.key}" = "exec ${exe} release";
-            "Mod4+Ctrl+${lib.last (lib.splitString "+" cfg.key)}" = "exec ${exe} cancel";
+          # (The mode key goes inside: `mkOptionDefault {…} // {…}` would add
+          # it to the override wrapper, not to the bindings.)
+          wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault ({
+              # HM's default Mod4+d (menu, same as Mod4+space) would override
+              # the --no-repeat binding: sway treats them as one binding.
+              ${cfg.key} = lib.mkForce null;
+              "--no-repeat ${cfg.key}" = "exec ${exe} press";
+              "--release ${cfg.key}" = "exec ${exe} release";
+              "Mod4+Ctrl+${lib.last (lib.splitString "+" cfg.key)}" = "exec ${exe} cancel";
+            }
+            // lib.optionalAttrs (cfg.modeKey != null) {
+              ${cfg.modeKey} = "exec ${exe} mode toggle";
+            });
+
+          # Pending drafts are announced at login; old delivered ones pruned
+          # daily (and at each session start).
+          systemd.user.services.dictate-drafts = {
+            Unit = {
+              Description = "Dictation drafts: prune, announce undelivered ones";
+              After = ["sway-session.target"];
+            };
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe' stream "dictate-stream"} prune --check";
+            };
+            Install.WantedBy = ["sway-session.target"];
+          };
+          systemd.user.services.dictate-drafts-prune = {
+            Unit.Description = "Dictation drafts: prune delivered drafts";
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe' stream "dictate-stream"} prune";
+            };
+          };
+          systemd.user.timers.dictate-drafts-prune = {
+            Unit.Description = "Prune delivered dictation drafts daily";
+            Timer = {
+              OnCalendar = "daily";
+              Persistent = true;
+              RandomizedDelaySec = "1h";
+            };
+            Install.WantedBy = ["timers.target"];
           };
 
           home.file = lib.mkIf cfg.t3code.provideModels t3ModelFiles;
@@ -524,6 +629,7 @@
               border-radius: ${px d.bar.radius};
             }
             #custom-dictation.recording { color: @error; }
+            #custom-dictation.recording.long { color: @warning; }
             #custom-dictation.transcribing { color: @accent; }
           '';
         };
