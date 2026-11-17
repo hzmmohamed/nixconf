@@ -58,6 +58,7 @@
       self.nixosModules.pipewire
       self.nixosModules.firefox
       self.nixosModules.chromium
+      self.nixosModules.removable-media # udisks2 + udiskie automount, eject
     ];
 
     # Turns on GUI bits of modules every host imports (gtk, tailscale tray).
@@ -74,10 +75,10 @@
       enable = true;
       plugins = with pkgs; [
         thunar-archive-plugin
-        thunar-volman
+        # no thunar-volman: udiskie (removable-media) is the only automounter
       ];
     };
-    services.gvfs.enable = true; # trash, removable/network mounts
+    services.gvfs.enable = true; # trash, volumes + eject in the sidebar, MTP, sftp://, smb://
     services.tumbler.enable = true; # thumbnails
 
     # Inter (UI), JetBrains Mono Nerd Font (terminal, bar, literal data),

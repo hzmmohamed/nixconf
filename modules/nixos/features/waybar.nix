@@ -19,6 +19,7 @@
     swaync-client = "${pkgs.swaynotificationcenter}/bin/swaync-client";
     syncthingEnabled = config.services.syncthing.enable;
     swayosdEnabled = config.home-manager.users.${user}.services.swayosd.enable;
+    removableMedia = config.home-manager.users.${user}.services.udiskie.enable;
     swayosd-client = "${pkgs.swayosd}/bin/swayosd-client";
     networkManager = config.networking.networkmanager.enable;
     terminal = lib.getExe selfpkgs.terminal;
@@ -84,7 +85,9 @@
         lib.optional syncthingEnabled "custom/sync"
         ++ ["cpu" "memory" "custom/disk" "temperature"]
         ++ lib.optional networkManager "network"
-        ++ ["wireplumber" "bluetooth" "group/tray" "battery"];
+        ++ ["wireplumber" "bluetooth"]
+        ++ lib.optional removableMedia "custom/removable"
+        ++ ["group/tray" "battery"];
 
       # Coding agents ($XDG_RUNTIME_DIR/agent-status, one file per session,
       # written by Claude Code hooks that send SIGRTMIN+10). Spinner + count
@@ -357,6 +360,23 @@
         on-click-right = "${pkgs.blueman}/bin/blueman-manager";
       };
 
+      # Removable media (removable-media feature): drive glyph + count while a
+      # USB stick / disk / SD card is mounted under /run/media/$USER, hidden
+      # otherwise. Left: open/eject picker (vicinae). Right: media folder.
+      # Refreshed by udiskie's event hook (SIGRTMIN+11); 60 s fallback.
+      "custom/removable" = {
+        exec = lib.getExe selfpkgs.removable-media-status;
+        return-type = "json";
+        format = "󰕓\n${value "{}"}";
+        justify = "center";
+        hide-empty-text = true;
+        escape = true; # labels in the tooltip
+        signal = 11;
+        interval = 60;
+        on-click = lib.getExe selfpkgs.removable-media-menu;
+        on-click-right = "thunar /run/media/${user}";
+      };
+
       # Tray: collapsed into a drawer behind one handle glyph (click to
       # reveal). Apps the bar already covers keep no tray icon (blueman →
       # bluetooth module, nm-applet → network module, flameshot → keybind).
@@ -441,7 +461,7 @@
          4px gap), glyphs centred, values in the same box underneath. */
       #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
       #cpu, #memory, #custom-disk, #temperature, #network, #wireplumber, #bluetooth,
-      #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
+      #custom-removable, #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
       #custom-nix-build, #privacy, #custom-camera {
         padding: 6px 0;
         margin: 2px 4px;
@@ -457,7 +477,7 @@
 
       #clock:hover, #language:hover, #custom-notification:hover, #custom-mail:hover,
       #mpris:hover, #custom-sync:hover, #network:hover, #wireplumber:hover,
-      #bluetooth:hover, #custom-tray-handle:hover, #battery:hover,
+      #bluetooth:hover, #custom-removable:hover, #custom-tray-handle:hover, #battery:hover,
       #custom-agents:hover, #custom-agents-input:hover {
         background: @tint;
       }
@@ -472,6 +492,7 @@
       #wireplumber.muted { color: @fg-faint; }
       #bluetooth.on { color: @fg-faint; }
       #bluetooth.connected { color: @accent; }
+      #custom-removable { color: @accent; }
 
       #custom-sync.syncing { color: @accent; }
       #custom-sync.error, #custom-sync.down { color: @error; }

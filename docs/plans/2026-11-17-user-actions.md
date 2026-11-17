@@ -268,3 +268,29 @@ Module: `modules/nixos/features/gaming.nix` (butternut only). Steam always runs 
       if missing, `systemctl --user restart t3code.service` (its own serve registration has a 10 s timeout).
 - [ ] Merge the `agentic/onboarding` branches (worktrees under `~/work/tfc/repos/.agentic-onboarding/`) after review;
       rotate the routelab Tiltfile DB password and the two Flexprice keys.
+
+## Removable media (butternut, hazel)
+
+New `removable-media` feature (pulled in by `desktop`): udiskie automounts to
+`/run/media/$USER/<label>`, a drive glyph appears on the bar while something is
+mounted, and the butternut LUKS key stick (`BNKEY`) stays hidden. Before this,
+nothing automounted: udiskie was not installed, only gvfs (Thunar sidebar, click to mount).
+
+- [ ] After switching: log out and back in (or `systemctl --user start udiskie`), then
+      `systemctl --user status udiskie` should be active. Re-plug the key stick once (or
+      `doas udevadm trigger -s block`) so the new udev rules apply to it.
+- [ ] **Plain stick** (vfat/exFAT/NTFS/ext4): plug in → one "Device mounted" toast with
+      "Browse directory" (opens Thunar). The tray icon (inside the bar's tray drawer) and the
+      bar's 󰕓 glyph show while it is mounted. `findmnt /run/media/$USER/*` lists `nosuid,nodev`.
+- [ ] **Encrypted (LUKS) stick**: plug in → passphrase dialog → mounted toast. Cancel leaves
+      it locked; unlock later from the udiskie tray menu.
+- [ ] **Eject**: click the bar glyph (or "Drives" in vicinae) → `Eject <label>`. This unmounts
+      every partition, locks LUKS and powers the drive off; the toast "Device unmounted" means
+      it's safe to pull. Thunar's sidebar eject button works too. "Busy" → close files and retry.
+- [ ] **Phone (MTP)**: unlock the phone, pick "File transfer" in its USB notification → it
+      shows in Thunar's sidebar (gvfs, not automounted, no bar glyph). Unmount there before unplugging.
+- [ ] **Key stick check (butternut)**: with BNKEY plugged in, `udisksctl info -b /dev/sda1 | grep HintIgnore`
+      → `true`; no toast, no tray icon, not in Thunar. To read it by hand:
+      `udisksctl mount -b /dev/disk/by-label/BNKEY -o ro`, then
+      `udisksctl unmount -b /dev/disk/by-label/BNKEY`. More sticks to hide:
+      `preferences.removableMedia.ignore.{labels,uuids,serials}`.
