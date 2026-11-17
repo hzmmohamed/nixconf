@@ -344,7 +344,7 @@ needs `/dev/kvm` + GPU; `start-emulator` already warns on missing KVM,
 - **Cloud loop** (`infra/aws/README.md:118-142`): `bin/sim stage <scenario> <rate>`
   (Kedro `sim_stage` → `output/v0.4/aws_runs/<run-id>/{run/,manifest.json}`, run ids
   are immutable and content-hashed) → `bin/sim submit <id>` (content-addressed blob
-  upload to `s3://tfc-cairo-sim-<stage>/inputs/blobs/<sha256>`, jar to
+  upload to `s3://<sim-bucket><stage>/inputs/blobs/<sha256>`, jar to
   `jars/<sha256>.jar`, `aws ecs run-task`; refuses dirty manifests) →
   `wait|status|progress|logs -f|list|cancel` → `fetch [--summary|--for-bundle]` →
   `bundle [--cloud]`. Runner heartbeats `status.json` every 60 s and uploads
@@ -356,7 +356,7 @@ needs `/dev/kvm` + GPU; `start-emulator` already warns on missing KVM,
   agents, (c) a notification hook (ntfy) on completion instead of an agent polling
   for hours inside the slice, (d) a hard cost cap per stream.
 - **Old path:** `ci/run-pipeline.sh` (static `AWS_ACCESS_KEY_ID` + `S3_BUCKET`,
-  `tfc-abm-artifacts`) and the `Dockerfile` predate `infra/aws`; treat as legacy.
+  `<old-artifacts-bucket>`) and the `Dockerfile` predate `infra/aws`; treat as legacy.
 
 ### Proposed patch plan
 

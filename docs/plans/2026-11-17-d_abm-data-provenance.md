@@ -13,7 +13,7 @@ derive script in the repo?
 - `.gitignore` ignores every directory named `data` (except `src/data` and `interactive/src/data`), plus
   `tools/` and `output/`. There is no LFS (`.gitattributes` is absent) and no DVC.
 - The pipeline's **26 raw catalog inputs** (about **857 MB**) live only in `data/` on this workstation.
-- The only fetch path is `ci/run-pipeline.sh`, which syncs `s3://tfc-abm-artifacts/data`. **That bucket does not
+- The only fetch path is `ci/run-pipeline.sh`, which syncs `s3://<old-artifacts-bucket>/data`. **That bucket does not
   exist** (NoSuchBucket), so the path is dead.
 - The only real fetch script is `scripts/download_overture.py`. It is pinned (release `2026-05-20.0`), but the
   pipeline doesn't consume Overture.
@@ -24,7 +24,7 @@ derive script in the repo?
 - The MATSim/pt2matsim jars (`tools/`, gitignored, no download script) and the **matsim-paratransit jar** are
   also required. The jar is built from a sibling repo **that has no git remote**, and pinned copies of it sit in
   gitignored `output/`.
-- S3 bucket `eg-abm-data` holds a **2025-09-09** `abm-data.tar.gz` (454 MB). It is undocumented, unversioned,
+- S3 bucket `<raw-data-bucket>` holds a **2025-09-09** `abm-data.tar.gz` (454 MB). It is undocumented, unversioned,
   not referenced by any script, and older than several current inputs: counts (2026-07), metro (2026-05), tawwaly
   (2026-11), cedej export, `gtfs` 5.0.
 
@@ -33,7 +33,7 @@ What is in good shape:
 - Everything downstream of the raw inputs is derived by Kedro.
 - The AWS sim path (`infra/aws/bin/sim`) is well provenanced: content-addressed inputs, a jar sha256, and a
   manifest with git SHAs.
-- Fetched AWS run outputs referenced by the catalog still exist in `s3://tfc-cairo-sim-dev/outputs/`.
+- Fetched AWS run outputs referenced by the catalog still exist in `s3://<sim-bucket>/outputs/`.
 
 ## Method
 
@@ -45,7 +45,7 @@ What is in good shape:
 - **Local state:** checked existence, size and mtime of each input, plus `git ls-files`, `git check-ignore` and
   `git status --ignored`.
 - **S3:** listed top levels with `aws sts get-caller-identity` (profile from `infra/aws/.env`, account
-  `783636744442`, eu-central-1): working.
+  `<aws-account>`, eu-central-1): working.
 
 ## Inputs
 
@@ -92,13 +92,13 @@ Class key:
 | `tools/osmosis-0.49.2/` | a (oddly tracked despite `tools` in `.gitignore`) | 14 MB zip + tree | public | – |
 | `params:paratransit_jar` / `sim_stage.jar` → `../matsim-paratransit/target/…-SNAPSHOT-shaded.jar` | e | 88 MB | Built from sibling repo `~/work/tfc/repos/matsim-paratransit`, **no git remote** (all worktrees: `-exp`, `-xp`, `-stuck`, `-cordon`) | No |
 | `pt_sweep.jar` → `../matsim-paratransit-exp/target/…jar` | e | 87 MB | Same repo, branch `feat/pt-sweep` | No |
-| `subregion_cut.paratransit_jar`, `full_region.paratransit_jar` → `output/v0.4/subregion_cut/central/r010/stuck_exp/matsim-paratransit-{xp-4d03fee,giveup-e9dd364}.jar` | e (pinned jars stored in gitignored `output/`) | 88 MB each | Same repo at those commits. Some are in `s3://tfc-cairo-sim-dev/jars/<sha256>.jar`, which **expires after 90 days** (lifecycle `jars-expire`) | sha in file name only |
+| `subregion_cut.paratransit_jar`, `full_region.paratransit_jar` → `output/v0.4/subregion_cut/central/r010/stuck_exp/matsim-paratransit-{xp-4d03fee,giveup-e9dd364}.jar` | e (pinned jars stored in gitignored `output/`) | 88 MB each | Same repo at those commits. Some are in `s3://<sim-bucket>/jars/<sha256>.jar`, which **expires after 90 days** (lifecycle `jars-expire`) | sha in file name only |
 
 ### Inputs under `output/` that no node produces
 
 | Input | Class | Size | Source | Documented? |
 |---|---|---|---|---|
-| `demand_validation_run_{modestats,convergence}` → `output/v0.4/aws_runs/full-r001-20261116T1304-7a319675/output/` | c (`bin/sim fetch`) | 3.4 GB local | `s3://tfc-cairo-sim-dev/outputs/<run>/`, present. Outputs go to Infrequent Access at 30 d and don't expire | Yes (infra README) |
+| `demand_validation_run_{modestats,convergence}` → `output/v0.4/aws_runs/full-r001-20261116T1304-7a319675/output/` | c (`bin/sim fetch`) | 3.4 GB local | `s3://<sim-bucket>/outputs/<run>/`, present. Outputs go to Infrequent Access at 30 d and don't expire | Yes (infra README) |
 | `lab_exp*_sim_trips` (10) → `output/v0.4/matsim_lab/*/simulation_output/output_trips.csv.zst` | e | 13 MB | Manual MATSim runs ("populated after running MATSim") | Comment only |
 | `paratransit_corridor_validation_b4b`, `…fleet_driven_seed_metrics_b4b` | e | 8 KB | "Frozen copy" of an earlier run's table | Comment only |
 | All other `output/…` free inputs (`*@path`, `*_xml_path`, `matsim_output_*`, `subregion_cut_*_in`) | d | – | Path aliases of files written by produced twins | – |
@@ -110,7 +110,7 @@ Class key:
   Tracked fixtures live under `interactive/public/bundles/fixture/` (class a).
 - **Overture:** `data/overture/` (53 MB) is class c and pinned, but nothing consumes it.
 - **Not referenced by the current pipeline:**
-  - `.synpp_cache/` (4.7 GB, legacy synpp; a copy is in `s3://eg-abm-data/synpp_cache_20250929.tar.gz`)
+  - `.synpp_cache/` (4.7 GB, legacy synpp; a copy is in `s3://<raw-data-bucket>/synpp_cache_20250929.tar.gz`)
   - `simulation_output/`
   - `data/7_survey_packaged_data.zip`, `data/_61_segment_db_v2_w_matsimid.geojson`
   - `data/adm2_requested_*.csv`, `data/lfs/lfs-hh.csv`, `data/capmas/pre_university_education_stats_2020.pdf`,
@@ -120,9 +120,9 @@ Class key:
 
 | Bucket | Contents | Relevance |
 |---|---|---|
-| `tfc-abm-artifacts` | **Does not exist** | It's the default of `ci/run-pipeline.sh` (`DATA_S3_PREFIX`), so CI data download is broken |
-| `eg-abm-data` | 10 objects, 24.2 GB, all 2025-09: `abm-data.tar.gz` (454 MB), `eg-abm_2025-09-22T225954.tar` (12.4 GB), synpp cache, old sim outputs | Only backup of raw data, but undocumented and **predates** counts/metro/tawwaly/cedej. No versioning, no lifecycle. Contents of the tarballs not verified (no download) |
-| `tfc-cairo-sim-dev` | `inputs/` (blobs + 25 runs), `jars/` (4 jars), `outputs/` (25 runs); 4,405 objects, 72 GB | Staged MATSim inputs and outputs. **`inputs/` and `jars/` expire after 90 days**; outputs go to IA at 30 d. No versioning |
+| `<old-artifacts-bucket>` | **Does not exist** | It's the default of `ci/run-pipeline.sh` (`DATA_S3_PREFIX`), so CI data download is broken |
+| `<raw-data-bucket>` | 10 objects, 24.2 GB, all 2025-09: `abm-data.tar.gz` (454 MB), `eg-abm_2025-09-22T225954.tar` (12.4 GB), synpp cache, old sim outputs | Only backup of raw data, but undocumented and **predates** counts/metro/tawwaly/cedej. No versioning, no lifecycle. Contents of the tarballs not verified (no download) |
+| `<sim-bucket>` | `inputs/` (blobs + 25 runs), `jars/` (4 jars), `outputs/` (25 runs); 4,405 objects, 72 GB | Staged MATSim inputs and outputs. **`inputs/` and `jars/` expire after 90 days**; outputs go to IA at 30 d. No versioning |
 | `tfc-cairo-viz-dev` | Visualizer and run-status page | Derived |
 
 ## Orphans, ranked by risk
@@ -171,7 +171,7 @@ Class key:
 - **Credentials:**
   - TfC GitLab: MAPTIS data and the `scrape-cedej` submodule.
   - CAPMAS permit: LFS.
-  - AWS SSO, account `783636744442`, profile in `infra/aws/.env` (gitignored): S3.
+  - AWS SSO, account `<aws-account>`, profile in `infra/aws/.env` (gitignored): S3.
   - Overture uses anonymous S3.
 - **Absolute and sibling paths:** `../matsim-paratransit*/target/*.jar` in 3 parameter files, and the `pspp.jnl`
   journals use `/home/hfahmi/…/data_cairo/`.
@@ -194,7 +194,7 @@ on GitHub is shared with everyone who has repo access, and charges for bandwidth
 | # | Change | Size | Effort |
 |---|---|---|---|
 | 1 | **Push `matsim-paratransit` to a remote** (TfC GitLab/GitHub); record its URL in d_abm's README. Optionally make it a submodule or document the build (`mvn -Pshaded package` at a given SHA) | – | 15 min |
-| 2 | **Create a raw-data bucket/prefix**, e.g. `s3://eg-abm-data/raw/v1/…` (reuse the existing bucket), with **versioning on**, no expiry, SSE, private. Separate prefix `raw/restricted/` for LFS microdata and MAPTIS, with a narrower IAM grant | – | 30 min |
+| 2 | **Create a raw-data bucket/prefix**, e.g. `s3://<raw-data-bucket>/raw/v1/…` (reuse the existing bucket), with **versioning on**, no expiry, SSE, private. Separate prefix `raw/restricted/` for LFS microdata and MAPTIS, with a narrower IAM grant | – | 30 min |
 | 3 | **Upload the orphans now**, priority order: tawwaly sqlite + records + collector; LFS `.sav` + `lfs-ind.csv`; `admin3_pop_density.geojson`; `eg_admin_boundaries.gpkg`; metro flows/stops; counts deliverables; MAPTIS geojsons; GTFS zips; OSM pbf; census/universities PDFs; cedej CSV; the two pinned paratransit jars + frozen B4b CSVs | ~0.9 GB required; ~1.2 GB with `.sav` originals and the counts zip | 1 h |
 | 4 | **`data/manifest.yaml` (tracked)**: one entry per input with `path`, `catalog`, `source` (URL / GitLab path + commit / "TfC internal" / "CAPMAS permit"), `version/date`, `sha256`, `size`, `licence`, `access` (public / tfc / restricted), `s3_key`, `fetch` (s3, http, script). Generate the first version with a one-off `sha256sum` over the current `data/` files | ~26 entries, ~300 lines | 2–3 h (provenance research is the slow part: pop density, metro, boundaries) |
 | 5 | **Un-ignore hand-authored config**: move `requested_zone_codes.json`, `census_2017/*/metadata.json`, `adm2_name_to_code_mapping/*.json` to `conf/base/data/` (or add `!` rules) and point the catalog there | < 20 KB | 30 min |
@@ -203,7 +203,26 @@ on GitHub is shared with everyone who has repo access, and charges for bandwidth
 | 8 | **README "Data" section**: replace the tree with a pointer to the manifest + `fetch-data`; list the access levels and how to get each credential; mark `station_link_mapping.csv` optional | – | 30 min |
 | 9 | **Jars:** fetch MATSim/pt2matsim by pinned URL + sha256 (or a Nix `fetchurl` in the flake, which suits the Nix-first setup). Exempt `jars/` from the 90-day expiry, or copy referenced jars to `raw/jars/`; reference pinned jars by sha256 instead of `output/…` paths | – | 1 h |
 | 10 | **Seeds**: replace global `np.random.*` with a per-node `np.random.default_rng(seed)` passed in; seed the polars `.sample(seed=…)` and `random.sample` | ~10 call sites | 1–2 h |
-| 11 | **Cleanup (user decision):** document or delete `s3://eg-abm-data` legacy tarballs (24 GB, Standard storage); delete the stale `data/gtfs/*.txt`, `.part` and lock files; decide on `.synpp_cache` (already backed up) | – | 30 min |
+| 11 | **Cleanup (user decision):** document or delete `s3://<raw-data-bucket>` legacy tarballs (24 GB, Standard storage); delete the stale `data/gtfs/*.txt`, `.part` and lock files; decide on `.synpp_cache` (already backed up) | – | 30 min |
 
 Rows 1, 3 and 5 are the urgent ones: they protect data that exists only on this disk. Rows 4 and 6 give
 the clone-to-run path. Total about 1.5 days of work.
+
+## Implementation (2026-11-17)
+
+Branch `agentic/data-provenance` (from `agentic/onboarding`, worktree `.agentic-onboarding/d_abm-data`, 7 commits,
+not pushed):
+
+- **Done in the repo:** `data/manifest.yaml` (30 datasets, 117 files, sha256 + size + S3 key, class, source, licence),
+  `scripts/fetch-data` (S3 or pinned URL, sha256 check, `--dataset`/`--all`/`--public-only`/`--dry-run`/`--check`/
+  `--force`/`--root`/`--mirror`), `data/README.md`, README "Data" section; hand-written config tracked under
+  `data/` (`.gitignore` negations, `setup-worktree.sh` now links `data/` entries instead of symlinking `data`);
+  `ci/run-pipeline.sh` uses `fetch-data` (dead bucket gone); Tawwaly collector/`daily_records.py` and
+  `preprocess_admin_boundaries.py` copied to `scripts/data_sources/`; seeds fixed in `utils/ipf.py`/`ipf_engine.py`,
+  `lfs`, `locations_pool`, `population`, `interactive_export` (the flaky polars IPF tests now pass deterministically).
+- **Not done: the S3 upload.** `<raw-data-bucket>` has Block Public Access **off** and a bucket policy granting anonymous
+  `s3:GetObject` on objects tagged `public=yes` (one object is tagged: `simulation_output_full_network_cap_20_iters.tar.gz`,
+  3.9 GiB, publicly readable). Per the stop rule nothing was changed or uploaded (versioning also still off). The
+  manifest keys point at `raw/v1/…` and `raw/restricted/v1/…`; upload once the bucket is private.
+- **matsim-paratransit bundle** (all branches + tags `pinned-jar-<sha>` for the 5 detached jar commits, which are on
+  no branch): `~/work/tfc/repos/.agentic-onboarding/backups/matsim-paratransit-2026-11-17.bundle`, not yet in S3.
