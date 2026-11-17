@@ -1,11 +1,11 @@
 {self, ...}: {
-  # Client side of a host's binary cache, reached over the direct ethernet
-  # cable (cable-link: static 10.42.0.1), then over the home LAN when the
-  # host has a DHCP reservation (registry `lan`, e.g. butternut wired to the
-  # router), then over the tailnet (`http://<host>:5000`; /etc/hosts from the
-  # hosts registry, the server admits 5000 on tailscale0). Tried before
-  # cache.nixos.org; an unreachable URL fails within `connect-timeout`
-  # seconds and Nix falls through to the next one.
+  # Client side of a host's binary cache. Default: ONE URL over the tailnet
+  # (`http://<host>:5000`; /etc/hosts from the hosts registry, the server
+  # admits 5000 on tailscale0). Tailscale picks the fastest direct path by
+  # itself (the cable, the home LAN, else the internet), so there is no
+  # per-network URL that times out when its network is absent (the old
+  # cable URL cost 5 x 3 s per Nix run without the cable). The cable/LAN
+  # URLs remain as opt-in options. Tried before cache.nixos.org.
   #
   # Not `<host>.local`: mDNS can hand back the host's Wi-Fi address, where
   # the cache port is closed (butternut serves it on eno2 + tailscale0).
@@ -24,13 +24,13 @@
       };
 
       url = lib.mkOption {
-        type = lib.types.str;
-        # The serving host's static address on the cable (cable-link). An IP
-        # rather than `<host>.local`: mDNS could hand back the host's wifi
-        # address, where the cache port is closed.
-        default = "http://${self.hosts.${cfg.host}.cable}:5000";
-        defaultText = lib.literalMD "`http://<registry cable address of host>:5000` (10.42.0.1)";
-        description = "Cache URL as reachable over the cable.";
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "http://10.42.0.1:5000";
+        description = ''
+          Optional cache URL over the cable (cable-link address). Off by
+          default: the tailnet URL already rides the cable when it is up.
+        '';
       };
 
       lanUrl = lib.mkOption {
@@ -63,8 +63,8 @@
 
       tailnetPriority = lib.mkOption {
         type = lib.types.int;
-        default = 20;
-        description = "Priority of the tailnet URL (after the cable, before cache.nixos.org).";
+        default = 10;
+        description = "Priority of the tailnet URL (lower wins; cache.nixos.org is 40).";
       };
 
       priority = lib.mkOption {
@@ -76,7 +76,7 @@
 
     config.nix.settings = {
       extra-substituters =
-        ["${cfg.url}?priority=${toString cfg.priority}"]
+        lib.optional (cfg.url != null) "${cfg.url}?priority=${toString cfg.priority}"
         ++ lib.optional (cfg.lanUrl != null) "${cfg.lanUrl}?priority=${toString cfg.lanPriority}"
         ++ lib.optional (cfg.tailnetUrl != null) "${cfg.tailnetUrl}?priority=${toString cfg.tailnetPriority}";
       extra-trusted-public-keys = [self.nixServeKeys.${cfg.host}];
