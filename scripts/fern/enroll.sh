@@ -57,7 +57,7 @@ fi
 if [ -z "$host_key" ]; then
   log "reading the SSH host key on $ip:$SSH_PORT"
   for _ in $(seq 20); do
-    host_key=$(ssh-keyscan -T 5 -p "$SSH_PORT" -t ed25519 "$ip" 2>/dev/null | awk '{print $2 " " $3}' | head -n1)
+    host_key=$(ssh-keyscan -T 5 -p "$SSH_PORT" -t ed25519 "$ip" 2>/dev/null | awk '!/^#/ && $2 == "ssh-ed25519" {print $2 " " $3}' | head -n1)
     [ -n "$host_key" ] && break
     sleep 15
   done
