@@ -22,6 +22,13 @@
     # while it is valid. `aws sso logout` after admin work.
     preferences.aws.sso.enable = true;
 
+    # Agents here also run headless (no login → gnome-keyring stays locked),
+    # so project dev secrets come from sops files like on fern:
+    # preferences.secretspec.fileSecrets."<project>/<profile>/<KEY>" =
+    #   {sopsFile = ../../../../secrets/butternut/secretspec.yaml; key = "…";};
+    # Human-only profiles keep the keyring (`human` alias).
+    preferences.secretspec.team = "file:///run/secrets/secretspec";
+
     preferences.agents = {
       tailnetDomain = "tail1a9f7c.ts.net";
       # Registered with T3 Code on start (skipped when not checked out).
