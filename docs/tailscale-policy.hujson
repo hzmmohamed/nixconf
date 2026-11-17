@@ -9,7 +9,8 @@
 //   tag:agent-host  OPTIONAL: hosts running coding agents (butternut, peacelily)
 //   tag:client      OPTIONAL: laptops used to drive agents (hazel)
 //   tag:phone       OPTIONAL: the Android phone
-//   tag:cloud       future AWS agent VM (ephemeral), cloud Syncthing peer
+//   tag:cloud       fern, the on-demand AWS agent VM (with tag:agent-host; persistent,
+//                   NOT ephemeral: it is stopped, not deleted), cloud Syncthing peer
 //   tag:connector   future app connector / exit node for ISP-blocked sites
 //
 // Recommendation: tag ONLY maple and peacelily (tag:server, + tag:gpu). Keep

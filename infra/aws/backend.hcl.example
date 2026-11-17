@@ -1,0 +1,7 @@
+# Copy to backend.hcl (gitignored). The bucket: versioning on, public access
+# blocked, default encryption. Create it once by hand.
+bucket       = "REPLACE-state-bucket"
+key          = "nixconf/aws-agent-host.tfstate"
+region       = "eu-central-1"
+use_lockfile = true
+encrypt      = true

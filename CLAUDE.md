@@ -17,6 +17,7 @@ automatically. Single user (name in `modules/user.nix`). Public repo.
 | hazel | Carried laptop / client | ThinkPad E14 Gen 2 (i5-1135G7). Sway, greetd, battery-aware |
 | maple | Headless always-on node | Laptop with a dead screen, lid closed. No desktop: SSH/Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid/suspend ignored, user lingering |
 | peacelily | Headless GPU AI server | NVIDIA, llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. **Not yet redeployed** with the current config |
+| fern | On-demand EC2 agent host (eu-central-1) | Headless agent-host + T3 next to the d_abm S3 data; `cloud-box up/down`, idle auto-stop; IaC in `infra/aws/` (never `tofu apply` from an agent). **Not created yet**: `docs/plans/2026-11-17-aws-agent-host.md` |
 
 Test VMs: `desktop-vm` (Sway), `niri-desktop-vm` (Niri; currently broken, see below).
 SSH on every host: port 7654.

@@ -1,6 +1,10 @@
 # Agentic workspace: butternut is a compute target (agent-host).
 {self, ...}: {
-  flake.nixosModules.hostButternut = {config, ...}: let
+  flake.nixosModules.hostButternut = {
+    config,
+    pkgs,
+    ...
+  }: let
     home = config.users.users.${config.preferences.user.name}.home;
   in {
     imports = [
@@ -18,5 +22,8 @@
         "${home}/work/tfc/repos/d_abm"
       ];
     };
+
+    # `cloud-box up|down|status`: the on-demand EC2 agent host (fern).
+    environment.systemPackages = [self.packages.${pkgs.stdenv.hostPlatform.system}.cloud-box];
   };
 }

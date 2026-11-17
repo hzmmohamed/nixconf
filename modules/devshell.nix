@@ -36,6 +36,10 @@
           # general
           git
           just
+
+          # infra/aws (cloud agent host): `tofu init -backend-config=backend.hcl`
+          opentofu
+          ssh-to-age
         ])
         ++ [
           inputs.claude-code.packages.${system}.claude-code

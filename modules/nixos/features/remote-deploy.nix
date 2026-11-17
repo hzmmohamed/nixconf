@@ -1,4 +1,11 @@
-{...}: {
+{
+  lib,
+  self,
+  ...
+}: let
+  # Hosts that build their own system (hosts registry `buildOnTarget`).
+  targetBuildHosts = lib.attrNames (lib.filterAttrs (_: h: h.buildOnTarget or false) self.hosts);
+in {
   # `deploy <host> [switch|boot|test|dry-activate]` — build a host's system
   # from the local flake checkout, copy it over SSH and activate it there.
   #
@@ -10,7 +17,9 @@
   # unsigned local builds are accepted by `nix copy`.
   #
   # Env: DEPLOY_FLAKE (default ~/nixconf), DEPLOY_SSH_PORT (default 7654),
-  #      DEPLOY_USER (default: the primary user), DEPLOY_TARGET (skip lookup).
+  #      DEPLOY_USER (default: the primary user), DEPLOY_TARGET (skip lookup),
+  #      DEPLOY_BUILD_ON (local|target; default target for registry hosts with
+  #      `buildOnTarget`, e.g. the cloud box: evaluate here, build/substitute there).
   flake.nixosModules.remote-deploy = {
     config,
     pkgs,
@@ -65,15 +74,30 @@
         fi
         echo ">> deploying $host via $user@$target ($action)"
 
-        # 2. Build locally.
-        system=$(nix build --no-link --print-out-paths \
-          "$flake#nixosConfigurations.$host.config.system.build.toplevel") ||
-          die "build failed"
-        echo ">> built $system"
+        installable="$flake#nixosConfigurations.$host.config.system.build.toplevel"
+        build_on=''${DEPLOY_BUILD_ON:-local}
+        target_build_hosts=" ${lib.concatStringsSep " " targetBuildHosts} "
+        case "$target_build_hosts" in
+          *" $host "*) build_on=''${DEPLOY_BUILD_ON:-target} ;;
+        esac
 
-        # 3. Copy the closure (substitutes on the target are not used: the
-        #    cable is usually faster than the target's internet).
-        nix copy --to "ssh-ng://$user@$target" "$system" || die "nix copy failed"
+        if [ "$build_on" = target ]; then
+          # 2+3. Evaluate here, build on the target: only derivations cross
+          #      the link; the target substitutes from its own caches.
+          system=$(nix build --no-link --print-out-paths \
+            --eval-store auto --store "ssh-ng://$user@$target" "$installable") ||
+            die "remote build failed"
+          echo ">> built $system on $target"
+        else
+          # 2. Build locally.
+          system=$(nix build --no-link --print-out-paths "$installable") ||
+            die "build failed"
+          echo ">> built $system"
+
+          # 3. Copy the closure (substitutes on the target are not used: the
+          #    cable is usually faster than the target's internet).
+          nix copy --to "ssh-ng://$user@$target" "$system" || die "nix copy failed"
+        fi
 
         # Arguments are store paths/fixed words, so client-side expansion is intended.
         # shellcheck disable=SC2029

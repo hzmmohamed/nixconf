@@ -1,0 +1,30 @@
+# Copy to fern.auto.tfvars (gitignored) and fill in. Never commit the copy.
+region        = "eu-central-1"
+name          = "fern"
+instance_type = "r7i.2xlarge"
+market        = "spot" # or "on-demand"
+
+vpc_id    = "vpc-REPLACE"
+subnet_id = "subnet-REPLACE" # public subnet; pick the AZ with the cheapest spot
+
+username        = "REPLACE" # modules/user.nix
+ssh_public_keys = ["ssh-ed25519 AAAA... you@hazel", "ssh-ed25519 AAAA... you@butternut"]
+
+data_bucket_names   = ["REPLACE-d-abm-results"]
+read_prefixes       = [""] # or ["runs/", "scenarios/"]
+scratch_bucket_name = "REPLACE-d-abm-results"
+scratch_prefix      = "agents/fern/"
+kms_key_arns        = []
+
+# ecs_run_task = {
+#   enabled              = true
+#   cluster_arn          = "arn:aws:ecs:eu-central-1:ACCOUNT:cluster/REPLACE"
+#   task_definition_arns = ["arn:aws:ecs:eu-central-1:ACCOUNT:task-definition/REPLACE:*"]
+#   pass_role_arns       = ["arn:aws:iam::ACCOUNT:role/REPLACE-task", "arn:aws:iam::ACCOUNT:role/REPLACE-exec"]
+#   log_group_arn        = "arn:aws:logs:eu-central-1:ACCOUNT:log-group:/ecs/REPLACE"
+# }
+
+budget_email = "" # set to get 80 % / forecast-100 % alerts
+budget_usd   = 40
+
+# tailscale_bootstrap_key: export TF_VAR_tailscale_bootstrap_key=tskey-auth-...

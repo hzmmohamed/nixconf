@@ -1,0 +1,11 @@
+# Identifiers and backend config stay local (public repo).
+*.auto.tfvars
+*.tfvars
+!*.tfvars.example
+backend.hcl
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# .terraform.lock.hcl IS committed (provider pins).

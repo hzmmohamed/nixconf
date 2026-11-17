@@ -22,6 +22,7 @@ It is NOT stored in this repo.
 | `shared/ai-search.yaml` | `searx_secret_key` | SearXNG (`ai-server`). Referenced but not created yet |
 | `shared/user.yaml` | `user-hashed-password`, `syncthing-gui-password` | Opt-in (`preferences.user.passwordFromSops`, `preferences.syncthing.guiPasswordFromSops`). Not created yet |
 | `atuin.yaml` | `atuin_key` | Atuin shell history sync encryption key |
+| `fern/workspace.yaml` | `git-ssh-key`, `remotes` | fern (AWS agent host): read-only GitLab deploy key + clone URLs (`<name> <url>` lines), `workspace-bootstrap`. Encrypted for `primary` + fern's host key (ssh-to-age); fern also needs `shared/tailscale.yaml` (+ `tailscale-oauth.yaml`) re-encrypted for it. See docs/plans/2026-11-17-aws-agent-host.md. Not created yet |
 
 ## Adding secrets
 

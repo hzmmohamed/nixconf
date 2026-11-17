@@ -30,6 +30,8 @@ in {
   #   roles        free-form, documentation + future generators
   #   tags         Tailscale ACL tags (docs/tailscale-policy.hujson). Only advertised
   #                when the host logs in with the OAuth client (tailscale.nix)
+  #   buildOnTarget  `deploy` builds on the host itself instead of locally + nix copy
+  #                (cloud boxes: only derivations cross the uplink)
   flake.tailnet.domain = "tail1a9f7c.ts.net";
 
   flake.hosts = {
@@ -85,6 +87,22 @@ in {
       syncthingId = null;
       roles = ["server" "agent-host" "gpu"];
       tags = ["tag:server" "tag:gpu"];
+    };
+
+    # On-demand EC2 agent host (docs/plans/2026-11-17-aws-agent-host.md).
+    # Tagged, not ephemeral: tailscaled state survives stop/start on EBS.
+    fern = {
+      ts4 = null; # TODO(user): tailnet IP after the first boot (pin it in the admin console)
+      lan = null;
+      sshPort = 7654;
+      hostKey = null; # TODO(user): `ssh fern cat /etc/ssh/ssh_host_ed25519_key.pub`
+      userKey = null;
+      syncthingId = null;
+      roles = ["agent-host" "cloud"];
+      tags = ["tag:cloud" "tag:agent-host"];
+      # `deploy` builds on the box (eval here, substitutes inside AWS): only
+      # derivations travel over a café connection, not the closure.
+      buildOnTarget = true;
     };
 
     # Not a NixOS host: /etc/hosts name only (KDE Connect "add device by IP").

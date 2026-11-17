@@ -1,0 +1,78 @@
+### https://nixos.org/channels/nixos-25.11 nixos
+# First-boot NixOS configuration for ${name}, applied by the AMI's amazon-init
+# (`nixos-rebuild switch`). Only gets the box onto the tailnet with SSH for
+# `just deploy ${name}`, which replaces it with the flake's config (where
+# amazon-init is disabled). See docs/plans/2026-11-17-aws-agent-host.md §2.
+#
+# The one-time Tailscale key is the comment line below: a oneshot copies it to
+# /run (0600), so it never enters the Nix store.
+# TS_BOOTSTRAP_KEY=${ts_key}
+{ lib, modulesPath, ... }:
+{
+  imports = [ "$${modulesPath}/virtualisation/amazon-image.nix" ];
+
+  networking.hostName = "${name}";
+
+  users.users."${username}" = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" ];
+    openssh.authorizedKeys.keys = [
+%{ for k in ssh_public_keys ~}
+      "${k}"
+%{ endfor ~}
+    ];
+  };
+
+  # `deploy` activates with passwordless doas and copies as a trusted user.
+  security.doas = {
+    enable = true;
+    extraRules = [ { groups = [ "wheel" ]; noPass = true; keepEnv = true; } ];
+  };
+  nix.settings = {
+    experimental-features = [ "nix-command" "flakes" ];
+    trusted-users = [ "root" "@wheel" ];
+    substituters = [ "https://cache.nixos.org" "https://cache.numtide.com" ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+    ];
+  };
+
+  services.openssh = {
+    enable = true;
+    ports = [ 7654 ];
+    openFirewall = false;
+    settings.PasswordAuthentication = false;
+    settings.PermitRootLogin = lib.mkForce "no";
+  };
+
+  systemd.services.ts-bootstrap-key = {
+    description = "Extract the one-time Tailscale key from user-data";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "tailscaled-autoconnect.service" ];
+    serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
+    script = ''
+      umask 077
+      sed -n 's/^# TS_BOOTSTRAP_KEY=//p' /etc/ec2-metadata/user-data > /run/ts-bootstrap-key
+    '';
+  };
+
+  services.tailscale = {
+    enable = true;
+    authKeyFile = "/run/ts-bootstrap-key";
+    extraUpFlags = [ "--ssh" "--hostname=${name}" ];
+  };
+  systemd.services.tailscaled-autoconnect = {
+    requires = [ "ts-bootstrap-key.service" ];
+    after = [ "ts-bootstrap-key.service" ];
+  };
+
+  networking.firewall = {
+    trustedInterfaces = [ "tailscale0" ];
+    allowedUDPPorts = [ 41641 ];
+  };
+
+  services.amazon-ssm-agent.enable = lib.mkForce false;
+
+  system.stateVersion = "25.11";
+}
