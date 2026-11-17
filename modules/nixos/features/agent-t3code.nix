@@ -192,6 +192,15 @@
 
       (lib.mkIf (agents.role == "host") {
         home-manager.users.${user} = {
+          # `t3-pair <label>`: pairing link/QR on the tailnet HTTPS name (not
+          # the LAN IP), so phones and other hosts can scan it directly.
+          home.packages = [
+            (pkgs.writeShellScriptBin "t3-pair" ''
+              exec ${t3} pair --base-dir "$HOME/.t3" --tailscale \
+                --tailscale-serve-port 443 --label "''${1:-device}" "''${@:2}"
+            '')
+          ];
+
           programs.t3code = {
             enable = true;
             inherit (cfg) package;
