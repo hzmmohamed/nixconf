@@ -98,7 +98,7 @@ expression that the AMI's `amazon-init` applies with `nixos-rebuild switch`:
 - Tailscale with `--hostname=fern`, logging in with a **one-time, pre-authorized,
   tagged** auth key. The key is a *comment line* in user-data. A oneshot copies
   it to `/run/ts-bootstrap-key` (0600), so it never enters the Nix store. A
-  consumed or expired (1 h) key is worthless, so its copy in IMDS / the console
+  consumed or expired (1 day) key is worthless, so its copy in IMDS / the console
   doesn't matter.
 
 Tofu ignores later changes to `ami` and `user_data`, so a new AMI or template
@@ -223,7 +223,7 @@ fern (deploy then needs an interactive doas prompt; backlog), then the separate
 or the Claude Code bridge already configured in `agent-opencode`. It's cheap to
 include, so it is included.
 
-**GitLab.** One SSH key per box (`ssh-keygen -t ed25519 -C fern-deploy`),
+**Git forges.** d_abm is on GitHub and routelab on GitLab; `scripts/fern/deploy-key.sh` detects the forge from the remote URL (GitHub allows a key on one repo only). One SSH key per box (`ssh-keygen -t ed25519 -C fern-deploy`),
 added as a **deploy key** (read-only) to each work project (GitLab lets one key
 be a deploy key on several projects). The private key and the clone URLs (kept
 out of this public repo) live in `secrets/fern/workspace.yaml`:
@@ -296,70 +296,16 @@ no secrets, because `user_data` is stored as a hash, but it does hold ARNs and I
   The instance role is reachable by any process anyway (IMDS). Root adds
   "can rewrite the system", which a redeploy fixes.
 
-## User steps (ordered)
+## User steps
 
-See the final list in the hand-off; it is reproduced here.
+Replaced by the paste-only runbook **`2026-11-17-fern-runbook.md`**: five phases
+(state bucket + preflight → Tailscale OAuth client + deploy key → `tofu apply`
+→ enrol → deploy/logins/verify), each a command block to paste plus the output to
+report back. The scripts live in `scripts/fern/`. The only web step is creating the
+Tailscale OAuth client.
 
-**A. AWS prerequisites (once)**
-1. Pick the VPC and a **public** subnet in eu-central-1 (the d_abm VPC is fine),
-   ideally in the AZ with the cheapest r7i spot price. Note `vpc_id`, `subnet_id`.
-2. Note the d_abm results bucket(s) and prefixes to read, and a scratch prefix
-   for writes (e.g. `<bucket>/agents/fern/`). If SSE-KMS, the key ARN.
-3. Create the state bucket (versioned, private) and copy
-   `infra/aws/backend.hcl.example` → `backend.hcl`.
-4. (Optional) enable the EC2 serial console for the account (break-glass).
-
-**B. Tailscale**
-5. Admin console → Access controls: make sure `tag:cloud` and `tag:agent-host`
-   have owners (the draft policy already has them), and that the OAuth client's
-   tags include `tag:cloud`, `tag:agent-host` (add them, or create a new
-   client and update `secrets/shared/tailscale-oauth.yaml`).
-6. Delete any stale `fern` node. Generate a **one-time** auth key: not
-   reusable, pre-approved, tags `tag:cloud,tag:agent-host`, expiry 1 day.
-
-**C. Tofu**
-7. `cp infra/aws/fern.auto.tfvars.example infra/aws/fern.auto.tfvars`, fill it
-   in. Export the key: `export TF_VAR_tailscale_bootstrap_key=tskey-auth-…`.
-8. `cd infra/aws && tofu init -backend-config=backend.hcl && tofu plan`,
-   review, `tofu apply`.
-
-**D. First boot and enrolment**
-9. Wait ~5 min (amazon-init rebuilds the bootstrap config). `tailscale status
-   | grep fern`, then `ssh fern` (port 7654 from the registry ssh config. Until
-   the registry has fern's IP, use MagicDNS or `ssh -p 7654 <100.x>`).
-10. Put fern's tailnet IP in `modules/hosts-registry.nix` (`ts4`) and the host
-    key (`ssh fern cat /etc/ssh/ssh_host_ed25519_key.pub`) in `hostKey`.
-    Pin the IP in the admin console.
-11. `ssh fern cat /etc/ssh/ssh_host_ed25519_key.pub | nix run nixpkgs#ssh-to-age`
-    → add `&fern age1…` to `.sops.yaml`, a `secrets/fern/.*` rule for
-    `[primary, fern]`, and fern to the rules of `secrets/shared/tailscale.yaml`
-    (+ `tailscale-oauth.yaml`, `agents.yaml`). `sops updatekeys` those shared
-    files.
-12. GitLab: `ssh-keygen -t ed25519 -C fern-deploy -f /tmp/fern-deploy -N ''`.
-    Add the `.pub` as a read-only deploy key to d_abm (and routelab if wanted).
-    `sops secrets/fern/workspace.yaml` with `git-ssh-key: |` (the private key) and
-    `remotes: |` (`d_abm git@gitlab.com:<group>/d_abm.git`). Shred the temp key.
-    `git add secrets/fern/workspace.yaml`.
-13. `just eval fern`, then **`just deploy fern`** (builds on fern, switches to
-    the full config).
-14. `ssh fern systemctl --user status t3code workspace-bootstrap` →
-    `~/work/tfc/repos/d_abm` exists and is registered.
-
-**E. Agent logins and T3 pairing**
-15. `ssh fern`, `claude`, `/login` (URL on hazel/phone, paste the code). Optional:
-    `opencode auth login`.
-16. `ssh fern t3-pair hazel` → open the link on hazel (T3 desktop → add
-    environment) and `t3-pair phone` for the phone.
-17. `cloud-box status`, then `cloud-box down`, then `cloud-box up`: it should
-    come back in ~1–2 min and open the T3 URL.
-
-**F. First analysis thread**
-18. `ssh fern aws sts get-caller-identity` (shows the role), `ssh fern s5cmd ls
-    's3://<bucket>/<read prefix>*' | head`, and try writing to the scratch prefix
-    and to a non-scratch prefix (must fail).
-19. In T3 → d_abm → new thread (worktree mode if it will write outputs): "Using
-    duckdb against s3://<bucket>/<run>/output_events.xml.gz… summarise mode
-    share per hour; write the parquet to the scratch prefix". Watch it from the
-    phone over mobile data.
-20. Leave it. ~45 min after the thread ends you get the ntfy "stopping" note, and
-    `cloud-box status` shows `stopped`.
+Changes from the list that used to be here: the deploy key is forge-aware
+(d_abm is on GitHub, routelab on GitLab), and the clone URLs are read from the
+local checkouts. The bootstrap auth key is minted through the API (1 day,
+one-time) and never shown. The registry and `.sops.yaml` are edited at
+`# fern-*` anchors by `scripts/fern/enroll.sh`.

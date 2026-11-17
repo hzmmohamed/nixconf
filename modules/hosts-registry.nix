@@ -92,10 +92,10 @@ in {
     # On-demand EC2 agent host (docs/plans/2026-11-17-aws-agent-host.md).
     # Tagged, not ephemeral: tailscaled state survives stop/start on EBS.
     fern = {
-      ts4 = null; # TODO(user): tailnet IP after the first boot (pin it in the admin console)
+      ts4 = null; # fern-ts4: filled in by scripts/fern/enroll.sh after the first boot
       lan = null;
       sshPort = 7654;
-      hostKey = null; # TODO(user): `ssh fern cat /etc/ssh/ssh_host_ed25519_key.pub`
+      hostKey = null; # fern-hostKey: filled in by scripts/fern/enroll.sh
       userKey = null;
       syncthingId = null;
       roles = ["agent-host" "cloud"];

@@ -8,8 +8,11 @@
   # it never expires and mints a pre-authorized, TAGGED node key on login, so
   # the node never needs re-auth and has no key expiry.
   #   Admin console → Settings → OAuth clients → scope "Auth Keys" (write),
-  #   tags tag:server (+ tag:gpu) → secrets/shared/tailscale-oauth.yaml, key
-  #   `tailscale_oauth` = tskey-client-… . Tags come from the hosts registry.
+  #   tags tag:server tag:gpu tag:cloud tag:agent-host →
+  #   secrets/shared/tailscale-oauth.yaml, key `tailscale_oauth` =
+  #   tskey-client-… (`bash scripts/fern/tailscale.sh store` writes it).
+  #   Keep that client auth-keys only: every OAuth host can read it.
+  #   Tags come from the hosts registry.
   # Only used when the node needs login (autoconnect runs `tailscale up` in
   # NeedsLogin/Stopped). To move an existing node: `doas tailscale logout`,
   # then `doas systemctl restart tailscaled-autoconnect`.

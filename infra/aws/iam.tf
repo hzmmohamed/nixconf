@@ -34,10 +34,15 @@ data "aws_iam_policy_document" "data_access" {
     sid       = "ListData"
     actions   = ["s3:ListBucket"]
     resources = [for b in var.data_bucket_names : "arn:aws:s3:::${b}"]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = local.list_prefixes
+    # Whole-bucket reads (a "" prefix) get no condition: a listing without a
+    # prefix has no s3:prefix key, and StringLike on a missing key is false.
+    dynamic "condition" {
+      for_each = contains(var.read_prefixes, "") ? [] : [1]
+      content {
+        test     = "StringLike"
+        variable = "s3:prefix"
+        values   = local.list_prefixes
+      }
     }
   }
 

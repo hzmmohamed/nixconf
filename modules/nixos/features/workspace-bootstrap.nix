@@ -13,7 +13,8 @@
 #   4. re-runs `t3code-projects` (agent-t3code) when something was cloned.
 #
 # Secrets: secrets/<host>/workspace.yaml, keys `git-ssh-key` (private key,
-# PEM/OpenSSH) and `remotes`. Skipped with a warning while the file is missing.
+# PEM/OpenSSH) and `remotes`, written by scripts/fern/deploy-key.sh.
+# Skipped with a warning while the file is missing.
 {...}: {
   flake.nixosModules.workspace-bootstrap = {
     config,
@@ -172,8 +173,11 @@
         };
       };
 
-      # gitlab.com's published host key: first clones need no TOFU.
-      programs.ssh.knownHosts."gitlab.com".publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf";
+      # The forges' published host keys: first clones need no TOFU.
+      programs.ssh.knownHosts = {
+        "gitlab.com".publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf";
+        "github.com".publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+      };
 
       home-manager.users.${user} = {
         home.packages = lib.unique (lib.concatMap (p: p.packages) (lib.attrValues cfg.projects));

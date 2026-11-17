@@ -1,10 +1,10 @@
 # On-demand NixOS agent host "fern" (docs/plans/2026-11-17-aws-agent-host.md).
 #
-#   cp fern.auto.tfvars.example fern.auto.tfvars   # fill in (gitignored)
-#   cp backend.hcl.example backend.hcl             # state bucket (gitignored)
-#   export TF_VAR_tailscale_bootstrap_key=tskey-auth-...   # one-time key, first apply only
-#   tofu init -backend-config=backend.hcl
-#   tofu plan && tofu apply
+# Driven by scripts/fern/ (runbook: docs/plans/2026-11-17-fern-runbook.md):
+#   state-bucket.sh  creates the state bucket named in backend.hcl
+#   apply.sh         tofu init -backend-config=backend.hcl, mints the one-time
+#                    Tailscale key (TF_VAR_tailscale_bootstrap_key), plan, y/N, apply
+# fern.auto.tfvars and backend.hcl are gitignored (see the *.example files).
 #
 # Local validation without a backend: tofu init -backend=false && tofu validate
 terraform {

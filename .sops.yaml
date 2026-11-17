@@ -1,6 +1,21 @@
 keys:
   - &primary age14uyqw28x64waqk3unet0wnpqvmwpsd880zts6wu0ay3gdtqr24as2het27
+  # fern-age-key: scripts/fern/enroll.sh replaces this line with `- &fern age1…` (fern's SSH host key, ssh-to-age)
 creation_rules:
+  # fern (AWS agent host) decrypts with its own SSH host key, never the
+  # primary key. Rules are first-match: keep these above the catch-all.
+  # scripts/fern/enroll.sh turns each `# fern-recipient` line into `- *fern`
+  # and runs `sops updatekeys` on the files fern's config references.
+  - path_regex: secrets/fern/.*\.yaml$
+    key_groups:
+    - age:
+      - *primary
+      # fern-recipient
+  - path_regex: secrets/shared/(tailscale|tailscale-oauth)\.yaml$
+    key_groups:
+    - age:
+      - *primary
+      # fern-recipient
   - path_regex: secrets/.*\.yaml$
     key_groups:
     - age:

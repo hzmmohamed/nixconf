@@ -17,12 +17,13 @@ It is NOT stored in this repo.
 | `maple/nix-serve.yaml` | `nix-serve-secret-key` | Nix binary cache signing key on maple |
 | `hazel/syncthing.yaml` | `syncthing/key`, `syncthing/cert` | Syncthing service authentication on hazel |
 | `shared/tailscale.yaml` | `tailscale_authkey` | Tailscale auth key (`tailscale` feature, all hosts) |
+| `shared/tailscale-oauth.yaml` | `tailscale_oauth` | Tailscale OAuth client secret (Auth Keys write; tags tag:server tag:gpu tag:cloud tag:agent-host) for tagged logins (`preferences.tailscale.oauth.enable`: maple, peacelily, fern). Written by `scripts/fern/tailscale.sh store`; also encrypted for fern |
 | `shared/wifi.yaml` | `wifi_env` | Home Wi-Fi PSK for NetworkManager (`wifi-home` feature) |
 | `shared/librechat.yaml` | `librechat_creds_key`, `librechat_creds_iv`, `librechat_jwt_secret`, `librechat_jwt_refresh_secret` | LibreChat on peacelily (`ai-server`) |
 | `shared/ai-search.yaml` | `searx_secret_key` | SearXNG (`ai-server`). Referenced but not created yet |
 | `shared/user.yaml` | `user-hashed-password`, `syncthing-gui-password` | Opt-in (`preferences.user.passwordFromSops`, `preferences.syncthing.guiPasswordFromSops`). Not created yet |
 | `atuin.yaml` | `atuin_key` | Atuin shell history sync encryption key |
-| `fern/workspace.yaml` | `git-ssh-key`, `remotes` | fern (AWS agent host): read-only GitLab deploy key + clone URLs (`<name> <url>` lines), `workspace-bootstrap`. Encrypted for `primary` + fern's host key (ssh-to-age); fern also needs `shared/tailscale.yaml` (+ `tailscale-oauth.yaml`) re-encrypted for it. See docs/plans/2026-11-17-aws-agent-host.md. Not created yet |
+| `fern/workspace.yaml` | `git-ssh-key`, `remotes` | fern (AWS agent host): read-only GitLab deploy key + clone URLs (`<name> <url>` lines), `workspace-bootstrap`. Encrypted for `primary` + fern's host key (ssh-to-age); fern also needs `shared/tailscale.yaml` (+ `tailscale-oauth.yaml`) re-encrypted for it. Written by `scripts/fern/deploy-key.sh` (docs/plans/2026-11-17-fern-runbook.md). Not created yet |
 
 ## Adding secrets
 

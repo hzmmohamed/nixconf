@@ -54,3 +54,30 @@ eval-all:
 
 # Everything an agent should run before handing work back
 check: fmt-check lint eval-all
+
+# --- fern (AWS agent host): docs/plans/2026-11-17-fern-runbook.md -----------
+# Each recipe is `bash scripts/fern/<x>.sh`; pass --dry-run to preview.
+
+# Phase 1: state bucket + read-only preflight (raw: bash scripts/fern/state-bucket.sh && bash scripts/fern/preflight.sh)
+fern-prep *args:
+    bash scripts/fern/state-bucket.sh {{args}} && bash scripts/fern/preflight.sh
+
+# Phase 2: store the Tailscale OAuth client (raw: bash scripts/fern/tailscale.sh store)
+fern-tailscale *args:
+    bash scripts/fern/tailscale.sh {{args}}
+
+# Phase 2: read-only deploy key on the work repos + secrets/fern/workspace.yaml (raw: bash scripts/fern/deploy-key.sh)
+fern-deploy-key *args:
+    bash scripts/fern/deploy-key.sh {{args}}
+
+# Phase 3: tofu init/plan/apply with a freshly minted one-time Tailscale key (raw: bash scripts/fern/apply.sh)
+fern-apply *args:
+    bash scripts/fern/apply.sh {{args}}
+
+# Phase 4: wait for fern, fill registry + .sops.yaml, sops updatekeys (raw: bash scripts/fern/enroll.sh)
+fern-enroll *args:
+    bash scripts/fern/enroll.sh {{args}}
+
+# Phase 5: role / S3 / units / login checks on fern (raw: bash scripts/fern/verify.sh)
+fern-verify *args:
+    bash scripts/fern/verify.sh {{args}}
