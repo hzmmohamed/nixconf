@@ -1,6 +1,6 @@
 keys:
   - &primary age14uyqw28x64waqk3unet0wnpqvmwpsd880zts6wu0ay3gdtqr24as2het27
-  - &fern age1adjvusv0p3j6848d3fgns9wc84x834jjng9sc7r4l2xrzkkwh4hsse9z95 # fern-age-key (scripts/fern/enroll.sh)
+  - &fern age1ptg8jrz9mlthvga8hz50gqzz5ctqggaf8f8y2027tpnf4n4ucuaqlrxtdh # fern-age-key (scripts/fern/enroll.sh)
 creation_rules:
   # fern (AWS agent host) decrypts with its own SSH host key, never the
   # primary key. Rules are first-match: keep these above the catch-all.
