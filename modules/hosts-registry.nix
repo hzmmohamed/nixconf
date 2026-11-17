@@ -137,8 +137,8 @@ in {
 
     # Not a NixOS host: /etc/hosts name only (KDE Connect "add device by IP").
     phone = {
-      tailnetName = "xiaomi-21081111rg";
-      ts4 = "100.93.74.64";
+      tailnetName = "21081111rg";
+      ts4 = "100.76.214.123";
       roles = ["phone"];
       tags = [];
     };

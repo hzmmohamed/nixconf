@@ -137,10 +137,10 @@
 
     config = lib.mkIf cfg.enable (lib.mkMerge [
       {
-        # TODO(user): fill in the phone's device ID (Syncthing-Fork: ⋮ → Show
-        # device ID) and, if you set one up, the cloud backup node's.
+        # The Android phone (Syncthing-Fork + KeePassDX). A cloud backup node,
+        # if set up later, goes here too (untrusted = true).
         preferences.vault.extraDevices = lib.mkDefault {
-          # phone = {id = "XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX";};
+          phone = {id = "E7AO72L-5POWRSR-E6SIMFL-P4GEQV4-7UYVK6R-BSXUVZC-JMCSOLJ-IXEF3AA";};
           # cloud = {
           #   id = "XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX";
           #   untrusted = true;
