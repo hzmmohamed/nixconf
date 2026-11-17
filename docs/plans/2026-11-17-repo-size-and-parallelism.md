@@ -337,3 +337,15 @@ Guard rails that help in every option (all go in AGENTS.md):
   risk), and archive A2–A4 to S3 when convenient.
 - Keep (d) jj and (e) `--reference` clones in mind as alternatives. Neither fits T3 and
   the existing hooks as well as (b).
+
+---
+
+## Implemented (2026-11-17)
+
+Option (b) plus §3.1 (ii), on both `agentic/onboarding` branches: `t3.json` and the nixconf
+T3 policy default to `local`; reference repos are listed in `.agents/reference-repos.txt` and
+synced by `.agents/reference-repos.sh` into `~/.local/share/reference-repos/` (populated on
+butternut from the old checkouts), linked as git-ignored `.repos/<name>`. routelab keeps
+`.repos/loom` as a submodule because CI builds it. Shared-checkout rules are in each AGENTS.md;
+d_abm worktrees also get private `bin/sim` run/bundle directories. Migration steps:
+`2026-11-17-user-actions.md`, "Work repos: parallel setup".

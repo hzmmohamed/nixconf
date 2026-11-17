@@ -294,3 +294,87 @@ nothing automounted: udiskie was not installed, only gvfs (Thunar sidebar, click
       `udisksctl mount -b /dev/disk/by-label/BNKEY -o ro`, then
       `udisksctl unmount -b /dev/disk/by-label/BNKEY`. More sticks to hide:
       `preferences.removableMedia.ignore.{labels,uuids,serials}`.
+
+## Work repos: parallel setup
+
+Design: `2026-11-17-repo-size-and-parallelism.md` (option b). T3 threads now start in
+the shared main checkout (`local`); a worktree is a per-thread choice ("New worktree"
+in the composer's workspace picker). Reference repos left the repos: one shallow,
+read-only copy per machine in `~/.local/share/reference-repos/<name>` (already
+populated on butternut from the old submodule checkouts, no network, 1.8 GB), reached
+through git-ignored `.repos/<name>` symlinks. routelab keeps **`.repos/loom` as a
+submodule** (CI and the dashboard image build it). Each repo's AGENTS.md has the
+shared-checkout rules.
+
+- [ ] **Switch** butternut (and hazel): the T3 policy's `defaultThreadEnvMode` becomes
+      `local` (`t3code.service` restarts on policy change).
+- [ ] **Review and merge** `agentic/onboarding` in both repos (worktrees in
+      `~/work/tfc/repos/.agentic-onboarding/`; new commits on top of the earlier ones:
+      `git log --oneline main..agentic/onboarding`). The merge deletes the submodule
+      gitlinks; git leaves the populated `.repos/<name>` directories in place.
+- [ ] **T3 project mode:** nothing to do. Both projects have no per-project override
+      (`default_thread_env_mode` is NULL), so `t3.json` (`local`) applies once the main
+      checkout has it. If one is set later, change it in the UI (Settings → project →
+      "Where new threads in this project start"); `t3 project` has no flag for it. Don't
+      edit `statev2.sqlite`.
+- [ ] **routelab: remove the old submodule checkouts** (after the merge, in
+      `~/work/tfc/repos/routelab-monorepo`). They hold 4.5 GB (incl. jazz's 2.85 GB
+      `node_modules`/`target`) plus 0.8 GB of `.git/modules`; loom (71 M + 77 M) stays.
+      None has modified tracked files or unpushed commits (checked 2026-11-17).
+      ```bash
+      cd ~/work/tfc/repos/routelab-monorepo
+      bash .agents/reference-repos.sh status          # every entry "ok …, .repos/<n> is a real directory"
+      for n in $(awk '!/^#/ && NF {print $1}' .agents/reference-repos.txt); do
+        rm -rf -- ".repos/$n" ".git/modules/.repos/$n"
+        git config --remove-section "submodule..repos/$n" 2>/dev/null
+      done
+      rm -rf .git/modules/typed .git/modules/repos
+      for s in submodule.typed submodule.repos/tfc-plugins submodule..repos/.repos/tfc_qgis_plugins \
+               submodule..repos/effect-v3 submodule..repos/eslint-plugin-boundaries submodule..repos/penpot-mcp \
+               submodule..repos/react-native-coachmark submodule..agents/effect-atom submodule..agents/effect-machine; do
+        git config --remove-section "$s" 2>/dev/null
+      done
+      bash .agents/reference-repos.sh link             # .repos/<name> -> the shared store
+      git submodule status                             # only .repos/loom
+      ```
+- [ ] **d_abm: same, but save scrape-cedej first.** Its checkout has 1 unpushed commit
+      on `main`, 3 modified tracked files, an ignored `src/` (184 M) and a 223 M VM image.
+      Move it out as its own clone before deleting anything (the reference copy is read-only):
+      ```bash
+      cd ~/work/tfc/repos/d_abm
+      # keep it as a standalone clone (its .git is a file pointing into .git/modules: absorb it first)
+      dst=~/work/tfc/repos/scrape-cedej
+      mv .repos/scrape-cedej "$dst" && rm -- "$dst/.git" && mv .git/modules/.repos/scrape-cedej "$dst/.git"
+      git -C "$dst" config --unset core.worktree; git -C "$dst" status   # same changes as before
+      rm -rf -- .repos/effect-smol .repos/kedro-mlflow .git/modules/.repos
+      for n in effect-smol kedro-mlflow scrape-cedej; do git config --remove-section "submodule..repos/$n"; done
+      bash .agents/reference-repos.sh link
+      ```
+- [ ] **Other hosts** (peacelily, maple) that check these repos out: copy the store once
+      over the LAN instead of cloning from GitHub:
+      `rsync -aH butternut:.local/share/reference-repos/ ~/.local/share/reference-repos/`,
+      then `bash .agents/reference-repos.sh link` in each checkout. Bumps later:
+      `bash .agents/reference-repos.sh sync [<name>]` (shallow, never deletes;
+      `unlock` makes an entry writable again, e.g. before `rm -rf` of a dropped one).
+- [ ] **Throwaway worktree test** (once per repo, before relying on it): pick "New worktree"
+      for a trivial thread; the setup script should print `linked .repos/…`, and in d_abm
+      write `conf/local/globals.yml` and `.envrc.worktree`
+      (`direnv exec . env | grep CAIRO_SIM_` → `output/worktrees/<name>/…`).
+- [ ] **Safe cleanups from the audit** (no data loss; dry runs first; details in §3 of the audit):
+      ```bash
+      cd ~/work/tfc/repos/routelab-monorepo
+      rm -- ':5432' --desired-status --query --record-type .grafana.net observer-validate.log   # R13 junk files
+      rm -rf infra/stack/.alchemy/log infra/analytics/.alchemy/log      # R2 2.6 GB (never .alchemy/state)
+      rm -rf .devenv/state/prek                                         # R9 0.5 GB, rebuilt on next hook run
+      find .turbo/cache -mtime +14 -delete                              # R8 (cache now lives in ~/.cache/routelab/turbo)
+      git clean -ndX apps/dashboard apps/guide                          # R11 review, then -fdX
+      git maintenance run --task=gc                                     # R12
+      emulator -list-avds && rm -rf apps/observer/.android              # R3 2.5 GB duplicate AVD (check the list first)
+      cd ~/work/tfc/repos/d_abm
+      nix shell nixpkgs#rdfind -c rdfind -dryrun true -makehardlinks true -minsize 20000000 output   # A1, then without -dryrun (13.1 GB)
+      git gc --prune=now                                                # A7 0.4 GB cruft pack
+      rm -rf interactive/test-results interactive/dist                  # A8
+      rm tools/matsim-2026.0-release.zip tools/osmosis-0.48.3.zip       # A9
+      npm cache clean --force; rm -rf ~/.cache/pnpm                     # U1 11 GB
+      ```
+      R1 (jazz build output) is covered by removing the old checkouts above.

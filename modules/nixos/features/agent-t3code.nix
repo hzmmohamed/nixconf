@@ -54,7 +54,10 @@
           enableProviderUpdateChecks = setting false false;
           # Ask before edits and commands; switch per thread in the UI.
           defaultRuntimeMode = setting "approval-required" false;
-          defaultThreadEnvMode = setting "worktree" false;
+          # Threads share the main checkout by default; pick worktree per thread
+          # for long, dependency-changing or run-producing streams (each repo's
+          # AGENTS.md says when).
+          defaultThreadEnvMode = setting "local" false;
           worktreeSubmodules = setting "none" false;
           automaticGitFetchInterval = setting 300000 false;
           worktreesDirectory = setting "${home}/.t3/worktrees" true;
