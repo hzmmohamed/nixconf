@@ -13,6 +13,9 @@
 # off "Pro Audio" in the mixer.
 {
   flake.nixosModules.hostButternut = {
+    # DeepFilter denoises the built-in mic only (never a Bluetooth headset mic).
+    preferences.audio.denoise.source = "alsa_input.usb-ASUSTeK_COMPUTER_INC._C-Media_R__Audio-00.analog-stereo";
+
     services.pipewire.wireplumber = {
       extraConfig = {
         "60-butternut-sink-priorities" = {
@@ -35,6 +38,15 @@
               matches = [{"node.name" = "~alsa_output.usb-ASUSTeK_COMPUTER_INC._C-Media.*";}];
               actions.update-props."priority.session" = 1500;
             }
+            {
+              # Built-in audio is a USB chip; use the duplex profile so the
+              # laptop mic exists (it was saved as output-only).
+              matches = [{"device.name" = "alsa_card.usb-ASUSTeK_COMPUTER_INC._C-Media_R__Audio-00";}];
+              actions.update-props = {
+                "device.profile" = "output:analog-stereo+input:analog-stereo";
+                "api.acp.auto-profile" = false;
+              };
+            }
           ];
           "monitor.bluez.rules" = [
             {
@@ -42,12 +54,11 @@
               actions.update-props."priority.session" = 2500;
             }
             {
-              # Keep the default microphone off Bluetooth: a BT mic only exists
-              # in HSP/HFP, so anything recording the default source (e.g. the
-              # always-on DeepFilter chain) would pin headsets to call quality.
-              # Pick the headset mic manually for calls.
+              # A connected headset's mic becomes the default microphone
+              # (above the denoised laptop mic at 1000); recording from it makes
+              # WirePlumber switch the headset to HSP/HFP and back afterwards.
               matches = [{"node.name" = "~bluez_input.*";}];
-              actions.update-props."priority.session" = 100;
+              actions.update-props."priority.session" = 2000;
             }
           ];
         };
@@ -58,9 +69,10 @@
             "linking.follow-default-target" = true;
             # Don't pin apps to the sink they last used (would ignore BT/default).
             "node.stream.restore-target" = false;
-            # Keep A2DP quality. Trade-off: using the BT headset mic needs a
-            # manual profile switch (HSP/HFP) in the mixer.
-            "bluetooth.autoswitch-to-headset-profile" = false;
+            # Desktop-style: when an app records from the headset mic, switch to
+            # HSP/HFP for the duration, then back to A2DP. Safe now that the
+            # always-on DeepFilter chain is pinned to the laptop mic.
+            "bluetooth.autoswitch-to-headset-profile" = true;
           };
         };
 
