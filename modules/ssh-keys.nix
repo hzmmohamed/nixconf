@@ -12,6 +12,6 @@
   # maple/peacelily: add theirs only if they should log in to the other hosts.
   flake.sshKeys = {
     butternut = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB/BJXdMOwG3kwq6Ho3/0VANt7n5vvDJsL9I56WfMqsF";
-    # TODO(user): hazel = "ssh-ed25519 AAAA… hfahmi@hazel";
+    hazel = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICs8XRwNNO5smW4IcX2ntw6CHOzbMovFsVKS6DS7m9hV";
   };
 }

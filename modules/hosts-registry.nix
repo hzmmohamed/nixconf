@@ -71,11 +71,9 @@ in {
       # two hosts claiming the same address.
       cableShare = "10.42.1.1/24";
       sshPort = 7654;
-      # TODO(user): `cat /etc/ssh/ssh_host_ed25519_key.pub` on hazel.
-      hostKey = null;
+      hostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM3lWxkqUILLcdgkAwo9WIQtY1bC89G4wTryQ/K3JuEG";
       userKey = userKeys.hazel or null;
-      # TODO(user): Syncthing GUI on hazel → Actions → Show ID.
-      syncthingId = null;
+      syncthingId = "ZOEBYES-RFID2ZK-7CWRNXP-5TTQ5LO-GC6HQK2-H25UYNX-UPYBP7T-KHOI7AV";
       roles = ["desktop" "client"];
       tags = [];
     };
