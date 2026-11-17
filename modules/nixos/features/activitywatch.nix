@@ -1,6 +1,7 @@
 {...}: {
   flake.nixosModules.activitywatch = {
     config,
+    lib,
     pkgs,
     ...
   }: let
@@ -24,9 +25,15 @@
         categories = ["Utility"];
       };
 
-      systemd.user.services.activitywatch-watcher-aw-watcher-afk.Unit = {
-        After = ["sway-session.target"];
-        Requires = ["sway-session.target"];
+      # Start with the sway session rather than pulling it in. A `Requires=` here
+      # started sway-session.target (and graphical-session.target) at user-manager
+      # startup, before sway exported WAYLAND_DISPLAY, so waybar was skipped.
+      systemd.user.services.activitywatch-watcher-aw-watcher-afk = {
+        Unit = {
+          After = ["sway-session.target"];
+          PartOf = ["sway-session.target"];
+        };
+        Install.WantedBy = lib.mkForce ["sway-session.target"];
       };
     };
   };

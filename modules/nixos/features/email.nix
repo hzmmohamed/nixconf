@@ -1,6 +1,7 @@
 {...}: {
   flake.nixosModules.email = {
     config,
+    lib,
     pkgs,
     ...
   }: let
@@ -173,8 +174,52 @@
                 ;;
             esac
     '';
+
+    # ── Unread counts for the desktop bar ──────────────────────────────────
+    # One IMAP `STATUS INBOX (UNSEEN)` per account, written to
+    # $XDG_RUNTIME_DIR/mail-unread/<account>.count. Runs only when imapnotify
+    # reports new mail, on a slow 5-minute timer (to catch mail read elsewhere),
+    # or on demand (bar click). `mail-unread-status` (modules/packages) reads it.
+    mailAccounts =
+      lib.filterAttrs (_: a: a.imapnotify.enable)
+      config.home-manager.users.${user}.accounts.email.accounts;
+
+    mailUnreadRefresh = pkgs.writeShellApplication {
+      name = "mail-unread-refresh";
+      runtimeInputs = [pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.systemd];
+      text = ''
+        dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mail-unread"
+        mkdir -p "$dir"
+
+        # refresh <account> <imap-host> <imap-port> <login>
+        refresh() {
+          local token out n
+          token=$(${emailOauth2}/bin/email-oauth2 "$1" 2>/dev/null) || return 0
+          out=$(curl -sS --max-time 20 --url "imaps://$2:$3/" --user "$4" \
+            --oauth2-bearer "$token" --request 'STATUS INBOX (UNSEEN)' 2>/dev/null) || return 0
+          n=$(grep -o 'UNSEEN [0-9]*' <<<"$out" | grep -o '[0-9]*$') || return 0
+          printf '%s\n' "$n" >"$dir/$1.count.tmp" && mv "$dir/$1.count.tmp" "$dir/$1.count"
+        }
+
+        target="''${1:-all}"
+        ${lib.concatStrings (lib.mapAttrsToList (name: a: ''
+            if [ "$target" = all ] || [ "$target" = ${lib.escapeShellArg name} ]; then
+              refresh ${lib.escapeShellArgs [name a.imap.host (toString a.imap.port) a.userName]}
+            fi
+          '')
+          mailAccounts)}
+        # Nudge waybar's custom/mail module (signal 9); harmless if waybar is not running.
+        systemctl --user kill --kill-whom=main -s SIGRTMIN+9 waybar.service 2>/dev/null || true
+      '';
+    };
+
+    # imapnotify hook: desktop notification + count refresh for one account.
+    mailNotify = pkgs.writeShellScript "mail-notify" ''
+      ${pkgs.libnotify}/bin/notify-send 'New Email' "New message in $1"
+      exec ${lib.getExe mailUnreadRefresh} "$1"
+    '';
   in {
-    environment.systemPackages = [emailOauth2];
+    environment.systemPackages = [emailOauth2 mailUnreadRefresh];
 
     # gnome-keyring as secret-service provider for OAuth2 tokens and VS Code secrets
     services.gnome.gnome-keyring.enable = true;
@@ -183,7 +228,9 @@
     security.pam.services.greetd.enableGnomeKeyring = true;
     security.pam.services.swaylock.enableGnomeKeyring = true;
 
-    # Ensure gnome-keyring-daemon starts with secrets component in sway session
+    # The keyring daemon is started and unlocked by PAM (gkr-pam) at greetd login.
+    # Don't also run home-manager's services.gnome-keyring: that spawned a second
+    # daemon racing the PAM one for org.freedesktop.secrets.
     home-manager.users.${user} = {
       # Remove stale .backup files before home-manager activation to prevent
       # "would be clobbered" errors from Thunderbird's runtime-generated files
@@ -195,10 +242,6 @@
         '';
       };
 
-      services.gnome-keyring = {
-        enable = true;
-        components = ["secrets"];
-      };
       programs.thunderbird = {
         enable = true;
 
@@ -227,14 +270,37 @@
       # via secret-tool. Wait for sway-session.target (keyring is PAM-unlocked
       # during greetd login, but user services can race ahead of it).
       systemd.user.services.imapnotify-personal.Unit = {
-        After = ["sway-session.target" "gnome-keyring.service"];
-        Requires = ["gnome-keyring.service"];
+        After = ["sway-session.target"];
         Requisite = ["sway-session.target"];
       };
       systemd.user.services.imapnotify-work.Unit = {
-        After = ["sway-session.target" "gnome-keyring.service"];
-        Requires = ["gnome-keyring.service"];
+        After = ["sway-session.target"];
         Requisite = ["sway-session.target"];
+      };
+
+      # Slow background refresh of the unread counts (see mailUnreadRefresh).
+      # Bound to the sway session: the keyring is only unlocked inside it.
+      systemd.user.services.mail-unread-refresh = {
+        Unit = {
+          Description = "Refresh unread mail counts for the desktop bar";
+          After = ["sway-session.target"];
+        };
+        Service = {
+          Type = "oneshot";
+          ExecStart = lib.getExe mailUnreadRefresh;
+        };
+      };
+      systemd.user.timers.mail-unread-refresh = {
+        Unit = {
+          Description = "Refresh unread mail counts every 5 minutes";
+          PartOf = ["sway-session.target"];
+          After = ["sway-session.target"];
+        };
+        Timer = {
+          OnActiveSec = "20s";
+          OnUnitActiveSec = "5min";
+        };
+        Install.WantedBy = ["sway-session.target"];
       };
 
       accounts.email.accounts = {
@@ -269,7 +335,7 @@
           imapnotify = {
             enable = true;
             boxes = ["INBOX"];
-            onNotify = "${pkgs.libnotify}/bin/notify-send 'New Email' 'New message in personal'";
+            onNotify = "${mailNotify} personal";
           };
         };
 
@@ -303,7 +369,7 @@
           imapnotify = {
             enable = true;
             boxes = ["INBOX"];
-            onNotify = "${pkgs.libnotify}/bin/notify-send 'New Email' 'New message in work'";
+            onNotify = "${mailNotify} work";
           };
         };
       };

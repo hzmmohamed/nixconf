@@ -36,12 +36,7 @@
               "$HOME/.config/VSCodium/User/settings.json"
           '';
 
-          waybar-theme = ''
-            ${pkgs.coreutils}/bin/ln -sf \
-              "$HOME/.config/waybar/catppuccin-latte.css" \
-              "$HOME/.config/waybar/catppuccin-colors.css"
-            systemctl --user restart waybar || true
-          '';
+          # waybar / swaync / noctalia hooks live in their own feature modules.
 
           wofi-theme = ''
             ${pkgs.coreutils}/bin/ln -sf \
@@ -86,13 +81,6 @@
               "$HOME/.config/VSCodium/User/settings.json"
           '';
 
-          waybar-theme = ''
-            ${pkgs.coreutils}/bin/ln -sf \
-              "$HOME/.config/waybar/catppuccin-mocha.css" \
-              "$HOME/.config/waybar/catppuccin-colors.css"
-            systemctl --user restart waybar || true
-          '';
-
           wofi-theme = ''
             ${pkgs.coreutils}/bin/ln -sf \
               "$HOME/.config/wofi/style-dark.css" \
@@ -124,12 +112,7 @@
         after = ["writeBoundary"];
         before = [];
         data = ''
-          # Waybar: default to latte
-          mkdir -p "$HOME/.config/waybar"
-          [ -L "$HOME/.config/waybar/catppuccin-colors.css" ] || \
-            ${pkgs.coreutils}/bin/ln -sf \
-              "$HOME/.config/waybar/catppuccin-latte.css" \
-              "$HOME/.config/waybar/catppuccin-colors.css"
+          # (Waybar's initial symlinks: see waybar.nix)
 
           # Wofi: default to latte
           mkdir -p "$HOME/.config/wofi"
@@ -150,6 +133,28 @@
             ${pkgs.coreutils}/bin/ln -sf \
               "$HOME/.config/foot/catppuccin-latte.ini" \
               "$HOME/.config/foot/colors.ini"
+        '';
+      };
+
+      # The HM gtk module rewrites org.gnome.desktop.interface/gtk-theme to the
+      # light theme on every activation. Re-apply the current darkman mode so a
+      # rebuild at night doesn't leave GTK3 apps light while libadwaita is dark.
+      home.activation.darkmanReapplyGtk = {
+        after = ["dconfSettings"];
+        before = [];
+        data = ''
+          bus="/run/user/$(${pkgs.coreutils}/bin/id -u)/bus"
+          if [ -S "$bus" ]; then (
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$bus"
+            mode="$(${pkgs.darkman}/bin/darkman get 2>/dev/null || true)"
+            if [ "$mode" = dark ]; then
+              run ${pkgs.dconf}/bin/dconf write /org/gnome/desktop/interface/color-scheme "'prefer-dark'" || true
+              run ${pkgs.dconf}/bin/dconf write /org/gnome/desktop/interface/gtk-theme "'${darkGtkTheme}'" || true
+            elif [ "$mode" = light ]; then
+              run ${pkgs.dconf}/bin/dconf write /org/gnome/desktop/interface/color-scheme "'prefer-light'" || true
+            fi
+          )
+          fi
         '';
       };
     };
