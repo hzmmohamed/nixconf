@@ -19,12 +19,12 @@
     home-manager.users.${user} = {config, ...}: let
       home = config.home.homeDirectory;
     in {
-      # The file indexer runs inside the daemon: lowest best-effort I/O
-      # priority so its startup scan yields to everything else at login.
-      systemd.user.services.vicinae.Service = {
-        IOSchedulingClass = "best-effort";
-        IOSchedulingPriority = 7;
-      };
+      # No extra resource controls on vicinae.service: the file indexer is
+      # already a separate helper process (libexec/vicinae-file-indexer)
+      # whose scan threads drop themselves to nice 19 + idle I/O class and
+      # back off on /proc/pressure/io. Service-wide Nice/IOScheduling* would
+      # only slow the launcher UI (and ioprio is a no-op on NVMe's default
+      # `none` scheduler on both butternut and hazel).
 
       programs.vicinae = {
         enable = true;
@@ -82,16 +82,34 @@
             # per-app resource accounting).
             applications.preferences.launchPrefix = "${lib.getExe pkgs.app2unit} --";
 
-            # File index: the whole home dir. vicinae already skips symlinks
-            # (nix `result` links), VCS dirs, node_modules, .cache, venvs,
-            # CACHEDIR.TAG dirs and honours .gitignore; exclude the bulky
-            # state dirs it doesn't know about.
+            # File index (vicinae 0.23.2 source, src/file-indexer/): a helper
+            # process keeps an sqlite FTS5 trigram index in
+            # ~/.cache/vicinae/file-indexer/file-indexer.db. Every start runs
+            # an "incremental (exhaustive)" scan that walks the whole tree,
+            # one stat per directory to compare against the last scan; after
+            # that inotify (home + 2 levels, plus the 2048 most recently
+            # changed dirs) and a depth-5 sweep every minute keep it fresh.
+            # The only knobs are `autoIndexing`, `indexingPaths` and
+            # `excludedIndexingPaths`: no interval, depth or ignore-file
+            # setting.
+            #
+            # Built-in skips: symlinks (nix `result` links), .git, .cache,
+            # node_modules, venvs, __pycache__, .gradle, .terraform,
+            # CACHEDIR.TAG dirs, *.noindex, and a few toolchain stores.
+            # .gitignore is NOT honoured (the ignore-file filter exists but
+            # is never enabled, still true in 0.30.1), so gitignored build or
+            # data dirs have to be listed here. Excludes are exact
+            # directory paths (no globs); missing ones are harmless.
+            #
+            # 2026-11 on butternut: 635k entries / 790 MB DB, cold startup
+            # walk 14.7 s (790 MB read back from the DB); this list cuts it to
+            # ~95k. Third-party clones, generated output and app state are
+            # never what you look for in a launcher (editors/fd cover code).
             files.preferences = {
+              autoIndexing = true;
               indexingPaths = [home];
-              # (2026-11: the startup scan walked 517k files in 14 s and made
-              # the first launcher toggles lag; app data and toolchains are
-              # never what you search for.)
               excludedIndexingPaths = map (p: "${home}/${p}") [
+                # app data, toolchains, caches
                 ".local/share" # app data, Steam, containers, reference-repos store
                 ".local/state"
                 ".npm"
@@ -99,14 +117,57 @@
                 ".rustup"
                 ".gradle"
                 ".android"
+                ".m2"
+                ".bun"
+                ".yarn"
+                ".jdks"
+                ".julia"
+                ".eclipse"
+                ".kube" # discovery cache
+                ".continue" # LanceDB embeddings index
+                ".claude" # agent transcripts, plugin caches
+                ".codex"
+                ".steam"
+                ".wine"
+                ".wine-cutting"
+                ".wine-paint"
                 "go"
                 "Games"
-                "work/tfc/repos/.agentic-onboarding" # agent worktrees duplicate the repos
                 ".mozilla"
                 ".thunderbird"
                 ".config/chromium"
                 ".config/VSCodium"
+                ".config/Lens"
+                ".config/Insomnia"
+                ".config/superpowers"
                 ".vscode-oss"
+                "Desktop/Old Firefox Data"
+                "personal/pictures/.dtrash" # darktable trash
+
+                # reference clones and dev environments
+                "nixconf/.repos"
+                "nixconf/.devenv"
+                "nixconf/.direnv"
+                "work/personal/nixpkgs"
+                "work/oss/matsim-libs"
+                "work/tfc/matsim-libs"
+                "work/tfc/experiments/matsim-libs"
+                "work/tfc/repos/.agentic-onboarding" # agent worktrees duplicate the repos
+                "work/tfc/repos/routelab-monorepo/.repos"
+                "work/tfc/repos/routelab-monorepo/.devenv"
+                "work/tfc/repos/cairo-abm-viz/.repos"
+                "work/tfc/repos/cairo-abm-viz/.devenv"
+                "work/tfc/repos/d_abm/.repos"
+                "work/freelance/nur/.agents"
+
+                # gitignored build output and data
+                "work/tfc/repos/d_abm/output"
+                "work/tfc/repos/d_abm/data"
+                "work/tfc/repos/eg-abm/.synpp_cache"
+                "work/tfc/repos/gkma-ridership/vendor"
+                "work/tfc/repos/routelab-monorepo/apps/observer/android/app/build"
+                "work/tfc/repos/cairo-abm-viz/apps/observer/android/app/build"
+                "work/tfc/repos/observer-mobile-app-archive/android/app/build"
               ];
             };
           };
