@@ -80,6 +80,7 @@ NIXOS_ANYWHERE_ARGS=(
     --build-on local
     --no-substitute-on-destination
     --extra-files "$EXTRA_FILES"
+    --chown "/home/$USER" "1000:100"
 )
 
 if [[ "$MOUNT_ONLY" == true ]]; then

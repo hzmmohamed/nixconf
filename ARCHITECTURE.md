@@ -38,7 +38,7 @@ config. Hosts compose both.
 | `user.nix` | `flake.user` | Username and home path. Change it here, it cascades everywhere. |
 | `theme.nix` | `flake.theme`, `flake.themeNoHash`, `flake.catppuccin` | Color palettes: Gruvbox (niri/hyprland desktop), Catppuccin Latte (sway desktop). |
 | `flake-parts.nix` | systems, options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
-| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age, claude-code-bun. |
+| `devshell.nix` | `perSystem.devShells.default` | `nix develop` shell with nix tooling, sops, age, claude-code. |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -130,7 +130,7 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 | **mini** | Hyprland + Niri | Intel, ext4 | Lightweight laptop, no VR or impermanence |
 | **butternut** | Sway | Intel i915, LUKS ext4 | ASUS laptop, SSH server, asusd, WayVNC, greetd+tuigreet, email, reticulum, openrgb |
 | **maple** | Niri + Noctalia | Intel, LUKS ext4 | Workstation, SSH server, nix-serve-ng |
-| **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Deployed via nixos-anywhere (`scripts/install-peacelily.sh`) |
+| **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Deployed via nixos-anywhere (`scripts/install-host.sh peacelily <ip>`) |
 
 **Switching WMs:** Hosts choose their window manager by importing one line:
 ```nix
@@ -238,7 +238,7 @@ secrets and syncthing folders.
 
 | Script | Purpose |
 |--------|---------|
-| `install-peacelily.sh` | nixos-anywhere deployment for peacelily. Copies age key, supports `--cache` (local nix-serve) and `--mount-only` flags. |
+| `install-host.sh` | nixos-anywhere install for any host: `install-host.sh <hostname> <ip>`. Copies the age key, supports `--cache` (local nix-serve), `--mount-only` and `--luks-password`. |
 
 ### External flake inputs
 
