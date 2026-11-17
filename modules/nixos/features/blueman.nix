@@ -15,6 +15,9 @@
 
     home-manager.users.${user} = {
       services.blueman-applet.enable = appletEnabled;
+      # Forward Bluetooth headset media buttons (AVRCP play/pause/next/prev)
+      # to MPRIS players (spotifyd, mpv, browsers, the bar's media widget).
+      services.mpris-proxy.enable = true;
       # In "waybar" mode the bar's network module replaces nm-applet's tray
       # icon (nmtui / nm-connection-editor from its click actions).
       services.network-manager-applet.enable = !waybarShell;
