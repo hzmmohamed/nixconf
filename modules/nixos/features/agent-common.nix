@@ -40,11 +40,17 @@
       "frontend-design"
     ];
 
+    # "Claude done" only for turns that took at least this long (seconds).
+    notifyDoneAfter = 45;
+
     agentNotify = pkgs.writeShellApplication {
       name = "agent-notify";
       runtimeInputs = [pkgs.jq pkgs.libnotify pkgs.curl pkgs.coreutils];
       text = ''
         # Usage: Claude Code hook (JSON on stdin), or `agent-notify TITLE [BODY]`.
+        # Nested judge sessions (double-shot-latte's Stop hook runs
+        # `claude --print` with this set) are not the user's work.
+        [ "''${CLAUDE_HOOK_JUDGE_MODE:-}" = true ] && exit 0
         host=$(uname -n)
         urgency=normal
         prio=default
@@ -66,6 +72,14 @@
               prio=high
               ;;
             Stop)
+              # Only turns that ran a while: a quick answer you are looking
+              # at needs no ping. Start time is written by agent-status.
+              sid=$(field session_id | tr -cd 'A-Za-z0-9_.-')
+              start="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/agent-status/$sid.start"
+              if [ -n "$sid" ] && [ -r "$start" ]; then
+                elapsed=$(( $(date +%s) - $(cat "$start" 2>/dev/null || echo 0) ))
+                [ "$elapsed" -lt ${toString notifyDoneAfter} ] && exit 0
+              fi
               title="Claude done - $project"
               body="Finished on $host"
               urgency=low
@@ -102,6 +116,7 @@
       runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.procps];
       text = ''
         # Usage: Claude Code hook (JSON on stdin): agent-status working|input|done|end
+        [ "''${CLAUDE_HOOK_JUDGE_MODE:-}" = true ] && exit 0
         state=''${1:-}
         input=""
         if [ ! -t 0 ]; then input=$(cat || true); fi
@@ -112,9 +127,15 @@
         dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/agent-status"
         f="$dir/$sid"
         if [ "$state" = end ]; then
+          rm -f "$f.start"
           [ -e "$f" ] || exit 0
           rm -f "$f"
         else
+          # A turn starts when we enter `working` from anything else; its
+          # start time lets agent-notify skip quick turns.
+          if [ "$state" = working ] && [ "$(head -n1 "$f" 2>/dev/null || true)" != working ]; then
+            mkdir -p "$dir" && date +%s >"$f.start" || true
+          fi
           new=$(printf '%s\n%s' "$state" "$(basename "''${cwd:-$PWD}")")
           # PreToolUse fires often: skip the write + signal when nothing changed.
           if [ -r "$f" ] && [ "$(cat "$f" 2>/dev/null || true)" = "$new" ]; then exit 0; fi
