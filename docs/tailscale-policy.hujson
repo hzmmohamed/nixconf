@@ -1,0 +1,123 @@
+// Tailscale policy DRAFT for tailnet tail1a9f7c.ts.net
+// (docs/plans/2026-11-17-network-review.md §4, §8). Documentation only: paste it
+// into the admin console (Access controls → JSON editor), check the "Preview"
+// tab and the `tests` below, then save. Nothing in the flake applies it.
+//
+// Tag model
+//   tag:server      maple, peacelily   (headless; OAuth-client login, no key expiry)
+//   tag:gpu         peacelily          (llama-swap 9292)
+//   tag:agent-host  OPTIONAL: hosts running coding agents (butternut, peacelily)
+//   tag:client      OPTIONAL: laptops used to drive agents (hazel)
+//   tag:phone       OPTIONAL: the Android phone
+//   tag:cloud       future AWS agent VM (ephemeral), cloud Syncthing peer
+//   tag:connector   future app connector / exit node for ISP-blocked sites
+//
+// Recommendation: tag ONLY maple and peacelily (tag:server, + tag:gpu). Keep
+// butternut, hazel and the phone user-owned (untagged): Taildrop and
+// `autogroup:self` only work between untagged devices you own, and a tagged
+// device stops being "yours" (no Taildrop, it can't be the dst of `self`
+// rules). The rules below are written so that they work either way: if you
+// later do tag butternut `tag:agent-host`, hazel `tag:client`, the phone
+// `tag:phone`, the tag-based grants take over from the autogroup:self ones.
+//
+// Host-side defence in depth: the NixOS firewall still trusts tailscale0
+// (tailscale.nix); per-port lists on tailscale0 are a backlog item.
+{
+  "tagOwners": {
+    "tag:server":     ["autogroup:admin"],
+    "tag:gpu":        ["autogroup:admin"],
+    "tag:agent-host": ["autogroup:admin"],
+    "tag:client":     ["autogroup:admin"],
+    "tag:phone":      ["autogroup:admin"],
+    "tag:cloud":      ["autogroup:admin"],
+    "tag:connector":  ["autogroup:admin"],
+  },
+
+  "grants": [
+    // You → all your own (untagged) devices: everything.
+    {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+
+    // You → servers, agent hosts, clients, cloud agents: everything (SSH 7654,
+    // web UIs behind `tailscale serve` on 443/8443, llama-swap, Syncthing GUI…).
+    {"src": ["autogroup:member"],
+     "dst": ["tag:server", "tag:agent-host", "tag:client", "tag:cloud"],
+     "ip":  ["*"]},
+
+    // Clients (hazel) → agent hosts: T3 Code 443, OpenCode 8443, sshd 7654
+    // (deploy, herdr --remote, sftp), nix-serve 5000, Syncthing.
+    {"src": ["tag:client"], "dst": ["tag:agent-host", "tag:server"],
+     "ip":  ["tcp:443", "tcp:8443", "tcp:7654", "tcp:5000", "tcp:22000", "udp:22000"]},
+
+    // Agent hosts → GPU box: llama-swap (OpenCode provider) and Qdrant.
+    {"src": ["tag:agent-host", "autogroup:member"], "dst": ["tag:gpu"],
+     "ip":  ["tcp:9292", "tcp:6333"]},
+
+    // Servers ↔ servers: Syncthing, nix cache, SSH for deploy, ntfy/Gatus over HTTPS.
+    {"src": ["tag:server"], "dst": ["tag:server"],
+     "ip":  ["tcp:22000", "udp:22000", "tcp:5000", "tcp:7654", "tcp:443", "tcp:80"]},
+
+    // Servers → your devices and agent hosts: Syncthing (vault backup on maple),
+    // health checks. Not SSH.
+    {"src": ["tag:server"], "dst": ["autogroup:member", "tag:agent-host", "tag:client", "tag:phone"],
+     "ip":  ["tcp:22000", "udp:22000", "tcp:443", "icmp:*"]},
+
+    // Phone → laptops/servers: KDE Connect (added "by IP"), Syncthing (vault),
+    // ntfy/web UIs over HTTPS.
+    {"src": ["tag:phone", "autogroup:member"],
+     "dst": ["tag:agent-host", "tag:client", "tag:server"],
+     "ip":  ["tcp:1714-1764", "udp:1714-1764", "tcp:22000", "udp:22000", "tcp:443"]},
+    // …and laptops/servers → phone: KDE Connect + Syncthing back to it.
+    {"src": ["autogroup:member", "tag:agent-host", "tag:client", "tag:server"],
+     "dst": ["tag:phone"],
+     "ip":  ["tcp:1714-1764", "udp:1714-1764", "tcp:22000", "udp:22000"]},
+
+    // Cloud agent VM → home: binary cache, llama-swap, Syncthing; nothing else.
+    {"src": ["tag:cloud"], "dst": ["tag:server"],
+     "ip":  ["tcp:5000", "tcp:22000", "udp:22000"]},
+    {"src": ["tag:cloud"], "dst": ["tag:gpu"], "ip": ["tcp:9292"]},
+
+    // Internet via exit nodes / app connectors (you only).
+    {"src": ["autogroup:member"], "dst": ["autogroup:internet"], "ip": ["*"]},
+
+    // Home LAN via a future subnet route on maple (printer, router UI, TV).
+    {"src": ["autogroup:member"], "dst": ["192.168.100.0/24"], "ip": ["*"]},
+
+    // Peer relay on maple (later: `tailscale set --relay-server-port=40000`).
+    {"src": ["autogroup:member", "tag:client", "tag:phone", "tag:cloud"],
+     "dst": ["tag:server"],
+     "app": {"tailscale.com/cap/relay": []}},
+  ],
+
+  // Tailscale SSH (port 22 on the tailnet; sshd on 7654 is unaffected and
+  // stays the path for deploy / nix copy / herdr / the offline cable).
+  // `check` = re-authenticate in the browser every 12 h, for servers too.
+  "ssh": [
+    {"action": "check", "src": ["autogroup:member"], "dst": ["autogroup:self"],
+     "users": ["autogroup:nonroot"], "checkPeriod": "12h"},
+    {"action": "check", "src": ["autogroup:member"],
+     "dst":   ["tag:server", "tag:agent-host", "tag:client", "tag:cloud"],
+     "users": ["hfahmi"], "checkPeriod": "12h"},
+  ],
+
+  "autoApprovers": {
+    "routes":   {"192.168.100.0/24": ["tag:server"]},
+    "exitNode": ["tag:server", "tag:connector", "tag:cloud"],
+    // "services": {"svc:t3": ["tag:agent-host"], "svc:chat": ["tag:server"]},  // Tailscale Services, later
+  },
+
+  // App connector for ISP-blocked destinations (needs a tag:connector node).
+  // Harmless until such a node exists. No `funnel` attribute anywhere: Funnel
+  // stays denied.
+  "nodeAttrs": [
+    {"target": ["*"], "app": {"tailscale.com/app-connectors": [
+      {"name": "egypt-blocked", "connectors": ["tag:connector"],
+       "domains": ["search.nixos.org", "nixos-search.netlify.app"]},
+    ]}},
+  ],
+
+  "tests": [
+    {"src": "tag:cloud",  "accept": ["tag:gpu:9292", "tag:server:5000"], "deny": ["tag:server:7654"]},
+    {"src": "tag:server", "accept": ["tag:server:22000", "tag:server:7654"], "deny": ["tag:client:7654", "tag:agent-host:7654"]},
+    {"src": "tag:client", "accept": ["tag:agent-host:443", "tag:agent-host:7654"], "deny": ["tag:gpu:22"]},
+  ],
+}

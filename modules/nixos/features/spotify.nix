@@ -28,7 +28,9 @@
 
     # Spotify Connect discovery: spotifyd answers mDNS itself (libmdns, no
     # avahi needed) on UDP 5353 and serves the zeroconf endpoint on TCP.
-    networking.firewall = {
+    # Trusted networks only: on café Wi-Fi the device is not advertised (it
+    # still works through the Spotify account / cloud discovery).
+    preferences.trustedNetworks = {
       allowedUDPPorts = [5353];
       allowedTCPPorts = [zeroconfPort];
     };

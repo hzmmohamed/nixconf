@@ -46,6 +46,14 @@
       networkmanager.enable = true;
     };
 
+    # Stationary home server: LAN service ports on every interface (the AI
+    # services themselves stay tailscale0-only, ai-server.nix).
+    preferences.trustedNetworks.everywhere = true;
+
+    # Tagged login via the OAuth client once secrets/shared/tailscale-oauth.yaml
+    # exists (tags from the hosts registry); shared auth key until then.
+    preferences.tailscale.oauth.enable = true;
+
     hardware.cpu.intel.updateMicrocode = true;
 
     programs.nix-ld.enable = true;

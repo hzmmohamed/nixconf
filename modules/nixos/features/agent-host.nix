@@ -40,9 +40,9 @@
 
     # Agent services publish themselves on the tailnet with `tailscale serve`
     # (T3 Code runs it as the user; HTTPS also needs MagicDNS + HTTPS
-    # certificates enabled once in the tailnet admin console). Applied by
-    # tailscaled-set.service, i.e. `tailscale set --operator=<user>`.
-    services.tailscale.extraSetFlags = ["--operator=${user}"];
+    # certificates enabled once in the tailnet admin console). The operator
+    # setting it needs (`tailscale set --operator=<user>`) now comes from
+    # tailscale.nix for every host.
 
     # Let the user manager control IO weights too (default: pids memory cpu).
     systemd.services."user@".serviceConfig.Delegate = "pids memory cpu io";

@@ -24,7 +24,8 @@
     home = config.users.users.${user}.home;
     gui = config.preferences.desktop.enable;
 
-    # Device registry: features/syncthing.nix plus cfg.extraDevices.
+    # Device registry: hosts registry (modules/hosts-registry.nix, via
+    # features/syncthing.nix) plus cfg.extraDevices.
     registry = config.services.syncthing.settings.devices;
     knownPeers = lib.filter (d: registry ? ${d}) cfg.peers;
     missingPeers = lib.filter (d: !(registry ? ${d})) cfg.peers;
@@ -67,7 +68,7 @@
         type = lib.types.listOf lib.types.str;
         default = ["butternut" "hazel" "maple"];
         description = ''
-          Hosts from the Syncthing device registry (features/syncthing.nix)
+          Hosts with a `syncthingId` in modules/hosts-registry.nix
           that share the vault folder. Names without a registered device ID
           are skipped with a warning.
         '';
@@ -147,7 +148,7 @@
         };
 
         warnings =
-          map (d: "preferences.vault: peer `${d}` has no Syncthing device ID in features/syncthing.nix; it does not get the vault.")
+          map (d: "preferences.vault: peer `${d}` has no syncthingId in modules/hosts-registry.nix; it does not get the vault.")
           missingPeers;
 
         sops.secrets."vault/encryption-password" = lib.mkIf (untrusted != {}) {

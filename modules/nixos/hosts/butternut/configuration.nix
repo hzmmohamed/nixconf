@@ -72,7 +72,7 @@
       self.nixosModules.sops
       self.nixosModules.openssh
       self.nixosModules.nix-serve
-      self.nixosModules.ethernet-share
+      self.nixosModules.cable-link
       self.nixosModules.lan-discovery
       self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
@@ -122,9 +122,10 @@
     # 5 editor, 6 QGIS) — see modules/nixos/features/sway-workspaces.nix.
     preferences.sway.workspaceAssignments = true;
 
-    # Direct cable to hazel: share eno2 (DHCP + NAT, butternut = 10.42.0.1)
-    # and serve the binary cache on it only. `deploy hazel` pushes over it.
-    preferences.ethernet-share.interface = "eno2";
+    # Direct cable to hazel: plain static link on eno2 (butternut 10.42.0.1,
+    # hosts registry; `cable-mode` flips to a shared mode), binary cache
+    # served on it only. `deploy hazel` pushes over it.
+    preferences.cable.interface = "eno2";
     preferences.nix-serve.firewallInterfaces = ["eno2"];
 
     networking = {

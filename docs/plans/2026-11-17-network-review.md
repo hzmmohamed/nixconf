@@ -919,6 +919,125 @@ Test the policy in the admin console's preview before saving. Funnel is denied b
 8. butternut at the café: lid open on a stand (thermals) or closed? On battery or always with the charger?
 9. Do you want hazel to act as cable *host* in reverse (hazel shares eno → butternut), e.g. when hazel has the Wi-Fi and butternut does not?
 
+---
+
+## 11. Implemented — headless boot (rollout step 5, §7.2–7.5, 7.8, 7.9)
+
+Feature `modules/nixos/features/headless-boot.nix` (`flake.nixosModules.headless-boot`), wired into butternut by
+`modules/nixos/hosts/butternut/headless.nix`. Every part sits behind `preferences.headlessBoot.*`, **all default OFF**.
+A sub-feature is active only when both the master `enable` and its own `enable` are set.
+
+Correction to §7.1 #4 / §7.2: butternut **already runs systemd stage 1** (`boot.initrd.systemd.enable = true`, the 26.05 default),
+so no initrd switch is needed.
+
+| Option | Default | butternut now | What it does |
+|---|---|---|---|
+| `enable` | false | **true** | master switch; turns on the two harmless parts below |
+| `ignoreLid` | true | **active** | logind `HandleLidSwitch{,ExternalPower,Docked} = ignore` |
+| `linger` | true | **active** | `users.users.<user>.linger` (agent-host sets the same value; kept so the feature stands alone) |
+| `usbKeyfile.enable` (`luksDevice = "crypt"`, `deviceUuid = null`, `path = "/luks.key"`, `fsType = "vfat"`, `timeout = 10`) | false | off (TODO: path `/butternut.key`) | crypttab `crypt <dev> /butternut.key:UUID=<uuid> discard,keyfile-timeout=10s`, plus `usb_storage uas sd_mod xhci_pci` and the filesystem module in the initrd |
+| `initrdSsh.enable` (`port = 2222`, `interface = "eno2"`, `macAddress = null`, `address = "10.42.0.1/24"`, `kernelModules = ["e1000e"]`, `hostKey = "/etc/secrets/initrd/ssh_host_ed25519_key"`, `authorizedKeys = self.sshKeys`) | false | off (MAC preset `a0:36:bc:30:d3:e3`) | initrd systemd-networkd static address (no gateway, no DHCP, `ConfigureWithoutCarrier`, flushed at switch-root) + `boot.initrd.network.ssh` |
+| `detectDisplay.enable` (`ignoreConnectors = ["eDP-*" "LVDS-*" "DSI-*"]`, `settleSeconds = 5`) | false | off | `greetd` gets an `ExecCondition` (exit 1 = skipped, not failed). A udev rule on DRM `change`/`HOTPLUG=1` runs `systemctl --no-block start greetd`. Override: `touch /run/headless-boot/force-greeter` |
+| `notify.enable` (`topicFile` = `preferences.agents.ntfy.topicFile`) | false | follows `preferences.agents.ntfy` (off today: no `secrets/shared/agents.yaml`) | `headless-im-up.service` (Type=exec, so boot doesn't wait): ntfy push with tailnet IP, every global IPv4 per interface, AC/battery, `is-system-running` |
+
+Verified: with every part switched on through `extendModules` in a scratch eval, the butternut toplevel evaluates and the
+**initrd builds**. The generated crypttab line and the initrd `.network` unit look as expected, and the detector correctly reports `DP-1` (i915 `card1`) and ignores `eDP-1`.
+The keyfile syntax `<path>:<device>` and the `keyfile-timeout=` → password fallback are systemd-cryptsetup features (crypttab(5)).
+A wrong key on the stick also falls through to the password prompt.
+
+### 11.1 Enable sequence (do it in order, screen attached until step 5)
+
+0. **Now:** deploy as is. Check: `loginctl show-user hfahmi -p Linger` → `yes`, and `systemd-analyze cat-config systemd/logind.conf | grep Lid`.
+1. **Back up the LUKS header** off-machine (cheap insurance):
+   `sudo cryptsetup luksHeaderBackup /dev/disk/by-partlabel/disk-main-luks --header-backup-file ~/butternut-luks-header.img`. Then move it to hazel or an encrypted vault, not the stick.
+2. **Enroll the stick** (adds a slot; the password slot is never touched):
+   ```bash
+   lsblk -o NAME,FSTYPE,LABEL,UUID,SIZE              # find the stick, e.g. /dev/sda1
+   sudo mkfs.vfat -n BNKEY /dev/sdX1                 # ONLY for a dedicated, empty stick
+   sudo mkdir -p /mnt/bnkey && sudo mount /dev/disk/by-label/BNKEY /mnt/bnkey
+   sudo dd if=/dev/urandom of=/mnt/bnkey/butternut.key bs=64 count=1 iflag=fullblock
+   sudo cryptsetup luksDump /dev/disk/by-partlabel/disk-main-luks | grep -A1 '^Keyslots\|^  [0-9]:'   # note used slots
+   sudo cryptsetup luksAddKey /dev/disk/by-partlabel/disk-main-luks /mnt/bnkey/butternut.key   # asks for the CURRENT password
+   sudo cryptsetup open --test-passphrase --key-file /mnt/bnkey/butternut.key /dev/disk/by-partlabel/disk-main-luks && echo "key OK"
+   sudo cryptsetup open --test-passphrase /dev/disk/by-partlabel/disk-main-luks && echo "password still OK"
+   lsblk -no UUID /dev/disk/by-label/BNKEY           # → usbKeyfile.deviceUuid (e.g. "1234-ABCD")
+   sudo umount /mnt/bnkey
+   ```
+   To revoke a lost stick later: `sudo cryptsetup luksRemoveKey /dev/disk/by-partlabel/disk-main-luks <copy-of-key>`, or `luksKillSlot <dev> <its slot>`.
+   **Never** kill the password slot.
+3. **Enable the keyfile:** set `usbKeyfile.deviceUuid` and `usbKeyfile.enable = true`. Then `sudo nixos-rebuild boot --flake .`
+   (`test` cannot exercise the initrd). Reboot **with the screen**: (a) stick in → no prompt; (b) stick out → prompt after ~10 s, password works.
+   Check `journalctl -b -u 'systemd-cryptsetup@*'`.
+4. **Enable display detection:** `detectDisplay.enable = true`, then switch. Reboot with the monitor → greetd as before
+   (`journalctl -b -u greetd` shows "external display DP-1 connected"). Then unplug the monitor, reboot, and reach it over Tailscale/cable SSH:
+   `systemctl status greetd` should say *condition failed / skipped*. Plug the monitor in → the greeter appears.
+5. **Headless dress rehearsal:** no monitor, stick in, cable to hazel. Check `ssh butternut-cable`/`ssh 10.42.0.1 -p 7654`, Tailscale, T3/herdr/oc, and the ntfy push if enabled.
+6. **Initrd SSH:** add hazel's public key to `modules/ssh-keys.nix` (§7.1 #5). Then on butternut:
+   `sudo install -d -m 700 /etc/secrets/initrd && sudo ssh-keygen -t ed25519 -N "" -f /etc/secrets/initrd/ssh_host_ed25519_key`
+   (outside the Nix store. `boot.initrd.secrets` copies it into the initrd on the ESP at bootloader install. A missing file makes
+   the bootloader install **fail loudly**: no harm done, but the switch errors out). Set `initrdSsh.enable = true` and run `nixos-rebuild boot`.
+   Test **with the screen attached**: stick out, cable in, hazel on `10.42.0.2/24` (the static cable link from the cable-link work).
+   Then `ssh -p 2222 root@10.42.0.1`, `systemd-tty-ask-password-agent` (or `systemctl default`), type the password, and the session drops at switch-root.
+   Add a separate known_hosts entry (`butternut-initrd`, port 2222).
+
+### 11.2 Reaching butternut when it misbehaves
+
+| Stage | Access |
+|---|---|
+| systemd-boot menu | `boot.loader.timeout` is 5 s (default). With no screen it boots the **default (newest)** entry. Blind pick: wait ~1 s, then ↓ + Enter = previous generation. Before risky changes: `nixos-rebuild test` first (not persistent, so a reboot undoes it), or `sudo bootctl set-oneshot <entry>` / `systemctl reboot --boot-loader-entry=<entry>` (see `bootctl list`). **Boot counting is not available in 26.05** (no systemd-boot option; adopt it in 26.11) |
+| initrd (stick missing / wrong) | initrd SSH `ssh -p 2222 root@10.42.0.1` over the cable (step 6). Blind typing also works: the prompt is on the console/plymouth; type the password + Enter. `boot.initrd.systemd.emergencyAccess` stays off on purpose (unauthenticated root shell) |
+| stage 2, no greeter | Expected when headless. Over SSH: `journalctl -b -u greetd`. Force it: `sudo touch /run/headless-boot/force-greeter && sudo systemctl start greetd`. Turn it off: `detectDisplay.enable = false` |
+| network | Cable: `ssh -p 7654 10.42.0.1` (static link) or `butternut.local`. Tailscale: `ssh butternut` |
+| logs | Persistent journal: `journalctl -b -1 -p warning`, `journalctl -b -1 -u 'systemd-cryptsetup@*' -u greetd -u NetworkManager -u tailscaled -u headless-im-up`. The initrd log is part of the same boot's journal |
+
+### 11.3 Risks
+
+- **Detector false negative** (display present but reported late or disconnected) → black screen. Mitigated by the 5 s settle loop, the hotplug
+  rule, the force flag, and SSH. Only flip it on after step 4.
+- **Keyfile = bearer secret.** Keep the stick on the keyring, never in the laptop bag. A lost stick means revoking the slot (step 2). FIDO2 is the upgrade.
+- **Initrd host key on the unencrypted ESP:** a dedicated key, so only the initrd can be impersonated, and only on the cable.
+- The initrd static address uses the same `10.42.0.1` as the stage-2 cable link. It is flushed at switch-root so NetworkManager owns eno2 afterwards.
+- Lid closed under GPU load: thermals (§7.5).
+
+## 12. Implemented — core networking (quick wins + "this week" items 8–11, 13; §7.12)
+
+Not committed. Every nixosConfiguration evaluates (`just eval-all`), and deadnix and alejandra are clean. The helper scripts
+(`trusted-networks-apply`, `captive`, `cable-mode`, `deploy`) build, so they pass shellcheck. Nothing has been switched yet.
+
+| Area | Files | What |
+|---|---|---|
+| Hosts registry | `modules/hosts-registry.nix` (`flake.hosts`, `flake.tailnet.domain`), `features/hosts-registry.nix` (in `general`) | Holds tailnet IPv4 (from `tailscale status`), cable 10.42.0.1/.2, `cableShare`, sshPort 7654, host key (butternut only), `userKey` → `ssh-keys.nix`, Syncthing IDs, roles and tags. Generates `/etc/hosts` (`<h>`, `<h>.tail1a9f7c.ts.net` → 100.x; `<h>-cable`; `phone`), `/etc/ssh/ssh_config` (Port/User/`HostKeyAlias <h>` for `<h>`, `<h>.local`, `<h>.<tailnet>`, `<h>-cable`; `Match originalhost <peer> exec "ip -4 -o addr show to 10.42.0.0/24 \| grep -q ."` → `HostName <cable>`), and `programs.ssh.knownHosts` + `StrictHostKeyChecking yes` for hosts with a known key. hazel's hand-written HM `matchBlocks` were removed |
+| Decision (open question 7) | | The 100.x IPs **are committed**. They are needed for the fallback while MagicDNS is off (`captive`, accept-dns=false), and they are routable only inside the tailnet. **Pin them in the admin console**, otherwise `/etc/hosts` goes stale and overrides MagicDNS |
+| Cable | `features/cable-link.nix` (replaces `ethernet-share`) | `cable` = static `/24`, no gateway, `never-default` v4+v6, ignore-auto-dns, priority 50. `<me>-shares` (NM shared mode on `cableShare`: butternut 10.42.0.1/24, hazel 10.42.1.1/24) and `<peer>-shares` (DHCP, metric 700) are manual. `cable-mode link\|butternut-shares\|hazel-shares\|status` flips both ends: the remote half runs as a detached `setsid … sleep 2; nmcli con up`. hazel: interface unknown → profiles match any wired NIC + `no-auto-default=*` |
+| DNS | `features/dns.nix` (in `general`) | resolved with DoT opportunistic, DNSSEC/LLMNR/MulticastDNS off, FallbackDNS 1.1.1.1/9.9.9.9, no global DNS/Domains. NM `dns=systemd-resolved` and the connectivity check on (nmcheck.gnome.org, 300 s). `captive [url]`: `tailscale set --accept-dns=false` + `nmcli device modify <dev> connection.dns-over-tls no`, opens neverssl, waits for `connectivity=full` or Enter, then restores (`--accept-dns=true`, `nmcli device reapply`). nsswitch: `mdns4_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns mdns4` |
+| Café firewall | `features/trusted-networks.nix` (in `general`) | KDE Connect 1714-1764, spotifyd 5353/57622, Syncthing 22000/21027 (`openDefaultPorts=false`), Reticulum 29716/42671, avahi 5353 **and sshd 7654** (`openFirewall=false`) open only on tailscale0, static `interfaces` (butternut `eno2`) and NM connections `home`, `hotspot`, `cable`, `*-shares`. Implementation: NM dispatcher → `/run/trusted-networks/<iface>` → chain `nixos-fw-trusted` (iptables, jumped from `nixos-fw`, rebuilt on every firewall reload). maple and peacelily set `everywhere = true` (global ports). `office` is untrusted |
+| Wi-Fi | `features/wifi-home.nix` | `home` SSID fixed to `WE_93CBE9` (prio 30). `office` (20) and `hotspot` (10, metered, autoconnect, sends hostname) are opt-in, enabled on butternut and hazel, and skipped with a warning while their secret file is missing |
+| mDNS | `hosts/butternut/network.nix` | avahi on `eno2` + `wlo1` (so `butternut.local` works on the hotspot). The firewall gates 5353 as above |
+| Tailscale | `features/tailscale.nix`, `docs/tailscale-policy.hujson` | `--operator=<user>` on every host (removed from agent-host). `preferences.tailscale.oauth.enable` (maple, peacelily) → OAuth client secret, `authKeyParameters` preauthorized/non-ephemeral, `--advertise-tags` from the registry (`tag:server`, + `tag:gpu`). It falls back to the shared key while the secret is missing. The policy is a draft for the admin console |
+| Cache | `features/lan-cache.nix` | hazel: `http://10.42.0.1:5000?priority=10` + `http://butternut:5000?priority=20` (tailnet) |
+| Deploy | `features/remote-deploy.nix` | candidates `<host>` (cable or tailnet via the ssh config) then `<host>.local` |
+| Syncthing | `features/syncthing.nix`, `vault.nix` | devices come from the registry, with addresses `tcp://<cable>:22000` (when both ends are cabled), `tcp://<h>:22000`, `quic://<h>:22000`, `dynamic` |
+
+**Secrets to add** (`sops <file>`, then `git add`):
+`secrets/shared/wifi-hotspot.yaml` key `wifi_hotspot_env` = `WIFI_HOTSPOT_SSID=…` / `WIFI_HOTSPOT_PSK=…` (use `preferences.wifi.hotspot.keyMgmt = "sae"` for WPA3-only).
+`secrets/shared/wifi-office.yaml` key `wifi_office_env` = `WIFI_OFFICE_SSID=…` / `WIFI_OFFICE_PSK=…`.
+`secrets/shared/tailscale-oauth.yaml` key `tailscale_oauth` = `tskey-client-…` (scope Auth Keys/write, tags `tag:server` and `tag:gpu`).
+The existing `secrets/shared/wifi.yaml` `wifi_env` must contain `WIFI_HOME_PSK` for `WE_93CBE9`.
+
+**User steps:** (1) Apply the policy draft in the admin console (Preview + tests first) and pin the 100.x IPs. (2) Create the OAuth client and the secret,
+then on maple/peacelily run `doas tailscale logout && doas systemctl restart tailscaled-autoconnect` (or re-auth by hand). (3) After switching
+butternut/hazel: `nmcli con delete WE_93CBE9 ethernet-share` (imperative duplicate of `home`, plus the stale shared profile that lingers in /run until reboot),
+then `nmcli con up home`. (4) Fill the TODOs: hazel's user key (`ssh-keys.nix`), host keys and Syncthing IDs (registry), and `preferences.cable.interface` on hazel.
+(5) Verify: `resolvectl status` (tailscale0 has `~.`), `ls /run/trusted-networks`, `doas iptables -S nixos-fw-trusted`, `ssh -G butternut | grep hostname`
+with and without the cable, `ip route` on hazel (one default, Wi-Fi), and `captive` at a café.
+
+**Risks / unverified:** a live switch of resolved + Tailscale has not been tested. tailscaled should detect the stub and use D-Bus, but check
+`resolvectl` right after switching and roll back if names fail. Opportunistic DoT can add a timeout on networks that drop 853 (captive portals): use `captive`.
+Docker containers now read resolved's upstream list (incl. 100.100.100.100). While butternut sits on an untrusted connection
+(e.g. still on the imperative `WE_93CBE9` right after the switch), sshd, KDE Connect and Syncthing are reachable only over tailscale0 or the cable.
+`ssh hazel` from butternut in butternut-shares mode targets 10.42.0.2 (hazel has a DHCP address then): use `hazel.local`.
+The Tailscale SSH host key may differ from sshd's: `HostKeyAlias` plus strict checking can complain on `ssh -p 22 <host>`.
+
 ## Sources
 
 - Tailscale DNS (DoH for public global nameservers, split DNS): https://tailscale.com/kb/1054/dns

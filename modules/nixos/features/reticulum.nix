@@ -46,8 +46,9 @@
     # `systemctl --user start rnsd` (stop with `systemctl --user stop rnsd`).
     systemd.user.services.rnsd.wantedBy = pkgs.lib.mkForce [];
 
-    # UDP ports required by Reticulum AutoInterface for local discovery
-    networking.firewall.allowedUDPPorts = [29716 42671];
+    # UDP ports required by Reticulum AutoInterface for local discovery;
+    # trusted networks only (trusted-networks.nix).
+    preferences.trustedNetworks.allowedUDPPorts = [29716 42671];
 
     # git is needed system-wide for the Nix daemon to resolve builtins.fetchGit
     # used by rns-map packages from the reticulum flake

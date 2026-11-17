@@ -34,6 +34,9 @@
       services.openssh = {
         enable = true;
         ports = [7654];
+        # Not on every interface: tailscale0, the cable and trusted Wi-Fi only
+        # (trusted-networks). Café Wi-Fi reaches sshd over the tailnet only.
+        openFirewall = false;
         settings = {
           PasswordAuthentication = cfg.passwordAuthentication;
           # Keyboard-interactive goes through PAM and would still accept the
@@ -44,6 +47,8 @@
       };
 
       users.users.${config.preferences.user.name}.openssh.authorizedKeys.keys = cfg.authorizedKeys;
+
+      preferences.trustedNetworks.allowedTCPPorts = config.services.openssh.ports;
     };
   };
 }

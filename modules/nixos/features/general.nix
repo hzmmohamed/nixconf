@@ -11,6 +11,11 @@
       self.nixosModules.fish
       self.nixosModules.gtk
       self.nixosModules.nix
+
+      # Networking core (docs/plans/2026-11-17-network-review.md).
+      self.nixosModules.dns
+      self.nixosModules.hosts-registry
+      self.nixosModules.trusted-networks
     ];
 
     users.users.${config.preferences.user.name} = {

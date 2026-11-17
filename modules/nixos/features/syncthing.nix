@@ -1,4 +1,4 @@
-{...}: {
+{self, ...}: {
   flake.nixosModules.syncthing = {
     config,
     lib,
@@ -9,6 +9,19 @@
     hostname = config.networking.hostName;
     secretsFile = ../../.. + "/secrets/${hostname}/syncthing.yaml";
     guiFromSops = config.preferences.syncthing.guiPasswordFromSops;
+
+    # Device IDs live in the hosts registry (modules/hosts-registry.nix).
+    # Addresses: the cable when both ends have one, then the registry name
+    # (/etc/hosts → tailnet IP, works with MagicDNS off), then discovery.
+    me = self.hosts.${hostname} or {};
+    peers = lib.filterAttrs (_: h: (h.syncthingId or null) != null) self.hosts;
+    deviceFor = n: h: {
+      id = h.syncthingId;
+      addresses =
+        lib.optional ((me.cable or null) != null && (h.cable or null) != null && n != hostname)
+        "tcp://${h.cable}:22000"
+        ++ ["tcp://${n}:22000" "quic://${n}:22000" "dynamic"];
+    };
   in {
     options.preferences.syncthing.guiPasswordFromSops = lib.mkOption {
       type = lib.types.bool;
@@ -49,7 +62,9 @@
         enable = true;
         inherit user group;
         dataDir = config.users.users.${user}.home;
-        openDefaultPorts = true;
+        # Sync/discovery ports on trusted networks only (below); peers on
+        # other networks connect over the tailnet.
+        openDefaultPorts = false;
 
         key = config.sops.secrets."syncthing/key".path;
         cert = config.sops.secrets."syncthing/cert".path;
@@ -67,15 +82,14 @@
               password = "password";
             };
 
-          devices = {
-            "butternut" = {
-              id = "MRJSBVI-MRVAT7V-WHLSZBC-5LX6KFD-VGCYP4E-W265N3K-B5URBIH-RPUTWQK";
-            };
-            "maple" = {
-              id = "H7H47TV-XI7EQDB-U4RAQWU-BYMDKVT-6HNATQP-EDELRE7-35GLDGH-BKAUBAW";
-            };
-          };
+          devices = lib.mapAttrs deviceFor peers;
         };
+      };
+
+      # 22000 TCP (sync) + UDP (QUIC), 21027 UDP (local discovery).
+      preferences.trustedNetworks = {
+        allowedTCPPorts = [22000];
+        allowedUDPPorts = [22000 21027];
       };
 
       systemd.services.syncthing.environment.STNODEFAULTFOLDER = "true";

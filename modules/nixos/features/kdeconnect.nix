@@ -2,8 +2,11 @@
   flake.nixosModules.kdeconnect = {config, ...}: let
     user = config.preferences.user.name;
   in {
-    # KDEConnect uses UDP 1716 for discovery and TCP 1714-1764 for data
-    networking.firewall = {
+    # KDEConnect uses UDP 1716 for discovery and TCP 1714-1764 for data.
+    # Trusted networks only (home/hotspot Wi-Fi, cable, tailscale0): never
+    # announced to strangers on café Wi-Fi. From anywhere, pair the phone
+    # "by IP" with the tailnet address (hosts registry).
+    preferences.trustedNetworks = {
       allowedTCPPortRanges = [
         {
           from = 1714;

@@ -2,8 +2,9 @@
   # `deploy <host> [switch|boot|test|dry-activate]` — build a host's system
   # from the local flake checkout, copy it over SSH and activate it there.
   #
-  # Target: `<host>.local` (mDNS, works over a bare ethernet cable) and then
-  # `<host>` (Tailscale MagicDNS / /etc/hosts). Activation uses doas on the
+  # Target: `<host>` first — the hosts-registry ssh config resolves it to the
+  # cable address when the cable is up, else the tailnet IP (/etc/hosts) —
+  # then `<host>.local` (mDNS: hotspot, or the cable in a shared mode). Activation uses doas on the
   # target (no sudo, so `nixos-rebuild --target-host --sudo` is out). The
   # deploying user is in wheel → a trusted Nix user on the target, so
   # unsigned local builds are accepted by `nix copy`.
@@ -47,7 +48,7 @@
         # 1. Find a reachable address before spending time on the build.
         target=''${DEPLOY_TARGET:-}
         if [ -z "$target" ]; then
-          for candidate in "$host.local" "$host"; do
+          for candidate in "$host" "$host.local"; do
             if ssh "''${ssh_opts[@]}" -o BatchMode=yes "$user@$candidate" true 2>/dev/null; then
               target=$candidate
               break
@@ -55,7 +56,7 @@
           done
         fi
         if [ -z "$target" ]; then
-          echo "deploy: cannot log in to $host.local or $host on port $port as $user." >&2
+          echo "deploy: cannot log in to $host or $host.local on port $port as $user." >&2
           echo "  - cable: is the link up? (nmcli device; ping $host.local)" >&2
           echo "  - key: if 'ssh -p $port $user@$host.local' asks for a password, this" >&2
           echo "    machine's key is not in modules/ssh-keys.nix on $host yet — switch" >&2

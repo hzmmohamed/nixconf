@@ -98,6 +98,14 @@
     # a year of staggered versions is the vault's history/backup.
     preferences.vault.keepVersions = true;
 
+    # Stationary home server: LAN service ports (sshd, Syncthing) on every
+    # interface, not only trusted Wi-Fi.
+    preferences.trustedNetworks.everywhere = true;
+
+    # Tagged login via the OAuth client once secrets/shared/tailscale-oauth.yaml
+    # exists (tags from the hosts registry); shared auth key until then.
+    preferences.tailscale.oauth.enable = true;
+
     system.stateVersion = "24.11";
   };
 }

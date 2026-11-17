@@ -67,6 +67,7 @@
       self.nixosModules.openssh
       self.nixosModules.lan-discovery
       self.nixosModules.lan-cache
+      self.nixosModules.cable-link
       self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
       self.nixosModules.syncthing
@@ -112,6 +113,16 @@
       networkmanager.enable = true;
     };
 
+    # Direct cable to butternut: static 10.42.0.2, no gateway (internet stays
+    # on Wi-Fi). NIC name unknown here, so the profiles match any wired NIC.
+    # TODO(user): set preferences.cable.interface once `ip link` on hazel is known.
+
+    # Wi-Fi profiles beyond home (secrets: see features/wifi-home.nix).
+    preferences.wifi = {
+      hotspot.enable = true;
+      office.enable = true;
+    };
+
     hardware.cpu.intel.updateMicrocode = true;
     hardware.graphics.enable = true;
 
@@ -132,27 +143,8 @@
     };
 
     home-manager.users.${config.preferences.user.name} = {
-      # SSH client config for reaching other hosts over Tailscale
-      programs.ssh = {
-        enable = true;
-        matchBlocks = {
-          "butternut" = {
-            hostname = "butternut";
-            port = 7654;
-            user = config.preferences.user.name;
-          };
-          "peacelily" = {
-            hostname = "peacelily";
-            port = 7654;
-            user = config.preferences.user.name;
-          };
-          "maple" = {
-            hostname = "maple";
-            port = 7654;
-            user = config.preferences.user.name;
-          };
-        };
-      };
+      # SSH client config for the other hosts (port, user, cable preference
+      # for `ssh butternut`) comes from the hosts registry (/etc/ssh/ssh_config).
 
       # 14" 1080p built-in panel — slight scale bump for readability
       wayland.windowManager.sway.config.output."eDP-1" = {
