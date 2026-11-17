@@ -1,6 +1,15 @@
-# Noctalia theme: a custom palette generated from preferences.theme.palette
-# (light/dark) with the shared accent. Light/dark follows darkman via the
-# theme-mode reload hook (default.nix).
+# Noctalia theme: the shared palette (preferences.theme.palette shape) as a
+# Noctalia custom palette, with Noctalia's own wallpaper/templates disabled.
+#
+# - Catppuccin source: `customPalettes.Nixconf` from the build-time palette;
+#   light/dark follows darkman via the theme-mode reload hook (default.nix).
+# - Wallpaper source: the same variant renderer is registered as a theme file
+#   (noctalia-palette.json), so it is rendered through the shared template
+#   path — Catppuccin at build time, matugen at runtime — and
+#   ~/.config/noctalia/palettes/Nixconf.json links to the current mode's file.
+#   Each per-mode file carries that mode's colours in both variants; the reload
+#   hook re-reads it with `noctalia msg config-reload` (which re-resolves the
+#   custom palette from disk).
 {...}: {
   flake.nixosModules.noctalia = {
     config,
@@ -8,48 +17,45 @@
     ...
   }: let
     user = config.preferences.user.name;
-    pal = config.preferences.theme.palette;
+    theme = config.preferences.theme;
+    pal = theme.palette;
+    enabled = config.preferences.desktopShell == "noctalia";
+    wallpaperSource = theme.source == "wallpaper";
+    noctalia = config.home-manager.users.${user}.programs.noctalia.package;
 
-    mkVariant = c: onAccent: {
-      primary = c.lavender;
-      on_primary = onAccent;
+    mkVariant = c: {
+      primary = c.accent;
+      on_primary = c.onAccent;
       secondary = c.blue;
-      on_secondary = onAccent;
+      on_secondary = c.onAccent;
       tertiary = c.peach;
-      on_tertiary = onAccent;
-      error = c.red;
-      on_error = onAccent;
-      surface = c.base;
-      on_surface = c.text;
-      surface_container = c.surface0;
-      on_surface_variant = c.subtext0;
-      outline_variant = c.surface1;
+      on_tertiary = c.onAccent;
+      inherit (c) error surface;
+      on_error = c.onAccent;
+      on_surface = c.onSurface;
+      surface_container = c.surfaceContainer;
+      on_surface_variant = c.onSurfaceVariant;
+      outline_variant = c.outlineVariant;
       shadow = c.crust;
-      hover = c.surface1;
-      on_hover = c.text;
+      hover = c.surfaceContainerHigh;
+      on_hover = c.onSurface;
       terminal = {
-        background = c.base;
-        foreground = c.text;
+        background = c.surface;
+        foreground = c.fg;
         cursor = c.rosewater;
-        cursor_text = c.base;
+        cursor_text = c.surface;
         selection_bg = c.surface2;
-        selection_fg = c.text;
+        selection_fg = c.fg;
         normal = {
           black = c.surface1;
-          red = c.red;
-          green = c.green;
-          yellow = c.yellow;
-          blue = c.blue;
+          inherit (c) red green yellow blue;
           magenta = c.pink;
           cyan = c.teal;
           white = c.subtext1;
         };
         bright = {
           black = c.surface2;
-          red = c.red;
-          green = c.green;
-          yellow = c.yellow;
-          blue = c.blue;
+          inherit (c) red green yellow blue;
           magenta = c.pink;
           cyan = c.teal;
           white = c.subtext0;
@@ -57,15 +63,9 @@
       };
     };
   in {
-    config = lib.mkIf (config.preferences.desktopShell == "noctalia") {
-      home-manager.users.${user}.programs.noctalia = {
-        customPalettes.Nixconf = {
-          version = 2;
-          dark = mkVariant pal.dark pal.dark.onAccent;
-          light = mkVariant pal.light pal.light.onAccent;
-        };
-
-        settings.theme = {
+    config = lib.mkIf enabled (lib.mkMerge [
+      {
+        home-manager.users.${user}.programs.noctalia.settings.theme = {
           source = "custom";
           custom_palette = "Nixconf";
           # Initial value only: darkman sets the live mode over IPC.
@@ -77,7 +77,31 @@
             enable_community_templates = false;
           };
         };
-      };
-    };
+      }
+
+      (lib.mkIf (!wallpaperSource) {
+        home-manager.users.${user}.programs.noctalia.customPalettes.Nixconf = {
+          version = 2;
+          dark = mkVariant pal.dark;
+          light = mkVariant pal.light;
+        };
+      })
+
+      (lib.mkIf wallpaperSource {
+        preferences.theme = {
+          files."noctalia-palette.json" = p:
+            builtins.toJSON {
+              version = 2;
+              dark = mkVariant p;
+              light = mkVariant p;
+            };
+          links.".config/noctalia/palettes/Nixconf.json" = "noctalia-palette.json";
+          # Runs after the mode hook in default.nix (attribute order).
+          reloadHooks.noctalia-palette = ''
+            ${lib.getExe noctalia} msg config-reload >/dev/null 2>&1 || true
+          '';
+        };
+      })
+    ]);
   };
 }

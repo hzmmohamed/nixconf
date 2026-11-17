@@ -262,7 +262,7 @@
       slurp
       wl-clipboard
 
-      swww
+      awww
 
       networkmanagerapplet
 

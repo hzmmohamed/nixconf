@@ -1,0 +1,36 @@
+{
+  "light": {
+    "file": "minimal-hike-on-the-dunes.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/6/63/Minimal_hike_on_the_dunes_%28Unsplash%29.jpg",
+    "hash": "sha256-O8aZ0G9Z9e2ohDrcTeurPpd1DsMQwUPoTvh6lG5yXhY=",
+    "sidecar": {
+      "title": "Minimal hike on the dunes",
+      "creator": "Matt Le",
+      "creator_url": "https://unsplash.com/@mattlephoto",
+      "license": "CC0",
+      "license_version": "1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source_url": "https://commons.wikimedia.org/wiki/File:Minimal_hike_on_the_dunes_(Unsplash).jpg",
+      "provider": "wikimedia-commons",
+      "attribution": "\"Minimal hike on the dunes\" by Matt Le (originally on Unsplash, 2016), CC0 1.0, via Wikimedia Commons",
+      "fetched_at": "2026-11-17T00:00:00Z"
+    }
+  },
+  "dark": {
+    "file": "stars-in-a-lake.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/74/Stars_in_a_lake_%28Unsplash%29.jpg",
+    "hash": "sha256-0pA+e3xUCg65PQQLucVBF2GazEdHZb+tdAC4ffsilEU=",
+    "sidecar": {
+      "title": "Stars in a lake",
+      "creator": "Wil Stewart",
+      "creator_url": "https://unsplash.com/@wilstewart3",
+      "license": "CC0",
+      "license_version": "1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source_url": "https://commons.wikimedia.org/wiki/File:Stars_in_a_lake_(Unsplash).jpg",
+      "provider": "wikimedia-commons",
+      "attribution": "\"Stars in a lake\" by Wil Stewart (originally on Unsplash, 2016), CC0 1.0, via Wikimedia Commons",
+      "fetched_at": "2026-11-17T00:00:00Z"
+    }
+  }
+}

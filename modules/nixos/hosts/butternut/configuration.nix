@@ -30,6 +30,7 @@
       self.nixosModules.noctalia
       self.nixosModules.blueman
       self.nixosModules.vicinae
+      self.nixosModules.vicinae-wallpapers
       self.nixosModules.swayosd
       self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor

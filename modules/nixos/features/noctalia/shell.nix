@@ -1,5 +1,5 @@
 # Noctalia shell-wide settings. Everything the rest of the repo already
-# provides stays with the repo: wallpaper (swww), lock (swaylock), idle
+# provides stays with the repo: wallpaper (awww), lock (swaylock), idle
 # (swayidle), clipboard (vicinae), night light (gammastep), launcher (vicinae).
 {self, ...}: {
   flake.nixosModules.noctalia = {

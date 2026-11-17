@@ -29,6 +29,7 @@
       self.nixosModules.swaync
       self.nixosModules.blueman
       self.nixosModules.vicinae
+      self.nixosModules.vicinae-wallpapers
       self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor
       self.nixosModules.qt
@@ -94,6 +95,9 @@
     time.timeZone = "Africa/Cairo";
 
     preferences.bibata-cursor.enable = true;
+
+    # Trial of the wallpaper-reactive palette (matugen, Catppuccin fallback).
+    preferences.theme.source = "wallpaper";
 
     # Opt-in apps (off by default in their feature modules).
     preferences.discord.officialClient.enable = true;

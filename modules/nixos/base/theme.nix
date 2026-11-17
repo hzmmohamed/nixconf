@@ -29,9 +29,10 @@
         description = ''
           Where the palette comes from.
           - "catppuccin": Latte (light) / Mocha (dark), lavender accent.
-          - "wallpaper": generated from the wallpaper at runtime (matugen).
-            TODO(phase 5): not implemented yet — evaluates to the Catppuccin
-            palette, which also stays the build-time fallback.
+          - "wallpaper": generated at runtime from the current wallpaper
+            (matugen, `theme-mode generate`, see extra/theme.nix). The
+            build-time palette below stays Catppuccin: it renders the
+            fallback files and fills any key the generator can't provide.
         '';
       };
 
@@ -41,7 +42,7 @@
         default =
           {
             catppuccin = self.palettes.catppuccin;
-            # TODO(phase 5): wallpaper palette (matugen) with Catppuccin fallback.
+            # Runtime palette comes from matugen; this is its fallback layer.
             wallpaper = self.palettes.catppuccin;
           }.${
             cfg.source
@@ -88,6 +89,17 @@
         description = ''
           Shell snippets run by `theme-mode` after `current` was flipped
           (`$mode` is "light" or "dark"). Failures are ignored.
+        '';
+      };
+
+      switchCommand = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          Command darkman runs with `light` or `dark` appended. Defaults to
+          `theme-mode`; the wallpaper feature sets it to
+          `set-wallpaper --mode`, which also swaps to the paired default
+          wallpaper (and, for the wallpaper source, regenerates the palette)
+          before calling `theme-mode`.
         '';
       };
 

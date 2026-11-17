@@ -1,0 +1,69 @@
+{
+	"name": "wallpapers",
+	"title": "Wallpapers",
+	"description": "Search, preview, apply and favourite openly-licensed wallpapers with their attribution",
+	"icon": "icon.svg",
+	"author": "hfahmi",
+	"license": "MIT",
+	"platforms": ["Linux"],
+	"commands": [
+		{
+			"name": "search-openverse",
+			"title": "Search Openverse Wallpapers",
+			"description": "Search openly-licensed (CC0, PDM, CC BY, CC BY-SA) wide images on Openverse",
+			"mode": "view"
+		},
+		{
+			"name": "wikimedia-potd",
+			"title": "Wikimedia Picture of the Day",
+			"description": "Featured pictures from the last two weeks of Wikimedia Commons",
+			"mode": "view"
+		},
+		{
+			"name": "nasa-apod",
+			"title": "NASA Astronomy Picture of the Day",
+			"description": "Recent NASA APOD images, copyrighted entries are marked as not free",
+			"mode": "view"
+		},
+		{
+			"name": "favourites",
+			"title": "Favourite Wallpapers",
+			"description": "Wallpapers saved to ~/Pictures/Wallpapers/favourites",
+			"mode": "view"
+		},
+		{
+			"name": "current-wallpaper",
+			"title": "Current Wallpaper Info",
+			"description": "Show the current wallpaper and its attribution",
+			"mode": "view"
+		}
+	],
+	"preferences": [
+		{
+			"name": "setWallpaperCommand",
+			"title": "set-wallpaper command",
+			"description": "Command used to apply a wallpaper (receives the file path) and to query the current one (--info)",
+			"type": "textfield",
+			"required": false,
+			"default": "set-wallpaper"
+		},
+		{
+			"name": "nasaApiKey",
+			"title": "NASA API key",
+			"description": "api.nasa.gov key; DEMO_KEY is heavily rate limited",
+			"type": "password",
+			"required": false,
+			"default": "DEMO_KEY"
+		}
+	],
+	"scripts": {
+		"build": "vici build",
+		"dev": "vici develop"
+	},
+	"dependencies": {
+		"@vicinae/api": "0.23.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.0"
+	}
+}

@@ -254,7 +254,7 @@
             allowPanelsOnScreenWithoutBar = true;
             animationDisabled = false;
             animationSpeed = 1;
-            avatarImage = ../../nixos/features/wallpaper/gruvbox-mountain-village.png;
+            avatarImage = ./gruvbox-mountain-village.png;
             boxRadiusRatio = 1;
             compactLockScreen = false;
             dimmerOpacity = 0.15;
