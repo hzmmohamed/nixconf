@@ -118,6 +118,13 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   editing, never `git add -A`/`git stash`/re-lock inputs you didn't add, don't
   run `nix flake update` unless asked.
 - **Long builds**: NVIDIA kernel modules, CUDA (llama.cpp), etc. Prefer eval.
+- **Tools in agent shells**: agent shells don't load the dev shell (no
+  direnv), so `just`, `alejandra`, `deadnix` may be missing; use the raw
+  commands from `justfile` or `nix develop --impure -c <cmd>`. `python3`
+  (stdlib only), `jq`, `git`, `rg` are installed for scripting and edits.
+  Don't pull ad-hoc packages with `nix shell nixpkgs#…`/`nix run nixpkgs#…`;
+  if a tool is missing, prefer `nix shell --inputs-from . nixpkgs#<pkg>`
+  (pinned to this flake's nixpkgs) for a one-off, and say so in your report.
 - **Public repo**: never commit secrets, keys, tokens, or personal data.
 - **`.repos/`** holds reference clones/submodules (old config, nixos-anywhere,
   …): read-only, excluded from formatting.

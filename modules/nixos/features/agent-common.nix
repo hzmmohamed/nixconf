@@ -314,6 +314,10 @@
           # GitLab CLI: both work projects live on GitLab (T3 Code uses it to
           # browse merge requests; agents use it for MRs/issues/CI).
           pkgs.glab
+          # Bare interpreter (no libraries): agents script edits and data
+          # wrangling in Python. Agent shells don't load project dev shells,
+          # so it lives here rather than in each devshell.
+          pkgs.python3
           agentNotify
           agentStatus
         ];
