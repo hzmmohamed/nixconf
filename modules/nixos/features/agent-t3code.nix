@@ -140,7 +140,9 @@
         # `t3 project add` exits non-zero for an already-registered project,
         # so failures are reported but never fatal.
         sleep 5
-        for p in ${lib.escapeShellArgs agents.projects}; do
+        # An array, so a single project doesn't trip shellcheck SC2043.
+        projects=(${lib.escapeShellArgs agents.projects})
+        for p in "''${projects[@]}"; do
           if [ ! -d "$p" ]; then
             echo "t3code-projects: skipping $p (not checked out here)"
             continue
