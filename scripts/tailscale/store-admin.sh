@@ -72,7 +72,7 @@ unset secret current
 
 recipients=dry-run
 if [ "$DRY_RUN" != 1 ]; then
-  recipients=$(grep -c '^ *- recipient: age1' "$ADMIN_FILE" || true)
+  recipients=$(grep -cE '^ *-? *recipient: age1' "$ADMIN_FILE" || true)
   run git -C "$REPO" add "$ADMIN_REL"
 fi
 
