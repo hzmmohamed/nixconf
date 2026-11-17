@@ -117,8 +117,38 @@ in {
           remote doas nix-env -p /nix/var/nix/profiles/system --set "$system" ||
             die "setting the system profile failed (passwordless doas on $host?)"
         fi
-        remote doas "$system/bin/switch-to-configuration" "$action" ||
-          die "switch-to-configuration $action failed on $host"
+        # Run it as a transient unit on the target (like nixos-rebuild): it
+        # leaves the SSH session's cgroup, so a network restart that drops
+        # the connection mid-switch can't kill it half-way. If the
+        # connection does drop (ssh exit 255), reconnect and wait for the
+        # unit's result instead of failing.
+        unit=deploy-switch-to-configuration
+        rc=0
+        remote doas systemd-run --unit="$unit" --collect --no-ask-password \
+          --pipe --wait --quiet --service-type=exec \
+          -E LOCALE_ARCHIVE -E NIXOS_INSTALL_BOOTLOADER \
+          "$system/bin/switch-to-configuration" "$action" || rc=$?
+        if [ "$rc" = 255 ]; then
+          echo ">> connection to $host dropped during activation; waiting for $unit" >&2
+          state=unknown
+          for _ in $(seq 60); do
+            sleep 5
+            state=$(remote systemctl show "$unit" -p ActiveState --value 2>/dev/null) || continue
+            case "$state" in activating | active | deactivating) continue ;; *) break ;; esac
+          done
+          result=$(remote systemctl show "$unit" -p Result --value 2>/dev/null || true)
+          # --collect removes the unit once done: an inactive unit with no
+          # result left means it finished; check the running system instead.
+          current=$(remote readlink -f /run/current-system 2>/dev/null || true)
+          if [ "$action" = boot ] || [ "$current" = "$system" ]; then
+            [ -z "$result" ] || [ "$result" = success ] ||
+              die "switch-to-configuration $action on $host: $result (journalctl -u $unit)"
+            rc=0
+          else
+            die "switch-to-configuration $action on $host did not finish (state=$state result=$result)"
+          fi
+        fi
+        [ "$rc" = 0 ] || die "switch-to-configuration $action failed on $host"
         echo ">> $host: $action done"
       '';
     };

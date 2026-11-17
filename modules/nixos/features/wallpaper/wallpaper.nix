@@ -124,10 +124,16 @@
             After = ["awww.service"];
             Wants = ["awww.service"];
             PartOf = [hm.config.wayland.systemd.target];
+            # Only inside a graphical session: a home-manager activation from
+            # a TTY or over SSH (deploy) must not start it, where it waited
+            # forever for a display and held up the whole switch.
+            ConditionEnvironment = "WAYLAND_DISPLAY";
           };
           Service = {
             Type = "oneshot";
             ExecStart = "${lib.getExe setWallpaper} --restore";
+            # Never block anything for long (sd-switch waits on oneshots).
+            TimeoutStartSec = 30;
           };
           Install.WantedBy = [hm.config.wayland.systemd.target];
         };
