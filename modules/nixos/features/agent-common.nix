@@ -124,6 +124,50 @@
       '';
     };
 
+    # Ad-hoc `nix shell/run/build/develop` pulls are fine when quick (tool
+    # already in the store); only a pull still running after `slowSeconds`
+    # notifies (desktop + ntfy). PreToolUse arms a detached timer keyed by
+    # session + command, PostToolUse disarms it. Never fails the hook.
+    slowSeconds = 90;
+    agentSlowWatch = pkgs.writeShellApplication {
+      name = "agent-slow-watch";
+      runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.util-linux];
+      text = ''
+        # Usage: Claude Code hook (JSON on stdin): agent-slow-watch arm|disarm
+        mode=''${1:-}
+        input=""
+        if [ ! -t 0 ]; then input=$(cat || true); fi
+        cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null || true)
+        case "$cmd" in
+          "nix shell"* | "nix run"* | "nix build"* | "nix develop"* | "nix-shell"*) ;;
+          *) exit 0 ;;
+        esac
+        sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null || true)
+        cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null || true)
+        key=$(printf '%s\n%s' "$sid" "$cmd" | sha256sum | cut -c1-16)
+        dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/agent-slow"
+        marker="$dir/$key"
+        case "$mode" in
+          arm)
+            mkdir -p "$dir" || exit 0
+            echo "$$" >"$marker" || exit 0
+            project=$(basename "''${cwd:-$PWD}")
+            short=$(printf '%s' "$cmd" | head -c 120)
+            # shellcheck disable=SC2016 # expanded by the inner sh, not here
+            setsid -f sh -c '
+              sleep "$1"
+              [ -e "$2" ] && [ "$(cat "$2" 2>/dev/null)" = "$3" ] || exit 0
+              rm -f "$2"
+              "$4" "Agent waiting on a slow nix pull - $5" "$6"
+            ' _ ${toString slowSeconds} "$marker" "$$" ${lib.getExe agentNotify} "$project" "$short" \
+              </dev/null >/dev/null 2>&1 || true
+            ;;
+          disarm) rm -f "$marker" ;;
+        esac
+        exit 0
+      '';
+    };
+
     # Keys merged into ~/.claude/settings.json (everything else is left alone).
     managedClaudeSettings = {
       permissions.deny = [
@@ -146,9 +190,11 @@
           }
         ];
         status = state: "${lib.getExe agentStatus} ${state}";
+        slow = mode: "${lib.getExe agentSlowWatch} ${mode}";
       in {
         UserPromptSubmit = group [(status "working")];
-        PreToolUse = group [(status "working")];
+        PreToolUse = group [(status "working") (slow "arm")];
+        PostToolUse = group [(slow "disarm")];
         Notification = group [(status "input") (lib.getExe agentNotify)];
         Stop = group [(status "done") (lib.getExe agentNotify)];
         SessionEnd = group [(status "end")];
@@ -178,7 +224,7 @@
           | .permissions = ((.permissions // {})
               | .deny = (((.deny // []) + $m.permissions.deny) | unique))
           | .hooks = (reduce ($m.hooks | keys[]) as $ev ((.hooks // {});
-              .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status")) | not)))
+              .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status") or contains("agent-slow-watch")) | not)))
                         + $m.hooks[$ev])))
         ')
         if [ "$new" = "$cur" ]; then exit 0; fi
@@ -318,6 +364,7 @@
           # wrangling in Python. Agent shells don't load project dev shells,
           # so it lives here rather than in each devshell.
           pkgs.python3
+          pkgs.jq
           agentNotify
           agentStatus
         ];
