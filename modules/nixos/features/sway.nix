@@ -8,12 +8,17 @@
     mod = "Mod4";
     user = config.preferences.user.name;
     terminal = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.terminal;
+    # Sway refuses to start while the proprietary nvidia kernel module is
+    # loaded unless passed --unsupported-gpu (e.g. PRIME offload hosts).
+    swayExtraOptions = lib.optional (lib.elem "nvidia" config.services.xserver.videoDrivers) "--unsupported-gpu";
   in {
+    # wofi-theme: still used by wofi --dmenu prompts (e.g. whisper-live).
     imports = [self.nixosModules.wofi-theme];
 
     programs.sway = {
       enable = true;
       wrapperFeatures.gtk = true;
+      extraOptions = swayExtraOptions;
     };
 
     # Ensure the wayland-sessions .desktop file is linked into
@@ -22,11 +27,13 @@
 
     home-manager.users.${user}.wayland.windowManager.sway = {
       enable = true;
+      # The HM sway wrapper comes first in PATH, so it needs the flag too.
+      extraOptions = swayExtraOptions;
 
       config = {
         modifier = mod;
         terminal = terminal;
-        menu = "wofi --show drun";
+        menu = "vicinae toggle";
 
         # Keyboard: US + Arabic with Shift+Super toggle, CapsLock as Escape
         # Touchpad: tap-to-click, disable-while-typing
@@ -81,7 +88,7 @@
           # Core actions
           "${mod}+Return" = "exec ${terminal}";
           "${mod}+Shift+q" = "kill";
-          "${mod}+space" = "exec wofi --show drun";
+          "${mod}+space" = "exec vicinae toggle";
           "${mod}+f" = "fullscreen toggle";
           "${mod}+Shift+f" = "floating toggle";
           "${mod}+a" = "focus parent";
@@ -202,7 +209,7 @@
         };
 
         # Export Wayland env vars into systemd and dbus so child services
-        # (waybar, clipse, darkman, etc.) can access the compositor.
+        # (waybar, vicinae, darkman, etc.) can access the compositor.
         # Then run each preferences.autostart entry as an exec command.
         startup =
           [
@@ -234,11 +241,6 @@
           config.preferences.monitors
         );
       };
-
-      # Per-app window rules (floating dialogs, sizing overrides)
-      extraConfig = ''
-        for_window [app_id="clipse"] floating enable, move position center, resize set 80ppt 80ppt
-      '';
     };
 
     # Sway companion utilities — clipboard, screenshots, launcher, media keys
@@ -247,7 +249,6 @@
       grim
       slurp
       flameshot
-      wofi
       playerctl
       brightnessctl
     ];

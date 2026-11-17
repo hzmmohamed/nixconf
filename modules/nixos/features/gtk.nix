@@ -16,6 +16,10 @@
           settings."org/gnome/desktop/interface" = {
             gtk-theme = lightTheme;
             color-scheme = "prefer-light";
+            # libadwaita (GTK4) apps ignore gtk-theme; they follow
+            # color-scheme (switched by darkman) and this accent. "blue" is
+            # the closest libadwaita accent to catppuccin lavender.
+            accent-color = "blue";
           };
         }
       ];

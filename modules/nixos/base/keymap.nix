@@ -18,7 +18,7 @@
           # super + a and b and c keychord
           "SUPER + a" = {
             "b"."c" = {
-              exec = "pcmanfm";
+              exec = "thunar";
             };
           };
           # a
@@ -27,7 +27,7 @@
           };
           # a
           "a" = {
-            exec = "pcmanfm";
+            exec = "thunar";
           };
         };
       };

@@ -9,6 +9,10 @@
     home-manager.users.${user}.programs.chromium = {
       enable = true;
       package = pkgs.ungoogled-chromium;
+      # Under Sway (XDG_CURRENT_DESKTOP=sway) Chromium has to guess the
+      # password store; pin it to the gnome-keyring Secret Service, where the
+      # existing "Chromium Safe Storage" key (login collection) lives.
+      commandLineArgs = ["--password-store=gnome-libsecret"];
       extensions = [
         {id = "nngceckbapebfimnlniiiahkandclblb";} # Bitwarden
         {id = "chphlpgkkbolifaimnlloiipkdnihall";} # OneTab

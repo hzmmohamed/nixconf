@@ -14,8 +14,20 @@
 
     environment.systemPackages = [
       selfpkgs.terminal
-      pkgs.pcmanfm
+      pkgs.file-roller # archive manager used by thunar-archive-plugin
     ];
+
+    # File manager: Thunar (GTK3, follows the catppuccin GTK theme).
+    # No search/indexing plugins here — file search lives in the launcher.
+    programs.thunar = {
+      enable = true;
+      plugins = with pkgs; [
+        thunar-archive-plugin
+        thunar-volman
+      ];
+    };
+    services.gvfs.enable = true; # trash, removable/network mounts
+    services.tumbler.enable = true; # thumbnails
 
     fonts.packages = with pkgs; [
       nerd-fonts.jetbrains-mono

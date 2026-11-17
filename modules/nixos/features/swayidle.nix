@@ -23,6 +23,9 @@
     ];
 
     home-manager.users.${user}.programs.swaylock = {
+      # Without enable, no ~/.config/swaylock/config is written and swaylock
+      # falls back to its default plain white screen.
+      enable = true;
       package = pkgs.swaylock-effects;
       settings = {
         font = self.fonts.monospace;
