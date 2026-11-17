@@ -18,6 +18,16 @@
         "60-butternut-sink-priorities" = {
           "monitor.alsa.rules" = [
             {
+              # Intel HDA only carries display audio (HDMI/DP); no monitor here
+              # has speakers, only an occasional TV. Use the normal HDMI profile
+              # (one "HDMI" output) instead of Pro Audio's four raw outputs.
+              matches = [{"device.name" = "alsa_card.pci-0000_00_1f.3";}];
+              actions.update-props = {
+                "device.profile" = "output:hdmi-stereo";
+                "api.acp.auto-profile" = false;
+              };
+            }
+            {
               matches = [{"node.name" = "~alsa_output.pci-0000_00_1f.3.*";}];
               actions.update-props."priority.session" = 500;
             }
