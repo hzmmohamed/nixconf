@@ -99,7 +99,10 @@ in {
 
           # 3. Copy the closure (substitutes on the target are not used: the
           #    cable is usually faster than the target's internet).
-          nix copy --to "ssh-ng://$user@$target" "$system" || die "nix copy failed"
+          #    Local builds are unsigned: --no-check-sigs (only honoured for a
+          #    trusted user on the target, i.e. wheel; nix copy otherwise asks
+          #    the target to check signatures even then).
+          nix copy --no-check-sigs --to "ssh-ng://$user@$target" "$system" || die "nix copy failed"
         fi
 
         # Arguments are store paths/fixed words, so client-side expansion is intended.
