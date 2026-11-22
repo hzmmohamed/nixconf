@@ -398,6 +398,53 @@ class NxCliTests(unittest.TestCase):
         self.assertIn("nx: fetching openssl (312 MiB download)", result.stderr)
         self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
 
+    def test_fetching_line_omits_size_when_zero(self):
+        # No download at all (e.g. everything's already substituted):
+        # the "fetching" line itself is still printed, just with no
+        # parenthetical — "omitted when 0" is about the size, not the
+        # whole line.
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "unmetered", "connection": "home", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl\n", result.stderr)
+        self.assertNotIn("nx: fetching openssl (", result.stderr)
+
+    def test_fetching_line_rounds_small_download_up(self):
+        # 300 KiB ~= 0.29 MiB: nonzero, but rounds to 0 MiB if displayed
+        # naively. Shown as "<1 MiB" instead of "(0 MiB download)".
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (300.0 KiB download, 1 MiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "unmetered", "connection": "home", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl (<1 MiB download)", result.stderr)
+
     def test_agent_net_missing(self):
         write_fake_nix(
             self.fake.bin_dir / "nix",

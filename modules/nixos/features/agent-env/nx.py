@@ -37,6 +37,7 @@ Resolution order for `nx PROG`:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -230,7 +231,16 @@ def _gate_and_run(label: str, download_mib: float, build_names: list, run_fn):
             )
             sys.exit(3)
 
-    if download_mib > 0:
+    # The line itself is never omitted; only the size parenthetical is
+    # ("omitted when 0" is about the size, not the whole line): a raw
+    # download of exactly 0 drops the parenthetical entirely, a nonzero
+    # download under 0.5 MiB (which would otherwise round to "0 MiB") is
+    # shown as "<1 MiB", and everything else rounds to the nearest MiB.
+    if download_mib <= 0:
+        print(f"nx: fetching {label}", file=sys.stderr)
+    elif download_mib < 0.5:
+        print(f"nx: fetching {label} (<1 MiB download)", file=sys.stderr)
+    else:
         print(
             f"nx: fetching {label} ({round(download_mib)} MiB download)",
             file=sys.stderr,
@@ -243,8 +253,6 @@ def _run_normal(prog: str, args: list, p_attr, exact: bool) -> int:
     outpath = None
 
     if p_attr is None:
-        import shutil
-
         path_hit = shutil.which(prog)
         if path_hit:
             os.execvp(path_hit, [prog, *args])
