@@ -27,6 +27,8 @@ import nixconf.phone.profile.Profile
 import nixconf.phone.profile.ProfileStore
 import nixconf.phone.session.DictationSession
 import nixconf.phone.session.SessionState
+import nixconf.phone.update.Updater
+import nixconf.phone.update.installApk
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -79,6 +81,8 @@ class AppServices private constructor(context: Context) {
         probe = { whisper.probe(it) },
         scope = scope,
     )
+
+    val updater = Updater(http, File(context.cacheDir, "updates")) { installApk(context, it) }
 
     private val mutablePending = MutableStateFlow<List<Draft>>(emptyList())
 

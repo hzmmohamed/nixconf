@@ -6,6 +6,8 @@
 #   phone-app test [--force] [-- <gradle args>]
 #   phone-app install | publish
 #
+# Release key and passwords live in ~/.config/phone-app/ (never in git);
+# `publish` writes into /var/lib/phone-profile/, served by dictation-server.
 # Logic and docs: phone-app.sh next to this file.
 {lib, ...}: {
   perSystem = {pkgs, ...}: let
@@ -29,7 +31,7 @@
   in {
     packages.phone-app = pkgs.writeShellApplication {
       name = "phone-app";
-      runtimeInputs = with pkgs; [gradle git coreutils];
+      runtimeInputs = with pkgs; [gradle git coreutils gnused jq];
       text =
         ''
           android_home=${q sdk}
@@ -37,6 +39,7 @@
           # Maven's aapt2 is linked for an FHS system; use the SDK's.
           aapt2=${q "${sdk}/build-tools/${buildToolsVersion}/aapt2"}
           sherpa_aar=${q sherpaAar}
+          adb=${q "${sdk}/platform-tools/adb"}
         ''
         + builtins.readFile ./phone-app.sh;
     };

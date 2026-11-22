@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -15,10 +17,41 @@ android {
         applicationId = "nixconf.phone"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "dev"
+        // `phone-app build` passes git's commit count and short rev.
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("versionName").orNull ?: "dev"
         ndk { abiFilters += "arm64-v8a" }
     }
+
+    // Release key outside git: -PreleaseStoreFile=<jks> and
+    // -PsigningProperties=<file with storePassword, keyAlias, keyPassword>
+    // (a file, so the passwords never show up in a command line).
+    val releaseStore = providers.gradleProperty("releaseStoreFile").orNull
+    val signingProps = providers.gradleProperty("signingProperties").orNull?.let { path ->
+        Properties().apply { file(path).inputStream().use { load(it) } }
+    }
+    signingConfigs {
+        if (releaseStore != null && signingProps != null) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+            // sherpa-onnx is reached through JNI: no shrinking.
+            isMinifyEnabled = false
+        }
+    }
+
+    // Release lint would fetch its own toolchain from Maven; tests and the
+    // phone check are what gate this app.
+    lint { checkReleaseBuilds = false }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

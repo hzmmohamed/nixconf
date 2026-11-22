@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,20 +43,23 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import nixconf.phone.AppServices
 import nixconf.phone.ModelStatus
 import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.Draft
 import nixconf.phone.ime.draftEngineLabel
 import nixconf.phone.profile.Profile
+import nixconf.phone.update.AppRelease
 
 /**
  * The app screen: microphone permission (the keyboard cannot ask), enabling
  * the keyboard, the profile URL and a server test, the on-phone model, and
- * the pending drafts (retry, copy, share the audio, discard).
+ * the pending drafts (retry, copy, share the audio, discard), and app updates.
  */
 class MainActivity : ComponentActivity() {
     private lateinit var app: AppServices
@@ -87,6 +92,7 @@ class MainActivity : ComponentActivity() {
                 item { KeyboardSection() }
                 item { ProfileSection(profile) }
                 item { ModelSection(model) }
+                profile?.appUrl?.let { item { UpdateSection(it) } }
                 drafts(pending)
                 item { Text("", Modifier.padding(bottom = 24.dp)) }
             }
@@ -181,6 +187,46 @@ class MainActivity : ComponentActivity() {
                 val total = status.total.coerceAtLeast(1)
                 LinearProgressIndicator(progress = { status.done.toFloat() / total }, modifier = Modifier.fillMaxWidth())
             }
+        }
+    }
+
+    // app.json (written by `phone-app publish`) offers a newer build; the
+    // system installer asks the user to confirm.
+    @Composable
+    private fun UpdateSection(appUrl: String) {
+        val scope = rememberCoroutineScope()
+        val current = remember { packageManager.getPackageInfo(packageName, 0) }
+        var release by remember { mutableStateOf<AppRelease?>(null) }
+        var status by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(appUrl) {
+            release = try {
+                app.updater.check(appUrl, current.longVersionCode.toInt())
+            } catch (e: java.io.IOException) {
+                null
+            }
+        }
+        val r = release ?: return
+        Section("Update available") {
+            Text("${current.versionName} → ${r.versionName}")
+            Button(enabled = status == null, onClick = {
+                if (!packageManager.canRequestPackageInstalls()) {
+                    startActivity(
+                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
+                    )
+                    return@Button
+                }
+                status = "Downloading…"
+                scope.launch {
+                    status = try {
+                        val apk = app.updater.downloadVerified(r)
+                        withContext(Dispatchers.IO) { app.updater.install(apk) }
+                        null
+                    } catch (e: java.io.IOException) {
+                        "Update failed: ${e.message}"
+                    }
+                }
+            }) { Text("Update") }
+            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 
