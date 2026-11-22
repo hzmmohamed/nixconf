@@ -18,10 +18,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Response
 
+// What the dictation session needs from a server (a fake in its tests).
+fun interface RemoteTranscriber {
+    suspend fun transcribe(url: String, wav: File, language: String, prompt: String): String
+}
+
 // whisper.cpp's server as run by dictation-server: `GET /` is the readiness
 // probe (and starts the socket-activated server), `POST /inference` takes a
 // 16 kHz mono WAV and answers {"text": …}.
-class WhisperClient(private val http: OkHttpClient) {
+class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
     suspend fun probe(url: String, timeoutMs: Long = 1500): Boolean {
         val client = http.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
         val request = Request.Builder().url(endpoint(url, "")).build()
@@ -33,7 +38,7 @@ class WhisperClient(private val http: OkHttpClient) {
     }
 
     /** The raw transcript; throws [IOException] on a non-2xx answer or one without `text`. */
-    suspend fun transcribe(url: String, wav: File, language: String, prompt: String): String {
+    override suspend fun transcribe(url: String, wav: File, language: String, prompt: String): String {
         val client = http.newBuilder()
             .readTimeout(TIMEOUT_S, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
