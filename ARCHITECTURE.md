@@ -39,7 +39,9 @@ config. Hosts compose both.
 | `theme.nix` | `flake.palettes`, `flake.fonts`, `flake.color`, `flake.theme`, `flake.catppuccin`, `flake.catppuccinMocha` | Palettes (Catppuccin Latte/Mocha `{light,dark}` consumed via `preferences.theme.palette`; legacy Gruvbox `theme` for the niri wrappers) and fonts. |
 | `flake-parts.nix` | systems (x86_64-linux), options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
 | `devshell.nix` | `perSystem.devShells.default`, treefmt | devenv shell (`nix develop --impure`) with nix tooling, sops, age, just, claude-code; alejandra + deadnix git hooks. |
-| `checks.nix` | `perSystem.checks.<host>-eval` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent). |
+| `checks.nix` | `perSystem.checks.<host>-eval`, `design-contrast`, `phone-profile` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent); palette contrast contract; butternut's phone profile against the app's `Profile.kt`. |
+| `dictation-models.nix` | `flake.dictationModels` | `pkgs -> { parakeet; parakeetArchive; whisperSmall; sileroVadOnnx; }`: dictation model pins shared by the laptops and the phone profile (`dictation.nix` still carries identical copies until it is rewired). |
+| `dictation-vocabulary.nix` | `flake.dictationVocabulary` | Fleet vocabulary for the Whisper prompt (phone profile; desktop clients later). |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -91,6 +93,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `shared-zotero` | Zotero + Syncthing folders + sops secrets (see below) | |
 | `rbw` | Bitwarden CLI (rbw) with pinentry (kept during the move to `vault`) | |
 | `vault` | KeePassXC vault in a Syncthing folder (`~/Vault`) shared with phone/hosts; KeePassXC GUI + config on desktops, folder only on headless hosts (`preferences.vault.*`) | |
+| `github` | `gh` (HM `programs.gh`, `git_protocol: ssh`) + `/etc/gitconfig` credential helper for HTTPS github.com; per-host device-flow login, token kept by gh (keyring, or `hosts.yml` with `preferences.github.tokenInFile`: headless + butternut), nothing in sops; non-blocking browser launcher. Prompts: fish `gh` auto-login (TTY only), desktop notification at session start, shell reminder on `tokenInFile` hosts | |
 | `office` | Obsidian, LibreOffice, Typst, Element Desktop, zathura | |
 | `docker` | Docker daemon + compose + lazydocker + dive | |
 | `media` | MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl | |
@@ -116,6 +119,8 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
 | `agent-common` (`agent-env.nix` part) | Network-aware agent tooling: `agent-net` (metered/unmetered/offline from NetworkManager, override via `agent-net set`; Claude SessionStart/UserPromptSubmit hooks), `nx` (store-first tool runner that refuses big downloads/builds on metered links), `agent-devshell` (starts T3's Claude/OpenCode inside the project's cached direnv dev shell, never fails closed), shared guidelines at `~/.config/agents/guidelines.md` (Claude `CLAUDE.md` import line, OpenCode `instructions`). Options: `preferences.agents.claudeHooks` (extra Claude Code hook commands per event, appended to the built-in ones), `preferences.agents.guidelinesFile` (read-only store path). Unit tests run as `checks.agent-env` | |
 | `cable-link` | Ethernet between the laptops: `lan` (DHCP) falls through to a static `cable` link; manual `<me>-shares`/`<peer>-shares` internet sharing. `preferences.cable.peerSharesMetered` marks `<peer>-shares` metered (NM `metered=1`) so `agent-net` sees a carried peer's hotspot | |
+| `dictation` | Push-to-talk dictation (`dictate`, Mod4+d): first reachable whisper server, else Parakeet/Whisper small on the CPU; drafts, overlay | |
+| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`; every URL uses the MagicDNS FQDN, `phone.url` = `http://<host>.<self.tailnet.domain>:8180`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -240,6 +245,25 @@ preferences.zotero.sharing = false;
 
 This pattern can be reused for other shared resources that need per-host
 secrets and syncthing folders.
+
+### `apps/phone/` — Android companion app
+
+"Nixconf" (`nixconf.phone`): a dictation keyboard (IME) for the phone. Records
+to crash-safe WAV drafts, sends them to the first reachable `servers` entry of
+the phone profile (butternut's whisper server over the tailnet), falls back to
+Parakeet int8 on the phone (sherpa-onnx; files and hashes from the profile),
+and only types into the field the dictation started in (else the draft stays
+pending on the panel). Single Gradle module, Kotlin + Compose; pure logic
+(profile, engine choice, WAV, drafts, session) is JVM-tested.
+
+Built on butternut with `nix run .#phone-app -- build [--release] | test |
+install | publish` (`modules/packages/phone-app.{nix,sh}`: nixpkgs Gradle +
+an `androidenv` SDK, refuses on hosts that offload builds). The app's default
+profile URL is built in from flake data (`-PprofileUrl` → `BuildConfig.PROFILE_URL`:
+`phone.url` of the host with `dictation-server.phone.enable`). `publish` copies
+the release APK to `/var/lib/phone-profile/app/` and writes `app.json`, which
+the app's in-app update reads. The release key lives in
+`~/.config/phone-app/` (never in git).
 
 ### `scripts/` — deployment automation
 

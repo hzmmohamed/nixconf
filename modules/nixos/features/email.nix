@@ -15,16 +15,20 @@
         pkgs.libsecret
         pkgs.gnome-keyring
         pkgs.xdg-utils
+        pkgs.util-linux
         pkgs.python3
       ]}:$PATH"
 
-            # Provider configs
-            GOOGLE_CLIENT_ID="903830131492-crpilk15k0n1q5h0c3gl94rcj5co4533.apps.googleusercontent.com"
-            GOOGLE_CLIENT_SECRET=""
+            # Provider configs: Thunderbird's built-in OAuth clients
+            # (mailnews/base/src/OAuth2Providers.sys.mjs in comm-central). An
+            # installed app can't keep a secret; Mozilla publishes this one.
+            GOOGLE_CLIENT_ID="406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com"
+            GOOGLE_CLIENT_SECRET="kSmqreRr0qwBWJgbf5Y-PjSU"
             GOOGLE_AUTH_URL="https://accounts.google.com/o/oauth2/v2/auth"
             GOOGLE_TOKEN_URL="https://oauth2.googleapis.com/token"
             GOOGLE_SCOPE="https://mail.google.com/"
-            GOOGLE_REDIRECT_URI="http://localhost:8089"
+            # Desktop-app loopback redirect (any port); the callback listener binds 127.0.0.1.
+            GOOGLE_REDIRECT_URI="http://127.0.0.1:8089"
 
             MS_CLIENT_ID="9e5f94bc-e8a4-4e73-b8be-63364c29d753"
             MS_AUTH_URL="https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -63,7 +67,9 @@
 
               echo "Opening browser for $account ($provider) authorization..."
               echo "If browser doesn't open, visit: $auth_link"
-              xdg-open "$auth_link" 2>/dev/null || true
+              # Detached: when the browser isn't running yet, xdg-open waits for
+              # it to exit, and the callback listener below would never start.
+              setsid -f xdg-open "$auth_link" >/dev/null 2>&1 || true
 
               echo "Waiting for OAuth2 callback on localhost:8089..."
               local code
@@ -175,30 +181,91 @@
             esac
     '';
 
-    # ── Unread counts for the desktop bar ──────────────────────────────────
+    # ── Unread counts + new-mail notifications for the desktop bar ────────
     # One IMAP `STATUS INBOX (UNSEEN)` per account, written to
-    # $XDG_RUNTIME_DIR/mail-unread/<account>.count. Runs only when imapnotify
-    # reports new mail, on a slow 5-minute timer (to catch mail read elsewhere),
-    # or on demand (bar click). `mail-unread-status` (modules/packages) reads it.
+    # $XDG_RUNTIME_DIR/mail-unread/<account>.count. Runs when imapnotify
+    # reports new mail, on a 5-minute timer (to catch mail read elsewhere), or
+    # on demand (bar right click). When a count rises it notifies with the
+    # sender and subject of the newest unseen message; the first refresh of a
+    # session (no previous count) is silent. `mail-unread-status`
+    # (modules/packages) reads the counts.
     mailAccounts =
       lib.filterAttrs (_: a: a.imapnotify.enable)
       config.home-manager.users.${user}.accounts.email.accounts;
 
+    # Decode From/Subject out of an IMAP FETCH response (RFC 2047 words, folded
+    # lines). Prints "<from>\t<subject>", or nothing.
+    mailHeaders = pkgs.writeText "mail-headers.py" ''
+      import sys, email, email.utils
+      from email.header import decode_header, make_header
+      raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+      body = raw.split("\n", 1)[1] if raw.startswith("*") else raw
+      msg = email.message_from_string(body)
+      def get(k):
+          v = msg.get(k)
+          if not v:
+              return ""
+          try:
+              v = str(make_header(decode_header(v)))
+          except Exception:
+              pass
+          return " ".join(v.split())
+      frm = get("From")
+      name, addr = email.utils.parseaddr(frm)
+      if name or addr or get("Subject"):
+          print((name or addr or frm) + "\t" + get("Subject"))
+    '';
+
     mailUnreadRefresh = pkgs.writeShellApplication {
       name = "mail-unread-refresh";
-      runtimeInputs = [pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.systemd];
+      runtimeInputs = [pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.systemd pkgs.util-linux pkgs.libnotify pkgs.python3];
       text = ''
         dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mail-unread"
         mkdir -p "$dir"
+        # imapnotify and the timer can fire together: one refresh at a time,
+        # so a rise is only ever notified once.
+        exec 9>"$dir/.lock"
+        flock 9
+
+        # notify <account> <imap-url> <login> <token> <new-count>
+        notify() {
+          local search uid info from subject title body
+          search=$(curl -sS --max-time 20 --url "$2/INBOX" --user "$3" \
+            --oauth2-bearer "$4" --request 'UID SEARCH UNSEEN' 2>/dev/null) || search=""
+          uid=$(grep -o '^\* SEARCH[ 0-9]*' <<<"$search" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n1) || uid=""
+          info=""
+          if [ -n "$uid" ]; then
+            # BODY.PEEK: reading the headers must not mark the message seen.
+            info=$(curl -sS --max-time 20 --url "$2/INBOX" --user "$3" --oauth2-bearer "$4" \
+              --request "UID FETCH $uid (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])" 2>/dev/null \
+              | python3 ${mailHeaders}) || info=""
+          fi
+          title="''${1^}"
+          if [ -n "$info" ]; then
+            from=''${info%%$'\t'*}
+            subject=''${info#*$'\t'}
+            title+=" · $from"
+            body="''${subject:-(no subject)}"
+            [ "$5" -gt 1 ] && body+=$'\n'"+$(($5 - 1)) more"
+          else
+            body="$5 new message$([ "$5" -gt 1 ] && echo s)"
+          fi
+          notify-send -a Mail -i mail-unread "$title" "$body" || true
+        }
 
         # refresh <account> <imap-host> <imap-port> <login>
         refresh() {
-          local token out n
+          local token out n prev url
+          url="imaps://$2:$3"
           token=$(${emailOauth2}/bin/email-oauth2 "$1" 2>/dev/null) || return 0
-          out=$(curl -sS --max-time 20 --url "imaps://$2:$3/" --user "$4" \
+          out=$(curl -sS --max-time 20 --url "$url/" --user "$4" \
             --oauth2-bearer "$token" --request 'STATUS INBOX (UNSEEN)' 2>/dev/null) || return 0
           n=$(grep -o 'UNSEEN [0-9]*' <<<"$out" | grep -o '[0-9]*$') || return 0
+          prev=$(head -n1 "$dir/$1.count" 2>/dev/null || true)
           printf '%s\n' "$n" >"$dir/$1.count.tmp" && mv "$dir/$1.count.tmp" "$dir/$1.count"
+          if [[ "$prev" =~ ^[0-9]+$ ]] && [ "$n" -gt "$prev" ]; then
+            notify "$1" "$url" "$4" "$token" "$((n - prev))"
+          fi
         }
 
         target="''${1:-all}"
@@ -213,13 +280,69 @@
       '';
     };
 
-    # imapnotify hook: desktop notification + count refresh for one account.
-    mailNotify = pkgs.writeShellScript "mail-notify" ''
-      ${pkgs.libnotify}/bin/notify-send 'New Email' "New message in $1"
-      exec ${lib.getExe mailUnreadRefresh} "$1"
-    '';
+    # Webmail per account, from its home-manager flavor.
+    webmail = a:
+      {
+        "gmail.com" = {
+          label = "Gmail";
+          url = "https://mail.google.com/mail/u/${a.address}/";
+        };
+        "outlook.office365.com" = {
+          label = "Outlook";
+          url = "https://outlook.office.com/mail/";
+        };
+      }.${
+        a.flavor
+      } or null;
+
+    thunderbird = lib.getExe config.home-manager.users.${user}.programs.thunderbird.package;
+
+    # mail-menu — the bar widget's left click: Thunderbird, each account's
+    # webmail (with its unread count), refresh.
+    #   MAIL_MENU_LAUNCHER  dmenu command (stdin options → selection on stdout)
+    #                       default: vicinae dmenu -p Mail --no-quick-look
+    mailMenu = pkgs.writeShellApplication {
+      name = "mail-menu";
+      runtimeInputs = [pkgs.coreutils pkgs.xdg-utils pkgs.util-linux];
+      text = ''
+        read -ra launcher <<<"''${MAIL_MENU_LAUNCHER:-vicinae dmenu -p Mail --no-quick-look}"
+        dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mail-unread"
+        count() {
+          local n
+          n=$(head -n1 "$dir/$1.count" 2>/dev/null || true)
+          [[ "$n" =~ ^[0-9]+$ ]] && printf ' (%s)' "$n"
+          return 0
+        }
+
+        choice=$(
+          {
+            echo "Thunderbird"
+            ${lib.concatStrings (lib.mapAttrsToList (name: a: let
+          w = webmail a;
+        in
+          lib.optionalString (w != null) ''
+            echo "${w.label} — ${name}$(count ${lib.escapeShellArg name})"
+          '')
+        mailAccounts)}
+            echo "Refresh counts"
+          } | "''${launcher[@]}"
+        ) || exit 0
+
+        case "$choice" in
+          Thunderbird) setsid -f ${thunderbird} >/dev/null 2>&1 ;;
+          "Refresh counts") exec ${lib.getExe mailUnreadRefresh} ;;
+          ${lib.concatStrings (lib.mapAttrsToList (name: a: let
+          w = webmail a;
+        in
+          lib.optionalString (w != null) ''
+            ${lib.escapeShellArg "${w.label} — ${name}"}*) setsid -f xdg-open ${lib.escapeShellArg w.url} >/dev/null 2>&1 ;;
+          '')
+        mailAccounts)}
+        esac
+      '';
+    };
   in {
-    environment.systemPackages = [emailOauth2 mailUnreadRefresh];
+    environment.systemPackages = [emailOauth2 mailUnreadRefresh mailMenu];
 
     # gnome-keyring as secret-service provider for OAuth2 tokens and VS Code secrets
     services.gnome.gnome-keyring.enable = true;
@@ -335,7 +458,7 @@
           imapnotify = {
             enable = true;
             boxes = ["INBOX"];
-            onNotify = "${mailNotify} personal";
+            onNotify = "${lib.getExe mailUnreadRefresh} personal";
           };
         };
 
@@ -369,7 +492,7 @@
           imapnotify = {
             enable = true;
             boxes = ["INBOX"];
-            onNotify = "${mailNotify} work";
+            onNotify = "${lib.getExe mailUnreadRefresh} work";
           };
         };
       };

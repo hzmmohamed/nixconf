@@ -62,6 +62,8 @@
       self.nixosModules.doas
       self.nixosModules.reticulum
       self.nixosModules.kdeconnect
+      # On AC always, but a laptop: alerts during a power cut.
+      self.nixosModules.battery-notify
       self.nixosModules.dictation
       self.nixosModules.dictation-server
       self.nixosModules.openrgb
@@ -119,11 +121,16 @@
     # Desktop shell: "waybar" (waybar + swaync) or "noctalia" (Noctalia v5).
     preferences.desktopShell = "waybar";
 
+    # Battery status for hazel's watcher (café: headless, unplugged).
+    preferences.batteryAlert.serve.enable = true;
+
     # Dictation (Mod4+d): Whisper large-v3-turbo on the RTX 3050 (Vulkan,
     # loaded on demand, unloaded after 15 min), also serving hazel over the
     # cable/tailnet; Parakeet on the CPU if the server is down.
     preferences.dictation.servers = ["http://127.0.0.1:8178"];
     preferences.dictation-server.vulkanDriverFiles = "/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json";
+    # The phone's profile, Parakeet files and APKs (Nixconf app, apps/phone/).
+    preferences.dictation-server.phone.enable = true;
 
     # Auto-place apps on fixed workspaces (2 files/office, 3 audio, 4 browser,
     # 5 editor, 6 QGIS) — see modules/nixos/features/sway-workspaces.nix.

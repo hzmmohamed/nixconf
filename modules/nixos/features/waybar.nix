@@ -27,7 +27,45 @@
     netModules = networkManager && netUi != null;
     # swayidle feature (caffeine), when imported.
     idle = lib.attrByPath ["preferences" "idle"] null config;
+    # battery-notify feature (alert tiers), when imported.
+    alert = lib.attrByPath ["preferences" "batteryAlert"] {} config;
     terminal = lib.getExe selfpkgs.terminal;
+
+    # Keyboard layout (preferences.keyboard). Not waybar's sway/language: it
+    # shows whichever keyboard sent the last input event, and virtual
+    # keyboards (wtype, KDE Connect, ...) carry no layout name, so it went
+    # blank after login until the next toggle. This reads the first keyboard
+    # with the full layout list, on every sway input event.
+    kb = config.preferences.keyboard;
+    layoutLabels = {
+      us = "EN";
+      ara = "ع";
+    };
+    layoutStatus = pkgs.writeShellApplication {
+      name = "sway-layout-status";
+      runtimeInputs = [pkgs.sway pkgs.jq];
+      text = ''
+        set +e
+        emit() {
+          swaymsg -t get_inputs -r 2>/dev/null | jq -c --unbuffered \
+            --argjson layouts '${builtins.toJSON kb.layouts}' \
+            --argjson labels '${builtins.toJSON layoutLabels}' '
+            [.[] | select(.type == "keyboard" and ((.xkb_layout_names // []) | length) > 1)][0] as $k
+            | if $k == null then {text: "", class: "none"}
+              else ($layouts[$k.xkb_active_layout_index] // "") as $code
+                | {text: ($labels[$code] // ($code | ascii_upcase)),
+                   tooltip: ($k.xkb_active_layout_name // ""),
+                   class: $code, alt: $code}
+              end'
+        }
+        # Re-subscribe if sway restarts or the socket is not up yet.
+        while true; do
+          emit
+          swaymsg -m -r -t subscribe '["input"]' 2>/dev/null | while read -r _; do emit; done
+          sleep 1
+        done
+      '';
+    };
 
     # Agent inbox (T3 Code): the configured client URL, else the local server.
     t3code = lib.attrByPath ["preferences" "agents" "t3code"] {} config;
@@ -44,7 +82,10 @@
     glyphFont = d.type.family.glyph;
     glyphSize = d.type.size.glyph;
     px = n: "${toString n}px";
-    value = s: "<span size='${px d.type.size.caption}'>${s}</span>";
+    # Pango markup has no px unit: size is in 1024ths of a point, and a CSS
+    # px is 0.75 pt (96 dpi), so px × 768. A "11px" made Pango reject the
+    # whole label (empty module).
+    value = s: "<span size='${toString (d.type.size.caption * 768)}'>${s}</span>";
 
     # Signal the running waybar (main process only — never its module children).
     waybarSignal = sig: "systemctl --user kill --kill-whom=main -s ${sig} waybar.service";
@@ -68,6 +109,7 @@
       @define-color accent-text ${p.accentText};
       @define-color focus ${p.focus};
       @define-color error ${p.error};
+      @define-color on-error ${p.onError};
       @define-color warning ${p.warning};
       @define-color success ${p.success};
     '';
@@ -104,7 +146,7 @@
       include = ["${theme.stateDir}/current/waybar-calendar.json"];
 
       modules-left =
-        ["clock" "sway/language" "custom/notification"]
+        ["clock" "custom/language" "custom/notification"]
         ++ lib.optional (idle != null) "custom/caffeine"
         ++ ["custom/mail" "mpris"];
       modules-center = ["custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
@@ -127,7 +169,7 @@
       "custom/agents" = {
         exec = "${lib.getExe selfpkgs.agent-status} busy";
         return-type = "json";
-        format = "{icon}\n${value "{}"}";
+        format = "{icon}\n${value "{text}"}";
         format-icons = {
           working = "󰝲";
           done = "󰄬";
@@ -199,15 +241,13 @@
         interval = 5;
       };
 
-      # Keyboard layout (preferences.keyboard): short label, click cycles.
-      "sway/language" = {
-        format = "{short}";
-        format-en = "EN";
-        format-us = "EN";
-        format-ar = "ع";
-        format-ara = "ع";
-        hide-single-layout = true;
-        tooltip-format = "{long}";
+      # Keyboard layout: short label (EN / ع), click cycles. Event-driven
+      # (sway-layout-status above); hidden with a single layout.
+      "custom/language" = {
+        exec = lib.getExe layoutStatus;
+        return-type = "json";
+        hide-empty-text = true;
+        escape = true;
         on-click = "swaymsg input type:keyboard xkb_switch_layout next";
       };
 
@@ -264,17 +304,18 @@
         on-click-right = "${idle.caffeineCommand} menu";
       };
 
-      # Unread mail: local file read; refreshed by imapnotify / 5-min timer,
-      # which nudge this module via SIGRTMIN+9.
+      # Mail: per-account unread counts (local file read; refreshed by
+      # imapnotify / 5-min timer, which nudge this module via SIGRTMIN+9).
+      # Always shown: left click is the mail menu (Thunderbird / webmail).
       "custom/mail" = {
-        exec = lib.getExe selfpkgs.mail-unread-status;
+        exec = "${lib.getExe selfpkgs.mail-unread-status} --markup";
         return-type = "json";
         format = "󰇮\n${value "{}"}";
         justify = "center";
-        hide-empty-text = true; # no unread mail = hidden
         interval = 120;
         signal = 9;
-        on-click = "${pkgs.thunderbird}/bin/thunderbird";
+        on-click = "mail-menu";
+        on-click-middle = "${pkgs.thunderbird}/bin/thunderbird";
         on-click-right = "mail-unread-refresh";
       };
 
@@ -464,25 +505,32 @@
         spacing = d.bar.traySpacing;
       };
 
-      # Battery: only while discharging or low — hidden on AC (butternut is
-      # always plugged in; hazel when docked).
+      # Battery: always shown, level glyph + percent. On battery the glyph
+      # tracks the level (warning / error colour at the low / warning alert
+      # tiers, inverted at critical); charging: bolt, accent; on AC and not
+      # charging (full, charge limit): plug, faint. Thresholds follow
+      # preferences.batteryAlert (battery-notify) when imported, whose
+      # daemon also binds left click (silence the alarm).
       battery = {
-        interval = 60;
+        interval = 30;
         states = {
-          warning = 30;
-          critical = 15;
+          warning = alert.low or 20;
+          critical = alert.warning or 10;
+          alarm = alert.critical or 7;
         };
-        format = "";
-        format-warning = "{icon}\n${value "{capacity}"}";
-        format-critical = "{icon}\n${value "{capacity}"}";
-        format-discharging = "{icon}\n${value "{capacity}"}";
-        format-charging = "";
-        format-plugged = "";
-        format-full = "";
-        format-not-charging = "";
-        format-icons = ["󰁻" "󰁼" "󰁾" "󰂀" "󰂂" "󰁹"];
+        format = "{icon}\n${value "{capacity}"}";
+        format-charging = "󰂄\n${value "{capacity}"}";
+        format-plugged = "󰚥\n${value "{capacity}"}";
+        format-full = "󰚥\n${value "{capacity}"}";
+        format-not-charging = "󰚥\n${value "{capacity}"}";
+        format-icons = ["󰂎" "󰁺" "󰁻" "󰁼" "󰁽" "󰁾" "󰁿" "󰂀" "󰂁" "󰂂" "󰁹"];
         justify = "center";
-        tooltip-format = "{timeTo} · {power:0.1f} W";
+        tooltip-format = "{capacity}% · {timeTo}";
+        tooltip-format-discharging = "{capacity}% · {timeTo} · {power:0.1f} W";
+        tooltip-format-charging = "Charging · {capacity}% · {timeTo}";
+        tooltip-format-plugged = "On AC · {capacity}%";
+        tooltip-format-full = "On AC · full";
+        tooltip-format-not-charging = "On AC · {capacity}% (not charging)";
       };
     };
 
@@ -524,7 +572,7 @@
       /* One vertical rhythm (design tokens `bar`): every item is the same
          box (glyph + itemPaddingY above/below, itemMarginY between), glyphs
          centred, values in the same box underneath. */
-      #clock, #language, #custom-notification, #custom-mail, #mpris, #custom-sync,
+      #clock, #custom-language, #custom-notification, #custom-mail, #mpris, #custom-sync,
       #cpu, #memory, #custom-disk, #temperature, #network, #custom-wired, #custom-wifi,
       #custom-tailscale, #wireplumber, #bluetooth,
       #custom-removable, #custom-tray-handle, #tray, #battery, #custom-agents, #custom-agents-input,
@@ -538,14 +586,14 @@
         font-family: "${d.type.family.ui}";
         font-size: ${px (d.type.size.body + 2)};
       }
-      #language {
+      #custom-language {
         color: @fg-muted;
         font-family: "${d.type.family.ui}";
         font-size: ${px d.type.size.body};
       }
       #custom-tray-handle { color: @fg-muted; }
 
-      #clock:hover, #language:hover, #custom-notification:hover, #custom-mail:hover,
+      #clock:hover, #custom-language:hover, #custom-notification:hover, #custom-mail:hover,
       #mpris:hover, #custom-sync:hover, #network:hover, #custom-wired:hover,
       #custom-wifi:hover, #custom-tailscale:hover, #wireplumber:hover,
       #bluetooth:hover, #custom-removable:hover, #custom-tray-handle:hover, #battery:hover,
@@ -560,7 +608,8 @@
       #custom-notification.dnd-notification,
       #custom-notification.dnd-none { color: @fg-faint; }
       #custom-notification.notification,
-      #custom-mail { color: @accent; }
+      #custom-mail.unread { color: @accent; }
+      #custom-mail.none { color: @fg-muted; }
 
       #mpris.paused { color: @fg-faint; }
 
@@ -600,8 +649,12 @@
       #custom-tailscale.stopped { color: @fg-faint; }
       #custom-tailscale.error { color: @warning; }
 
-      #battery.warning { color: @warning; }
-      #battery.critical { color: @error; }
+      #battery { color: @fg; }
+      #battery.charging { color: @accent; }
+      #battery.plugged, #battery.full, #battery.not-charging { color: @fg-faint; }
+      #battery.discharging.warning { color: @warning; }
+      #battery.discharging.critical { color: @error; }
+      #battery.discharging.alarm { color: @on-error; background: @error; }
 
       #tray > .needs-attention { background: @tint; }
 

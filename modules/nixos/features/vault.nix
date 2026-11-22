@@ -3,8 +3,9 @@
 #
 # Phase 1 (this module): the `vault` Syncthing folder (~/Vault) on every host
 # that imports it, plus KeePassXC with a managed config on desktop hosts.
-# KeePassXC is NOT the Secret Service provider yet (FdoSecrets off):
-# gnome-keyring keeps serving email OAuth tokens, Chromium and VSCodium.
+# KeePassXC is deliberately NOT the Secret Service provider (FdoSecrets off):
+# gnome-keyring keeps the machine-local app secrets (email OAuth tokens,
+# Chromium, VSCodium). Why: secrets design, "Secret Service" decision.
 #
 # Owns its infrastructure: the Syncthing folder, extra devices (phone, an
 # optional untrusted cloud peer) and, when such an untrusted peer exists, the
@@ -34,21 +35,36 @@
     trusted = lib.filterAttrs (_: d: !d.untrusted) cfg.extraDevices;
     encryptionPasswordFile = config.sops.secrets."vault/encryption-password".path;
 
-    # Super+p: focus the KeePassXC window, or (re)open it from the tray.
-    # A second `keepassxc` hands over to the running instance, which shows
-    # its main window; sway focuses newly mapped windows.
+    database = "${cfg.path}/${cfg.database}";
+
+    # The main window only: its title is "KeePassXC" or "<tab> - KeePassXC"
+    # (MainWindow::updateWindowTitle). Dialogs share the app_id but not the
+    # title, except the standalone unlock dialog (browser requests), which
+    # the lookahead skips.
+    mainWindow = {
+      app_id = "org.keepassxc.KeePassXC";
+      title = "^(?!Unlock Database - )(.+ - )?KeePassXC$";
+    };
+
+    # Super+p: toggle the KeePassXC scratchpad over the current workspace, or
+    # (re)open it from the tray. A second `keepassxc` hands over to the
+    # running instance, which shows its main window; the sway rule below
+    # floats it and puts it in the scratchpad.
     vaultOpen = pkgs.writeShellApplication {
       name = "vault-open";
       runtimeInputs = [pkgs.sway cfg.package];
       text = ''
-        swaymsg -q '[app_id="org.keepassxc.KeePassXC"] focus' 2>/dev/null || exec keepassxc
+        swaymsg -q '[app_id="${mainWindow.app_id}" title="${mainWindow.title}"] scratchpad show' 2>/dev/null || exec keepassxc ${lib.escapeShellArg database}
       '';
     };
 
+    # Open the database by path: the remembered list (LastOpenedDatabases)
+    # lives in ~/.cache/keepassxc and isn't always there, which left KeePassXC
+    # on its welcome screen and a file dialog.
     vaultAutostart = pkgs.writeShellApplication {
       name = "vault-autostart";
       runtimeInputs = [cfg.package];
-      text = "exec keepassxc --minimized";
+      text = "exec keepassxc --minimized ${lib.escapeShellArg database}";
     };
   in {
     options.preferences.vault = {
@@ -62,6 +78,12 @@
           Synced folder holding the .kdbx database(s). Never put the key
           file in here: it would travel with the database.
         '';
+      };
+
+      database = lib.mkOption {
+        type = lib.types.str;
+        default = "vault.kdbx";
+        description = "Database file inside `path` that KeePassXC opens at login and from Super+p.";
       };
 
       peers = lib.mkOption {
@@ -233,6 +255,8 @@
                 MinimizeToTray = true;
                 MinimizeOnClose = true;
                 MinimizeOnStartup = true;
+                # Ctrl+C/Ctrl+B hide the window again (to the tray).
+                HideWindowOnCopy = true;
               };
               Security = {
                 LockDatabaseIdle = true;
@@ -249,8 +273,8 @@
                 UpdateBinaryPath = false;
               };
               SSHAgent.Enabled = cfg.sshAgent;
-              # Phase 2: KeePassXC as org.freedesktop.secrets, replacing
-              # gnome-keyring. Off until the migration in the design doc.
+              # Not org.freedesktop.secrets: app secrets stay in gnome-keyring
+              # (secrets design, "Secret Service" decision).
               FdoSecrets.Enabled = false;
             };
           };
@@ -262,8 +286,21 @@
 
           home.packages = [vaultOpen];
 
-          wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
-            "Mod4+p" = "exec ${lib.getExe vaultOpen}";
+          wayland.windowManager.sway.config = {
+            keybindings = lib.mkOptionDefault {
+              "Mod4+p" = "exec ${lib.getExe vaultOpen}";
+            };
+            # Never tiled (half a screen truncates the entry table): a large
+            # centred floating window kept in the scratchpad, so Super+p shows
+            # it over whatever workspace is current and hides it again.
+            # for_window runs once per mapped window; KeePassXC unmaps when it
+            # hides to the tray, so every reopen goes through this again.
+            window.commands = [
+              {
+                criteria = mainWindow;
+                command = "floating enable, resize set width 80 ppt height 80 ppt, move position center, move scratchpad, scratchpad show";
+              }
+            ];
           };
         };
       })

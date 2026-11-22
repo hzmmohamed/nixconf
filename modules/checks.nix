@@ -8,6 +8,11 @@
 # palettes and for wallpaper palettes generated (matugen + the same generator
 # the hosts run) from both bundled default wallpapers, in light and dark; and
 # no themed module hardcodes a hex colour (modules/theme.nix is the one place).
+#
+# phone-profile: butternut's phone profile (dictation-server, phone.profile)
+# has exactly the shape the app parses (data classes of apps/phone/…/
+# profile/Profile.kt, walked by dictation/phone-profile-check.py) and the
+# values it relies on (version, servers, four hashed Parakeet files).
 {
   lib,
   self,
@@ -36,6 +41,8 @@
         filter = path: type:
           type == "directory" || (lib.hasSuffix ".nix" path && baseNameOf path != "noctalia.nix");
       };
+    # butternut serves the phone profile (dictation-server, phone.enable).
+    phoneProfile = self.nixosConfigurations.butternut.config.preferences.dictation-server.phone.profile;
   in {
     checks =
       lib.mapAttrs' (name: nixos:
@@ -84,6 +91,16 @@
             cp -r out-*/palette.json $out/ 2>/dev/null || true
             for d in out-*; do cp "$d/palette.json" "$out/$d.json"; done
             echo ok > $out/result
+          '';
+
+        phone-profile =
+          pkgs.runCommand "phone-profile-check" {
+            nativeBuildInputs = [pkgs.python3];
+          } ''
+            python3 ${./nixos/features/dictation/phone-profile-check.py} \
+              ${../apps/phone/app/src/main/java/nixconf/phone/profile/Profile.kt} \
+              ${phoneProfile}
+            cp ${phoneProfile} $out
           '';
       };
   };

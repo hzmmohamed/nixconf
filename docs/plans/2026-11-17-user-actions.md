@@ -467,6 +467,29 @@ butternut `bash scripts/aws-sso/setup.sh --dry-run && bash scripts/aws-sso/setup
 Admin / Operator / CloudBox), `bash scripts/aws-sso/store-config.sh` (sops), rebuild butternut + hazel,
 then `aws-login` and `bash scripts/aws-sso/verify.sh` on hazel. Static keys are retired later (phase 5).
 
+## GitHub login with gh (hazel, butternut, fern)
+
+`features/github.nix`: `gh` for T3's PR panel and agents, no tokens in sops. Once per host,
+after deploying it:
+
+```fish
+# Only if a stale backup exists: home-manager replaces ~/.config/gh/config.yml and refuses
+# to overwrite an existing .backup.
+test -e ~/.config/gh/config.yml.backup; and mv ~/.config/gh/config.yml.backup ~/.config/gh/config.yml.old
+gh auth login --web --git-protocol ssh --hostname github.com
+gh auth status
+```
+
+`gh auth login` prints a code: open github.com/login/device (any device: the host needs no
+browser), sign in (password from KeePassXC, Super+p), approve, then press Enter on the host.
+butternut and fern keep the token in `~/.config/gh/hosts.yml` (`preferences.github.tokenInFile`;
+their keyring is locked over SSH), and there a typed `gh auth login` adds `--insecure-storage`
+itself. Typing any `gh` command while logged out starts the login; desktops also notify at
+session start, butternut and fern print a reminder in new shells.
+
+- [x] hazel   - [x] butternut   - [ ] fern (when created)
+- [ ] T3: a GitHub repo's PR panel lists pull requests
+
 ## Deploy from hazel: builds on butternut, repo sync (hazel is the primary device)
 
 hazel's nix daemon offloads builds to butternut (`features/nix-builder.nix`), `deploy` builds
@@ -622,3 +645,183 @@ grep guidelines ~/.claude/CLAUDE.md ~/.claude-work/CLAUDE.md
 ```
 
 Expect `@~/.config/agents/guidelines.md` in both.
+
+## Phone: Nixconf dictation keyboard (butternut + the phone)
+
+The Android app in `apps/phone/` (design: `docs/plans/2026-11-22-phone-dictation-keyboard-design.md`)
+dictates through butternut's Whisper server over the tailnet and falls back to Parakeet on the
+phone. butternut serves its profile, the Parakeet files and the published APKs on port 8180
+(tailnet + trusted networks), at its MagicDNS name `butternut.tail1a9f7c.ts.net` (the app's
+built-in profile URL; the phone's resolver may not search the tailnet domain, so no short names). Gradle and the Android SDK run on **butternut** only
+(`phone-app build|test` refuse on hazel). Commands are fish.
+
+- [ ] **hazel or butternut**: deploy butternut (adds the `phone-profile` service on 8180):
+
+  ```fish
+  cd ~/nixconf; just deploy butternut
+  ```
+
+- [ ] **any tailnet machine**: the profile and a model file answer (expect `["http://butternut.tail1a9f7c.ts.net:8178"]`
+      and `200`):
+
+  ```fish
+  curl -s http://butternut.tail1a9f7c.ts.net:8180/profile.json | jq .servers
+  curl -s -o /dev/null -w '%{http_code}\n' http://butternut.tail1a9f7c.ts.net:8180/models/parakeet/tokens.txt
+  ```
+
+  On butternut, `ls -la /var/lib/phone-profile` shows the dir and `app/` owned by you,
+  `profile.json` and `models` as links into `/nix/store`.
+
+- [ ] **butternut**: create the release key once (keytool asks for a store password and the
+      key's details; then put the real passwords in `signing.properties`):
+
+  ```fish
+  mkdir -p ~/.config/phone-app
+  nix shell --inputs-from ~/nixconf nixpkgs#jdk17 -c keytool -genkeypair -v -keystore ~/.config/phone-app/release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias nixconf-phone
+  printf '%s\n' 'storePassword=<store password>' 'keyAlias=nixconf-phone' 'keyPassword=<key password>' > ~/.config/phone-app/signing.properties
+  chmod 600 ~/.config/phone-app/signing.properties
+  $EDITOR ~/.config/phone-app/signing.properties
+  ```
+
+- [ ] **butternut**: back both files up in the vault (a lost key means uninstalling the app, and
+      its drafts, to install a new one). With KeePassXC locked or closed:
+
+  ```fish
+  set db ~/Vault/<your database>.kdbx
+  keepassxc-cli add $db "Nixconf phone release key"
+  keepassxc-cli attachment-import $db "Nixconf phone release key" release.jks ~/.config/phone-app/release.jks
+  keepassxc-cli attachment-import $db "Nixconf phone release key" signing.properties ~/.config/phone-app/signing.properties
+  ```
+
+- [ ] **phone**: Settings → About phone → tap "OS version" 7× → Developer options → turn on
+      **USB debugging** and **Install via USB** (Xiaomi blocks `adb install` without the
+      second). Plug the phone into butternut and accept "Allow USB debugging?".
+
+- [ ] **butternut**: build the signed release, install it over USB, publish it (gives the in-app
+      update a baseline):
+
+  ```fish
+  cd ~/nixconf
+  nix run .#phone-app -- build --release; and nix run .#phone-app -- install; and nix run .#phone-app -- publish
+  curl -s http://butternut.tail1a9f7c.ts.net:8180/app.json | jq
+  ```
+
+  Debug and release builds are signed with different keys: switching between them needs
+  `adb uninstall nixconf.phone`, which deletes the app's drafts. Stay on release builds.
+
+- [ ] **phone**: open **Nixconf** → **Allow microphone** → **Enable keyboard** (toggle Nixconf in
+      the system list) → **Test**: the profile is fetched and butternut answers.
+
+- [ ] **phone, on Wi-Fi**: Parakeet downloads by itself (~650 MB; or **Download now** in the
+      app); wait for **"Parakeet ready"**.
+
+- [ ] **phone**: the checklist (any text field, Nixconf picked as keyboard):
+  - [ ] Dictate with butternut up: label **"butternut"**, text typed with a trailing space.
+  - [ ] Wi-Fi and mobile data off: label **"on phone"**, text still typed (English).
+  - [ ] Switch to another app while it transcribes: nothing is typed there; the panel shows
+        **"1 pending"**; tap it, then tap the draft to type it into the current field or
+        long-press to copy it.
+  - [ ] Kill the app mid-recording (recents → swipe away): the draft is listed in Nixconf,
+        **Share audio** plays the recording.
+  - [ ] Language toggle (en ↔ ar), **Cancel** (nothing typed, draft cancelled), **⌨** switches
+        back to the previous keyboard.
+  - [ ] Update: commit something (versionCode = commit count, so each commit bumps it), then
+        on butternut `nix run .#phone-app -- build --release; and nix run .#phone-app -- publish`;
+        the app shows **"Update available"** → tap to install.
+
+Later updates are the last item: commit, `build --release`, `publish`, tap "Update" on the phone.
+No butternut redeploy is needed for a new APK.
+
+## Phone hotspot (wildflower): direct tailnet path, untrusted profile
+
+Design: `docs/plans/2026-11-22-hotspot-mode-design.md`. The tailnet policy now
+carries `disable-android-bind-to-active-network`, so phone ↔ laptop traffic on
+the hotspot goes direct instead of through DERP twice over mobile data. The
+hotspot becomes a declared Wi-Fi profile on hazel and butternut: metered,
+**untrusted** (friends join it, so no LAN service ports and no mDNS there; the
+phone uses the services over the tailnet). The phone's tailnet name becomes
+`wildflower`. Commands are fish.
+
+- [ ] **Tailscale admin console** (login.tailscale.com → Machines):
+  - the phone (`21081111rg`) → ⋯ → **Edit machine name** → untick "Auto-generate" →
+    `wildflower` → Update.
+  - the stale **`xiaomi-21081111rg`** node (offline, an old registration of the same
+    phone) → ⋯ → **Remove**.
+
+- [ ] **hazel or butternut**: apply the policy (expect one added entry in `nodeAttrs`; on
+      mobile data the tofu provider may download if it isn't in the store yet):
+
+  ```fish
+  cd ~/nixconf
+  bash scripts/tailscale/plan.sh
+  bash scripts/tailscale/apply.sh     # answer y
+  ```
+
+- [ ] **phone, on the hotspot with a laptop joined**: Tailscale app → toggle off, then on.
+
+- [ ] **hazel or butternut, on the hotspot**: the path is direct (expect `pong … via
+      10.19.167.40:…`, not `via DERP(par)`; the address is whatever the phone's
+      tether gateway is today):
+
+  ```fish
+  tailscale ping -c 3 wildflower
+  tailscale status | grep wildflower  # expect: direct 10.19.167.40:…
+  ```
+
+  Rollback: delete the `disable-android-bind-to-active-network` line in
+  `docs/tailscale-policy.hujson`, run `plan.sh`/`apply.sh` again.
+
+- [ ] **hazel**: create the hotspot secret (sops opens your editor; replace the sample with the
+      content below, save and quit):
+
+  ```fish
+  cd ~/nixconf
+  sops secrets/shared/wifi-hotspot.yaml
+  ```
+
+  ```yaml
+  wifi_hotspot_env: |
+    WIFI_HOTSPOT_SSID=wildflower
+    WIFI_HOTSPOT_PSK=<the hotspot password>
+  ```
+
+  ```fish
+  git add secrets/shared/wifi-hotspot.yaml
+  just eval hazel 2>&1 | grep -i hotspot   # expect: no "hotspot profile skipped" warning
+  ```
+
+- [ ] **hazel**: deploy both laptops (the hotspot enable is already in their configs; this also
+      puts `wildflower` in `/etc/hosts`):
+
+  ```fish
+  cd ~/nixconf
+  just deploy butternut
+  just deploy hazel
+  ```
+
+- [ ] **hazel, on the hotspot**: switch to the declarative profile (NM id `hotspot`, under
+      `/run/NetworkManager/system-connections/`) and delete the imperative `wildflower` one.
+      Wi-Fi drops for a few seconds:
+
+  ```fish
+  nmcli connection up hotspot; and nmcli connection delete wildflower
+  ```
+
+  butternut, from hazel (the ssh session rides the tailnet and survives the switch):
+
+  ```fish
+  ssh butternut 'nmcli connection up hotspot && nmcli connection delete wildflower'
+  ```
+
+  If `nmcli` refuses for lack of privileges, run it as `doas nmcli …`. If it says the
+  `wildflower` connection doesn't exist, there is nothing to delete: check
+  `nmcli -f NAME,TYPE connection show` for another imperative copy of the hotspot.
+
+- [ ] **each laptop, on the hotspot**: metered, untrusted, hotspot profile active:
+
+  ```fish
+  nmcli -f NAME,TYPE,DEVICE connection show --active    # expect: hotspot  wifi  <wlan>
+  nmcli -g connection.metered connection show hotspot   # expect: yes
+  nmcli -f GENERAL.CONNECTION,GENERAL.METERED device show (nmcli -g DEVICE,TYPE device | string replace -rf ':wifi$' '')
+  ls /run/trusted-networks                              # expect: the Wi-Fi interface NOT listed
+  ```

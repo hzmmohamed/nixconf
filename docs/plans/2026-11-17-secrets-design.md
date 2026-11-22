@@ -20,8 +20,8 @@ the plaintext-token inventory and the migration/rotation steps carry over from r
 
 **secretspec 0.21** is the per-project *declaration + injection* layer: each repo commits a
 `secretspec.toml` with **names** and one alias (`team`); each machine's Nix-generated user config
-says what `team` means there (`kdbx://` dev vault on agent hosts, `keyring://` → KeePassXC on
-desktops once KeePassXC serves the Secret Service, `file://` from sops where there's no vault).
+says what `team` means there (`kdbx://` dev vault on agent hosts, `keyring://` → gnome-keyring on
+desktops, `file://` from sops where there's no vault).
 
 Unchanged prerequisites (they matter more than the tooling):
 1. **Stop copying the single master age key to every host** (`scripts/install-host.sh` puts it in
@@ -120,11 +120,14 @@ home-manager `programs.keepassxc` (HM 26.05) with `settings` → `~/.config/keep
 | Security | LockDatabaseIdle (900 s, `preferences.vault.autoLockSeconds`), LockDatabaseScreenLock, ClearClipboard (30 s), IconDownloadFallback=false | auto-lock, no clipboard leftovers, no favicon lookups via DuckDuckGo |
 | Browser | Enabled, UpdateBinaryPath=false | KeePassXC-Browser extension; HM installs the native-messaging manifest for Chromium/Firefox |
 | SSHAgent | Enabled = `preferences.vault.sshAgent` (default false) | can add vault-stored SSH keys to gpg-agent while unlocked |
-| FdoSecrets | **Enabled=false** | no Secret Service yet; gnome-keyring unchanged |
+| FdoSecrets | **Enabled=false** | not planned: gnome-keyring stays the Secret Service (decision below) |
 
 Also: autostart minimized via `preferences.autostart` (sway `startup`), the KeePassXC-Browser
-extension added to Chromium next to Bitwarden, **Super+p** → `vault-open` (focus the KeePassXC window,
-or bring it back from the tray; then Ctrl+F search, Ctrl+B copy user, Ctrl+C copy password).
+extension added to Chromium next to Bitwarden, **Super+p** → `vault-open` (toggle the KeePassXC main
+window, a large floating sway scratchpad over the current workspace, or bring it back from the tray;
+then type to search, Ctrl+B copy user, Ctrl+C copy password, which also hides it). Autostart opens
+`~/Vault/vault.kdbx` by path (`preferences.vault.database`). Launcher search via the browser protocol:
+designed and deferred, `2026-11-22-vault-launcher-design.md`.
 
 Known quirk: the config is a read-only store link, so changing a setting in the GUI shows a save
 error. Change settings in `vault.nix`. Window state, recent databases and key-file paths live in
@@ -149,14 +152,14 @@ copies with `x-kde-passwordManagerHint: secret`, so copied passwords don't land 
   neither, so global auto-type and the global hotkey don't work on sway. Per-entry auto-type from
   the main window is also portal-based.
 - What was implemented instead: Super+p focus/raise (above).
-- **Phase 2 picker (clean path):** once KeePassXC serves the Secret Service, `vault-pick` lists items
-  of the exposed group over D-Bus (`secret-tool search --all` or python `secretstorage`), shows titles
-  in `vicinae dmenu`, then copies with `wl-copy --sensitive` and clears after 30 s (or types with
-  `wtype`). KeePassXC asks for confirmation per client (`FdoSecrets/ConfirmAccessItem`) and unlocks
-  on demand. The browser protocol (`keepassxc-proxy`, used by `git-credential-keepassxc`) is
-  URL-matched, not a list, so it's no good for a picker.
+- **Launcher search (2026-11-22, shelved):** the FdoSecrets route is dropped with the decision
+  below. KeePassXC 2.8.0's browser protocol *can* list entries (`get-database-entries`, behind
+  `AllowGetDatabaseEntriesRequest`) and fetch any entry by UUID, so a vicinae extension would work
+  without touching gnome-keyring: designed in `2026-11-22-vault-launcher-design.md`. Shelved in
+  favour of KeePassXC as a floating scratchpad window on Super+p, opening `~/Vault/vault.kdbx` at
+  login; revisit if that proves too slow in practice.
 
-## Phase 2: KeePassXC as Secret Service (`org.freedesktop.secrets`)?
+## Secret Service (`org.freedesktop.secrets`): stays gnome-keyring (decided 2026-11-22)
 
 ### Who uses the Secret Service today (gnome-keyring, PAM-unlocked at greetd login, butternut + hazel via `features/email.nix`)
 
@@ -180,30 +183,35 @@ copies with `x-kde-passwordManagerHint: secret`, so copied passwords don't land 
   fail to refresh tokens until the next unlock, so notifications and unread counts stop. Chromium
   started while locked can't decrypt cookies.
 
-### Recommendation: hybrid first, full switch optional
+### Decision: no switch to KeePassXC (FdoSecrets stays off, all hosts)
 
-- **Default (recommended): keep gnome-keyring for machine-local app secrets** (OAuth refresh tokens,
-  Chromium Safe Storage, VSCodium). They're per-machine, re-creatable, PAM-unlocked with the login,
-  and not worth syncing. **KeePassXC holds human credentials** (browser extension, phone, SSH keys).
-  This keeps email/Chromium unchanged. It loses only the "one store" aesthetic.
-- **Full switch (if wanted later), per host:**
-  1. In KeePassXC: Settings → Secret Service Integration (`FdoSecrets.Enabled = true` in `vault.nix`);
-     Database Settings → Secret Service → expose a dedicated group (`Secret Service/<host>`, so
-     machine-local items don't mix with personal entries). `ConfirmAccessItem = true`.
-  2. Unlock ordering: a user service watches the exposed collection's `Locked` property on D-Bus and
-     starts `vault-unlocked.target`. `imapnotify-*`, `mail-unread-refresh.timer` get
-     `Requisite/After = vault-unlocked.target` (replacing `sway-session.target`) and
-     `Restart=on-failure, RestartSec=60`.
-  3. Auto-lock policy: lock on screen lock and sleep only, not on a short idle timer (otherwise mail
-     breaks), or accept that mail pauses while locked. butternut (agent host) should *not* do the
-     full switch while agents share the user (see below).
-  4. Migrate items: in a session where gnome-keyring still runs, list what exists (Seahorse, labels
-     and attributes only). Then: `email-oauth2 setup personal` / `work` again after the switch (two
-     browser consents, simplest). Chromium: either accept re-logins, or copy the single "Chromium
-     Safe Storage" value by hand (lookup with gnome-keyring running, store with KeePassXC running,
-     same attributes; do it in one terminal, no files). VSCodium: sign in to extensions again.
-  5. Disable `services.gnome.gnome-keyring` and the `enableGnomeKeyring` PAM lines on that host
-     (move them from `email.nix` into a `keyring` choice: `preferences.secretService = "gnome-keyring" | "keepassxc"`).
+**gnome-keyring keeps the machine-local app secrets** (OAuth refresh tokens, Chromium Safe
+Storage, VSCodium); **KeePassXC holds human credentials** (browser extension, phone, SSH keys).
+The Secret Service is a store programs write into on their own, which doesn't fit the personal vault:
+
+1. **Sync conflicts and per-host collisions.** Apps write unprompted (VSCodium token refreshes,
+   Microsoft refresh-token rotation, Chromium's key). In the Syncthing-replicated `vault.kdbx` that
+   means conflict files across hazel/butternut/phone. Per-host items (Chromium Safe Storage) carry
+   identical attributes on every host, so one host would read another's key. Avoiding both needs a
+   separate unsynced per-host database, which removes the "one store" benefit.
+2. **Unattended consumers vs. vault locking.** gnome-keyring is PAM-unlocked for the whole session.
+   The vault locks on idle (15 min), screen lock and sleep; while locked, mail counts and
+   notifications stop and Chromium/VSCodium fail or pop KeePassXC's unlock dialog on their own.
+   Relaxing the locks to fix that weakens the vault's main protection.
+3. **Fragile migration.** No import from gnome-keyring; items are copied by hand, and a wrong
+   Chromium Safe Storage value logs out every site. gnome-keyring's secrets component and the PAM
+   hooks would have to go (only one owner of the bus name).
+4. **Agent exposure.** Every same-user process can query the Secret Service; exposing a vault group
+   on butternut (agent host) widens what agents can reach.
+
+The only gain is one place to see app secrets, and those are per-machine and re-creatable
+(`email-oauth2 setup <account>` re-creates a mail token in a browser consent).
+
+**Revisit only if** the app secrets get their own machine-local, auto-unlocked KDBX (e.g. key file
+from sops). That just swaps gnome-keyring's storage format, which isn't worth the migration on its
+own. The switch mechanics (dedicated group, `vault-unlocked.target`, migration steps) are in git
+history of this file.
+
 - **Headless hosts and agent services never use a Secret Service:** maple, peacelily, the AWS VM,
   lingering user services, `agent-run` jobs. No D-Bus session or unlocked GUI there. Use sops files
   (`/run/secrets/*`, `owner = user` only where needed), `systemd` credentials
@@ -224,19 +232,17 @@ the package, use a `secretspec` overlay from the `cachix/secretspec` flake as an
 | Machine | `team` alias → | Why |
 |---|---|---|
 | agent hosts (butternut agents, maple, peacelily) | `kdbx://<home>/VaultDev/dev.kdbx?keyfile=/run/secrets/vault-dev-keyfile` | dev vault, key-file-only, file synced **receive-only**; no network needed |
-| hazel (human) | same `kdbx://` for dev secrets (send-receive, KeePassXC edits it) + `human` alias = `keyring://` (KeePassXC Secret Service, only if the full switch was done) or `kdbx://…/personal.kdbx` with the password from `SECRETSPEC_KDBX_PASSWORD` typed per shell | human-only profiles (`android-release`, `ops`, `lago`) |
+| hazel (human) | same `kdbx://` for dev secrets (send-receive, KeePassXC edits it) + `human` alias = `keyring://` (gnome-keyring) or `kdbx://…/personal.kdbx` with the password from `SECRETSPEC_KDBX_PASSWORD` typed per shell | human-only profiles (`android-release`, `ops`, `lago`) |
 | AWS VM / CI-like boxes without Syncthing | `file:///run/secrets/secretspec` (sops-rendered) or `systemd-credential://` | no vault replica |
 
 - The `kdbx` provider addresses entries as `secretspec/{project}/{profile}/{KEY}` (group path +
   title, `Password` field; `prefix=` and `field` change that). The password comes from a provider
   credential or `SECRETSPEC_KDBX_PASSWORD`, the key file from `?keyfile=`. A key-file-only dev vault
   needs neither prompt nor env.
-- `keyring://` on desktops works with either provider (gnome-keyring or KeePassXC), but needs an
-  unlocked session collection. Never use it for anything agents or headless hosts need.
+- `keyring://` on desktops is gnome-keyring (PAM-unlocked session collection). Never use it for anything agents or headless hosts need.
 - **External providers** (0.21+, `secretspec-provider-<scheme>` executables, "Secret Provider
   Protocol v1"): a `keepassxc-cli`-based provider is possible, but `kdbx://` is native and makes it
-  unnecessary. Keep the option for a KeePassXC-GUI bridge (FdoSecrets) if `keyring://`'s item layout
-  turns out awkward.
+  unnecessary.
 - Agent sessions: `require_reason = "agents"` (the default) puts every agent read in
   `secretspec audit`. That's an audit trail, not a boundary. The boundary is **what's in dev.kdbx**.
 - Why a separate dev vault and not `personal.kdbx`: agents on agent hosts need unattended reads.
@@ -456,8 +462,7 @@ Agents run as the same Unix user in `agents.slice` on butternut/peacelily/maple/
 While KeePassXC is unlocked in the butternut desktop session, same-user processes can still try to:
 - use **browser integration**: needs an association key stored in the database, and a new
   association brings up a GUI approval dialog. Don't approve unexpected requests.
-- use **Secret Service** (phase 2): only the exposed group, and with `ConfirmAccessItem` every new
-  client needs GUI approval. Another reason to keep the full switch off butternut.
+- use **Secret Service**: not possible, KeePassXC doesn't serve it (FdoSecrets off, decision above).
 - **ptrace/read KeePassXC memory**: set `kernel.yama.ptrace_scope = 2` (admin-only attach) on agent
   hosts (phase 2, check no debugger workflow depends on it).
 - **read the clipboard** (`wl-paste` with the desktop's `WAYLAND_DISPLAY`): 30 s clear. Agents
@@ -530,7 +535,7 @@ account IDs kept out of the public repo) with `[sso-session tfc]`, `[profile tfc
 | 2b | **sops per-host keys** (`sops.age.sshKeyPaths`, `.sops.yaml` per-host recipients, `install-host.sh` ships host keys, not the master key), rotate the master key; doas password on agent hosts | proposal |
 | 2c | `vault-dev` folder + `dev.kdbx` + `features/secretspec.nix` (0.21.1 from llm-agents nixpkgs, generated user config, sops key file) and `secretspec.toml` in routelab/d_abm/nixconf | proposal |
 | 2d | AWS Identity Center + `features/aws.nix` rewrite; rotate static keys | proposal |
-| 2e | Secret Service decision (hybrid by default; optional full switch per host), `vault-pick`, swayidle → `loginctl lock-session`, `ptrace_scope` | proposal |
+| 2e | Secret Service: **decided**, gnome-keyring stays, FdoSecrets off (2026-11-22); `vault-pick` dropped (floating Super+p window instead); swayidle → `loginctl lock-session`, `ptrace_scope` still proposals | decided / proposal |
 | 3 | `agent` Unix user, Roles Anywhere, YubiKey | later |
 
 ## Migration and rotation steps (after phase 2b–2d)
@@ -565,7 +570,7 @@ account IDs kept out of the public repo) with `[sso-session tfc]`, `[profile tfc
   nothing (Zotero included).
 - **secretspec moves fast** (0.10 → 0.21 in about 5 months). Pin it and run `secretspec check` in CI.
   Verify before 2c: `kdbx://` with a key-file-only database and sops-nix symlinked paths;
-  per-profile `defaults.providers`; `keyring://` item layout under KeePassXC FdoSecrets.
+  per-profile `defaults.providers`.
 - **Public repo:** keep start URL and account IDs out of nixconf (sops templates). Syncthing device
   IDs are not secret (they're already in `features/syncthing.nix`).
 

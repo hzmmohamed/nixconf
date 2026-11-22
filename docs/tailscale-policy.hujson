@@ -119,6 +119,11 @@
     // Kept from the tailnet's default policy: Taildrive, newer SSH behaviour.
     {"target": ["autogroup:member"], "attr": ["drive:share", "drive:access"]},
     {"target": ["autogroup:member"], "attr": ["ssh-behavior-v2"]},
+    // Phone-as-hotspot: Android 1.98+ binds sockets to the active (cellular)
+    // network, so peers on the phone's own hotspot are only reachable through
+    // DERP, twice over mobile data (tailscale/tailscale#20782). Only Android
+    // clients read this attr. Drop it when #20782 is fixed.
+    {"target": ["*"], "attr": ["disable-android-bind-to-active-network"]},
     {"target": ["*"], "app": {"tailscale.com/app-connectors": [
       {"name": "egypt-blocked", "connectors": ["tag:connector"],
        "domains": ["search.nixos.org", "nixos-search.netlify.app"]},
