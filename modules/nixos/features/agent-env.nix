@@ -17,7 +17,10 @@
     # `--prefix`) so the tool's own deps never shadow the user's or the dev
     # shell's PATH; later tasks (`nx`, `agent-devshell`) reuse this.
     mkTool = name: script: deps:
-      pkgs.runCommand name {nativeBuildInputs = [pkgs.makeWrapper];} ''
+      pkgs.runCommand name {
+        nativeBuildInputs = [pkgs.makeWrapper];
+        meta.mainProgram = name;
+      } ''
         makeWrapper ${pkgs.python3}/bin/python3 $out/bin/${name} \
           --add-flags ${script} \
           --suffix PATH : ${lib.makeBinPath deps}
@@ -26,6 +29,11 @@
     agentNet = mkTool "agent-net" ./agent-env/agent_net.py [pkgs.networkmanager pkgs.iproute2];
   in {
     home-manager.users.${user}.home.packages = [agentNet];
+
+    preferences.agents.claudeHooks = {
+      SessionStart = ["${lib.getExe agentNet} hook session-start"];
+      UserPromptSubmit = ["${lib.getExe agentNet} hook prompt"];
+    };
   };
 
   perSystem = {pkgs, ...}: {

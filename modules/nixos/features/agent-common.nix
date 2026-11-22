@@ -214,15 +214,29 @@
         ];
         status = state: "${lib.getExe agentStatus} ${state}";
         slow = mode: "${lib.getExe agentSlowWatch} ${mode}";
-      in {
-        UserPromptSubmit = group [(status "working")];
-        PreToolUse = group [(status "working") (slow "arm")];
-        PostToolUse = group [(slow "disarm")];
-        Notification = group [(status "input") (lib.getExe agentNotify)];
-        Stop = group [(status "done") (lib.getExe agentNotify)];
-        SessionEnd = group [(status "end")];
-      };
+        # Built-in command lists per event, before `cfg.claudeHooks` extras
+        # are folded in below (same group per event; a claudeHooks-only
+        # event gets its own group).
+        builtin = {
+          UserPromptSubmit = [(status "working")];
+          PreToolUse = [(status "working") (slow "arm")];
+          PostToolUse = [(slow "disarm")];
+          Notification = [(status "input") (lib.getExe agentNotify)];
+          Stop = [(status "done") (lib.getExe agentNotify)];
+          SessionEnd = [(status "end")];
+        };
+        merged =
+          lib.foldl'
+          (acc: ev: acc // {${ev} = (acc.${ev} or []) ++ cfg.claudeHooks.${ev};})
+          builtin
+          (lib.attrNames cfg.claudeHooks);
+      in
+        lib.mapAttrs (_: group) merged;
     };
+
+    # Shared with the `xdg.configFile` install below (debugging: lets the
+    # user `jq` what's about to be merged into settings.json).
+    claudeManagedSettingsFile = pkgs.writeText "claude-managed.json" (builtins.toJSON managedClaudeSettings);
 
     # Claude config dirs (relative to $HOME), one per subscription.
     accountDirs = lib.unique (lib.mapAttrsToList (_: a: a.configDir) cfg.claudeAccounts);
@@ -248,13 +262,13 @@
           # deny lists are unioned; for each managed hook event, previous
           # agent-notify / agent-status entries are replaced and the user's own
           # hooks kept.
-          new=$(jq -n --argjson cur "$cur" --slurpfile m ${pkgs.writeText "claude-managed.json" (builtins.toJSON managedClaudeSettings)} '
+          new=$(jq -n --argjson cur "$cur" --slurpfile m ${claudeManagedSettingsFile} '
             $m[0] as $m
             | $cur
             | .permissions = ((.permissions // {})
                 | .deny = (((.deny // []) + $m.permissions.deny) | unique))
             | .hooks = (reduce ($m.hooks | keys[]) as $ev ((.hooks // {});
-                .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status") or contains("agent-slow-watch")) | not)))
+                .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status") or contains("agent-slow-watch") or contains("agent-net")) | not)))
                           + $m.hooks[$ev])))
           ')
           if [ "$new" = "$cur" ]; then return 0; fi
@@ -409,6 +423,18 @@
         '';
       };
 
+      claudeHooks = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.listOf lib.types.str);
+        default = {};
+        example = lib.literalExpression ''{ SessionStart = [ "/nix/store/.../bin/agent-net hook session-start" ]; }'';
+        description = ''
+          Extra Claude Code hook commands, keyed by event name, appended
+          after the built-in group for that event (an event with no
+          built-in commands gets its own group). Set by agent-env.nix
+          (agent-net's network hooks); other features may add their own.
+        '';
+      };
+
       projects = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [];
@@ -459,6 +485,7 @@
         };
 
         xdg.configFile."herdr/config.toml".source = herdrConfig;
+        xdg.configFile."agents/claude-managed.json".source = claudeManagedSettingsFile;
 
         home.packages =
           [

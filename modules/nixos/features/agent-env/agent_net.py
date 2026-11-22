@@ -6,6 +6,8 @@ Usage:
     agent-net                   one line: "<state> (<connection>, <device>)"
     agent-net --json            {"state", "connection", "device", "source"}
     agent-net set metered|unmetered|auto
+    agent-net hook session-start      Claude Code SessionStart hook
+    agent-net hook prompt             Claude Code UserPromptSubmit hook
 
 State is one of "metered", "unmetered", "offline". Source is "nm" (read from
 NetworkManager), "override" (forced via `set`), or "none" (no NetworkManager
@@ -127,6 +129,79 @@ def _format_line(d: dict) -> str:
     return d["state"]
 
 
+def _runtime_dir() -> Path:
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return Path(base) / "agent-net"
+
+
+def _sanitize_session_id(session_id):
+    if not isinstance(session_id, str):
+        return None
+    cleaned = "".join(c for c in session_id if c.isalnum() or c in "_.-")
+    return cleaned or None
+
+
+def _read_session_state(session_id: str):
+    try:
+        return (_runtime_dir() / session_id).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def _write_session_state(session_id: str, state: str) -> None:
+    d = _runtime_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / session_id).write_text(state + "\n")
+
+
+def _emit_hook_output(event: str, text: str) -> None:
+    print(
+        json.dumps(
+            {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
+        )
+    )
+
+
+def _hook_session_id_from_stdin():
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _sanitize_session_id(data.get("session_id"))
+
+
+def _cmd_hook(kind: str) -> int:
+    # Claude hooks must never fail closed: any error here is swallowed and
+    # the hook exits 0 with no output (Claude just gets no extra context).
+    try:
+        session_id = _hook_session_id_from_stdin()
+        d = status()
+        state = d["state"]
+
+        if kind == "session-start":
+            if session_id:
+                _write_session_state(session_id, state)
+            line = _format_line(d)
+            text = f'Network: {line}. See "Network" in your global instructions.'
+            _emit_hook_output("SessionStart", text)
+        else:  # "prompt"
+            if not session_id:
+                return 0
+            prev = _read_session_state(session_id)
+            _write_session_state(session_id, state)
+            if prev is not None and prev != state:
+                line = _format_line(d)
+                _emit_hook_output(
+                    "UserPromptSubmit", f"Network changed: now {line}."
+                )
+    except BaseException:
+        pass
+    return 0
+
+
 def _cmd_set(value: str) -> int:
     if value not in VALID_OVERRIDES | {"auto"}:
         print(
@@ -154,6 +229,12 @@ def main(argv=None) -> int:
             print("usage: agent-net set metered|unmetered|auto", file=sys.stderr)
             return 2
         return _cmd_set(argv[1])
+
+    if argv[:1] == ["hook"]:
+        if len(argv) != 2 or argv[1] not in ("session-start", "prompt"):
+            print("usage: agent-net hook session-start|prompt", file=sys.stderr)
+            return 2
+        return _cmd_hook(argv[1])
 
     d = status()
     if "--json" in argv:

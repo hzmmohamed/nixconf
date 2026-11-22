@@ -21,7 +21,7 @@ class FakeBin:
         self.bin_dir.mkdir(parents=True, exist_ok=True)
         self.calls_dir.mkdir(parents=True, exist_ok=True)
 
-    def add(self, name, stdout="", stderr="", exit=0):
+    def add(self, name, stdout="", stderr="", exit=0, sleep=0):
         calls_file = self.calls_dir / f"{name}.jsonl"
         script = self.bin_dir / name
         lines = [
@@ -30,6 +30,11 @@ class FakeBin:
             f"with open({str(calls_file)!r}, 'a') as f:",
             "    f.write(json.dumps(sys.argv) + chr(10))",
         ]
+        if sleep:
+            # For hook-robustness tests: a fake that outlives agent-net's own
+            # subprocess timeout (1.5s), so the hook must not just wait on it.
+            lines.append("import time")
+            lines.append(f"time.sleep({sleep!r})")
         if stdout:
             lines.append(f"sys.stdout.write({stdout!r})")
         if stderr:
