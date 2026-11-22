@@ -24,6 +24,10 @@
     # while it is valid. `aws sso logout` after admin work.
     preferences.aws.sso.enable = true;
 
+    # Reached over SSH without a session (keyring locked): gh keeps its token
+    # in ~/.config/gh/hosts.yml (features/github.nix).
+    preferences.github.tokenInFile = true;
+
     # Agents here also run headless (no login → gnome-keyring stays locked),
     # so project dev secrets come from sops files like on fern:
     # preferences.secretspec.fileSecrets."<project>/<profile>/<KEY>" =

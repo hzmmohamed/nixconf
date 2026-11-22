@@ -93,7 +93,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `shared-zotero` | Zotero + Syncthing folders + sops secrets (see below) | |
 | `rbw` | Bitwarden CLI (rbw) with pinentry (kept during the move to `vault`) | |
 | `vault` | KeePassXC vault in a Syncthing folder (`~/Vault`) shared with phone/hosts; KeePassXC GUI + config on desktops, folder only on headless hosts (`preferences.vault.*`) | |
-| `github` | `gh` (HM `programs.gh`, `git_protocol: ssh`) + `/etc/gitconfig` credential helper for HTTPS github.com; per-host device-flow login, token kept by gh (keyring / `hosts.yml`), nothing in sops. Prompts: fish `gh` auto-login (TTY only), desktop notification at session start, headless shell reminder | |
+| `github` | `gh` (HM `programs.gh`, `git_protocol: ssh`) + `/etc/gitconfig` credential helper for HTTPS github.com; per-host device-flow login, token kept by gh (keyring, or `hosts.yml` with `preferences.github.tokenInFile`: headless + butternut), nothing in sops; non-blocking browser launcher. Prompts: fish `gh` auto-login (TTY only), desktop notification at session start, shell reminder on `tokenInFile` hosts | |
 | `office` | Obsidian, LibreOffice, Typst, Element Desktop, zathura | |
 | `docker` | Docker daemon + compose + lazydocker + dive | |
 | `media` | MPV, VLC, HandBrake, DigiKAM, yt-dlp, ffmpeg, playerctl | |

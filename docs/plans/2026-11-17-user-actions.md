@@ -480,11 +480,14 @@ gh auth login --web --git-protocol ssh --hostname github.com
 gh auth status
 ```
 
-`gh auth login` prints a code: open github.com/login/device (any device), sign in (password
-from KeePassXC, Super+p), approve. Typing any `gh` command while logged out starts the same
-login; desktops also notify at session start, fern prints a reminder in new shells.
+`gh auth login` prints a code: open github.com/login/device (any device: the host needs no
+browser), sign in (password from KeePassXC, Super+p), approve, then press Enter on the host.
+butternut and fern keep the token in `~/.config/gh/hosts.yml` (`preferences.github.tokenInFile`;
+their keyring is locked over SSH), and there a typed `gh auth login` adds `--insecure-storage`
+itself. Typing any `gh` command while logged out starts the login; desktops also notify at
+session start, butternut and fern print a reminder in new shells.
 
-- [ ] hazel   - [ ] butternut   - [ ] fern (when created)
+- [x] hazel   - [x] butternut   - [ ] fern (when created)
 - [ ] T3: a GitHub repo's PR panel lists pull requests
 
 ## Deploy from hazel: builds on butternut, repo sync (hazel is the primary device)
