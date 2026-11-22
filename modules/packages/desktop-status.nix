@@ -4,15 +4,22 @@
 # An empty "text" means "nothing worth showing" — both bars hide the widget then.
 {...}: {
   perSystem = {pkgs, ...}: {
-    # Unread mail count. Never touches the network: it only sums the per-account
-    # counts that `mail-unread-refresh` (email feature) writes to
-    # $XDG_RUNTIME_DIR/mail-unread/<account>.count.
+    # Unread mail, one entry per account ("P 3", "W 12": the account name's
+    # initial and its count). Never touches the network: it only reads the
+    # per-account counts that `mail-unread-refresh` (email feature) writes to
+    # $XDG_RUNTIME_DIR/mail-unread/<account>.count. Always shows something
+    # (the widget is also the mail menu): "–" before the first refresh.
+    #   --markup  one account per line, zero counts dimmed (pango, waybar);
+    #             default: one line, "P3 W12" (plain text, Noctalia)
     packages.mail-unread-status = pkgs.writeShellApplication {
       name = "mail-unread-status";
       runtimeInputs = [pkgs.coreutils pkgs.jq];
       text = ''
+        markup=false
+        [ "''${1:-}" = --markup ] && markup=true
         dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mail-unread"
         total=0
+        entries=()
         tooltip=""
         shopt -s nullglob
         for f in "$dir"/*.count; do
@@ -20,17 +27,28 @@
           n=$(head -n1 "$f" 2>/dev/null || true)
           [[ "$n" =~ ^[0-9]+$ ]] || continue
           total=$((total + n))
+          entry="''${name:0:1}"
+          entry="''${entry^}"
+          if ! $markup; then
+            entry+="$n"
+          elif [ "$n" -eq 0 ]; then
+            entry="<span alpha='45%'>$entry $n</span>"
+          else
+            entry+=" $n"
+          fi
+          entries+=("$entry")
           tooltip+="$name: $n"$'\n'
         done
         tooltip=''${tooltip%$'\n'}
-        if [ "$total" -gt 0 ]; then
-          text="$total"
-          class="unread"
+        if [ "''${#entries[@]}" -eq 0 ]; then
+          text="–"
+        elif $markup; then
+          text=$(printf '%s\n' "''${entries[@]}")
         else
-          text=""
-          class="none"
+          text="''${entries[*]}"
         fi
-        jq -cn --arg text "$text" --arg tooltip "''${tooltip:-No unread mail}" --arg class "$class" \
+        if [ "$total" -gt 0 ]; then class="unread"; else class="none"; fi
+        jq -cn --arg text "$text" --arg tooltip "''${tooltip:-No counts yet}" --arg class "$class" \
           '{text: $text, tooltip: $tooltip, class: $class, alt: $class}'
       '';
     };

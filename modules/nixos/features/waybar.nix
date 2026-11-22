@@ -301,17 +301,18 @@
         on-click-right = "${idle.caffeineCommand} menu";
       };
 
-      # Unread mail: local file read; refreshed by imapnotify / 5-min timer,
-      # which nudge this module via SIGRTMIN+9.
+      # Mail: per-account unread counts (local file read; refreshed by
+      # imapnotify / 5-min timer, which nudge this module via SIGRTMIN+9).
+      # Always shown: left click is the mail menu (Thunderbird / webmail).
       "custom/mail" = {
-        exec = lib.getExe selfpkgs.mail-unread-status;
+        exec = "${lib.getExe selfpkgs.mail-unread-status} --markup";
         return-type = "json";
         format = "󰇮\n${value "{}"}";
         justify = "center";
-        hide-empty-text = true; # no unread mail = hidden
         interval = 120;
         signal = 9;
-        on-click = "${pkgs.thunderbird}/bin/thunderbird";
+        on-click = "mail-menu";
+        on-click-middle = "${pkgs.thunderbird}/bin/thunderbird";
         on-click-right = "mail-unread-refresh";
       };
 
@@ -604,7 +605,8 @@
       #custom-notification.dnd-notification,
       #custom-notification.dnd-none { color: @fg-faint; }
       #custom-notification.notification,
-      #custom-mail { color: @accent; }
+      #custom-mail.unread { color: @accent; }
+      #custom-mail.none { color: @fg-muted; }
 
       #mpris.paused { color: @fg-faint; }
 

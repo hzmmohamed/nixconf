@@ -237,7 +237,7 @@
             command = lib.getExe selfpkgs.mail-unread-status;
             interval = 60;
             glyph = "mail";
-            click_command = "${pkgs.thunderbird}/bin/thunderbird";
+            click_command = "mail-menu";
             right_click_command = "mail-unread-refresh";
           };
           sync = lib.mkIf config.services.syncthing.enable {
