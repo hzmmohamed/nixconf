@@ -51,6 +51,9 @@ def write_fake_direnv(path, calls_file, status_map=None, export_map=None):
         "fail": True         -> exit 1, nothing on stdout.
         "bad_json": True     -> exit 0, unparseable stdout.
         "sleep": seconds     -> sleep before answering (timeout tests).
+        "spawn_pidfile": path -> first start a long-running grandchild
+                                (like direnv's bash + `nix print-dev-env`),
+                                writing its pid to `path`.
       Missing cwd -> prints "{}" (no changes), exit 0.
     - `exec <root> BINARY ARGS...`: logs, then execs BINARY ARGS directly
       (inheriting this process's environment, same as the real `direnv
@@ -82,6 +85,11 @@ if argv[:1] == ["allow"]:
 if argv[:2] == ["export", "json"]:
     cwd = os.getcwd()
     spec = export_map.get(cwd) or {{}}
+    if spec.get("spawn_pidfile"):
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        with open(spec["spawn_pidfile"], "w") as f:
+            f.write(str(child.pid))
     if spec.get("sleep"):
         time.sleep(spec["sleep"])
     if spec.get("fail"):
@@ -103,17 +111,36 @@ sys.exit(1)
     path.chmod(0o755)
 
 
-def write_fake_git(path, common_dirs):
+def write_fake_git(path, common_dirs, worktree_lists=None):
     """A fake `git` answering `-C <root> rev-parse --path-format=absolute
     --show-toplevel --git-common-dir` from `common_dirs[root] = (toplevel,
     common_dir)` (both already absolute, as real git prints them with
     `--path-format=absolute`). Any root not in the table behaves like a
-    plain (non-worktree) repo: toplevel = root, common-dir = "<root>/.git"."""
+    plain (non-worktree) repo: toplevel = root, common-dir = "<root>/.git".
+
+    It also answers `-C <main> worktree list --porcelain`: by default every
+    `common_dirs` toplevel whose common dir is `<main>/.git` is listed as a
+    registered worktree of `<main>` (i.e. a genuine `git worktree add`);
+    `worktree_lists[main] = [paths]` overrides that per main checkout."""
+    if worktree_lists is None:
+        worktree_lists = {}
+        for toplevel, common_dir in common_dirs.values():
+            main = str(Path(common_dir).parent)
+            worktree_lists.setdefault(main, []).append(toplevel)
     script = f'''#!{sys.executable}
 import sys
 
 argv = sys.argv[1:]
 common_dirs = {common_dirs!r}
+worktree_lists = {worktree_lists!r}
+
+if argv[:1] == ["-C"] and argv[2:] == ["worktree", "list", "--porcelain"]:
+    main = argv[1]
+    out = "worktree " + main + "\\nHEAD 0000\\nbranch refs/heads/main\\n"
+    for wt in worktree_lists.get(main, []):
+        out += "\\nworktree " + wt + "\\nHEAD 0000\\nbranch refs/heads/wt\\n"
+    sys.stdout.write(out)
+    sys.exit(0)
 
 expected_tail = ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]
 if argv[:1] == ["-C"] and argv[2:] == expected_tail:
@@ -154,6 +181,11 @@ def allowed_status(path):
 
 def not_allowed_status(path):
     return {"config": {}, "state": {"foundRC": {"allowed": 1, "path": path}, "loadedRC": None}}
+
+
+def denied_status(path):
+    """direnv's AllowStatus 2: the user explicitly ran `direnv deny`."""
+    return {"config": {}, "state": {"foundRC": {"allowed": 2, "path": path}, "loadedRC": None}}
 
 
 class AgentDevshellTests(unittest.TestCase):
@@ -429,6 +461,88 @@ class AgentDevshellTests(unittest.TestCase):
         self.assertEqual(out["AGENT_DEVSHELL"], "not-built")
         self.assertEqual(self.fake.calls("systemd-run"), [])
 
+    def test_export_timeout_kills_process_group(self):
+        """I4: a timed-out `direnv export json` must not leave its children
+        (bash + `nix print-dev-env`, i.e. a background build/download)
+        running: the whole process group is killed, not just direnv."""
+        root = self._mk_project()
+        self._cache(root)
+        pidfile = self.tmpdir / "grandchild.pid"
+        write_fake_direnv(
+            self.fake.bin_dir / "direnv",
+            self.calls_dir / "direnv.jsonl",
+            status_map={str(root): allowed_status(str(root / ".envrc"))},
+            export_map={str(root): {"sleep": 30, "spawn_pidfile": str(pidfile)}},
+        )
+        binpath = self.fake.bin_dir / "target-bin"
+        write_fake_binary(binpath)
+
+        result = self.fake.run(
+            SCRIPT,
+            str(binpath),
+            env=self._env(AGENT_DEVSHELL_EXPORT_TIMEOUT="0.5"),
+            cwd=str(root),
+        )
+        out = json.loads(result.stdout)
+        self.assertEqual(out["AGENT_DEVSHELL"], "not-built")
+        pid = int(pidfile.read_text())
+        self.addCleanup(_kill_quietly, pid)
+        self.assertTrue(_wait_gone(pid, 3.0), f"grandchild {pid} still running")
+
+    def test_warmup_passes_direnv_config(self):
+        """C1: the warm-up runs under the user manager, which doesn't
+        inherit our environment; DIRENV_CONFIG (set by the wrapper so
+        nix-direnv's use_flake is used) must be passed explicitly."""
+        root = self._mk_project()
+        write_fake_direnv(
+            self.fake.bin_dir / "direnv",
+            self.calls_dir / "direnv.jsonl",
+            status_map={str(root): allowed_status(str(root / ".envrc"))},
+        )
+        self.fake.add("systemd-run")
+        self.fake.add("agent-net", stdout=json.dumps({"state": "unmetered"}))
+        binpath = self.fake.bin_dir / "target-bin"
+        write_fake_binary(binpath)
+
+        self.fake.run(
+            SCRIPT, str(binpath), env=self._env(DIRENV_CONFIG="/etc/direnv"), cwd=str(root)
+        )
+        calls = self.fake.calls("systemd-run")
+        self.assertEqual(len(calls), 1)
+        argv = calls[0]
+        self.assertIn("--setenv=DIRENV_CONFIG=/etc/direnv", argv)
+        self.assertLess(argv.index("--setenv=DIRENV_CONFIG=/etc/direnv"), argv.index("--"))
+
+    def test_worktree_denied_not_auto_allowed(self):
+        """C3: a worktree whose .envrc the user explicitly denied (direnv
+        allowed=2) is never auto-allowed, even if main is allowed and the
+        .envrc is byte-identical."""
+        main = self._mk_project("main-denied")
+        wt = self.tmpdir / "wt-denied"
+        wt.mkdir()
+        (wt / ".envrc").write_text((main / ".envrc").read_text())
+
+        write_fake_git(
+            self.fake.bin_dir / "git",
+            common_dirs={str(wt): (str(wt), str(main / ".git"))},
+        )
+        write_fake_direnv(
+            self.fake.bin_dir / "direnv",
+            self.calls_dir / "direnv.jsonl",
+            status_map={
+                str(wt): denied_status(str(wt / ".envrc")),
+                str(main): allowed_status(str(main / ".envrc")),
+            },
+        )
+        binpath = self.fake.bin_dir / "target-bin"
+        write_fake_binary(binpath)
+
+        result = self.fake.run(SCRIPT, str(binpath), env=self._env(), cwd=str(wt))
+        out = json.loads(result.stdout)
+        self.assertEqual(out["AGENT_DEVSHELL"], "not-allowed")
+        allow_calls = [c for c in self.fake.calls("direnv") if c["argv"][:1] == ["allow"]]
+        self.assertEqual(allow_calls, [])
+
     def test_worktree_auto_allow(self):
         main = self._mk_project("main")
         wt = self.tmpdir / "wt"
@@ -521,6 +635,120 @@ class AgentDevshellTests(unittest.TestCase):
         # The cache check only consults the main checkout's .direnv; it
         # must not shell out to `direnv exec`/`export` there too.
         self.assertFalse(any(c["cwd"] == str(main) and c["argv"][:1] != ["status"] for c in direnv_calls))
+
+
+def _pid_alive(pid):
+    """True if `pid` exists and isn't a zombie (a zombie has already been
+    killed, it just hasn't been reaped by whoever adopted it)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            state = f.read().rsplit(")", 1)[1].split()[0]
+        return state != "Z"
+    except OSError:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+
+def _wait_gone(pid, timeout):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _pid_alive(pid):
+            return True
+        time.sleep(0.05)
+    return not _pid_alive(pid)
+
+
+def _kill_quietly(pid):
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+
+
+@unittest.skipUnless(shutil.which("git"), "git not available on PATH")
+class WorktreeAutoAllowRealGitTests(unittest.TestCase):
+    """C3: the worktree auto-allow against real git. Only a worktree that
+    the main checkout itself has registered (`git worktree list`) counts;
+    a directory with a hand-written `.git` file pointing at the main
+    checkout's git dir (which makes `rev-parse` report it as a linked
+    worktree) must not be auto-allowed. direnv stays a fake."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmpdir = Path(self._tmp.name)
+        self.home = self.tmpdir / "home"
+        self.home.mkdir()
+        self.fake = FakeBin(self.tmpdir / "fakebin")
+        self.calls_dir = self.tmpdir / "fakebin" / "calls"
+        self.main = self.tmpdir / "main"
+        self.main.mkdir()
+        self._git("init", "-q", str(self.main))
+        self._git("-C", str(self.main), "config", "user.email", "agent-env-test@example.com")
+        self._git("-C", str(self.main), "config", "user.name", "agent-env-test")
+        (self.main / ".envrc").write_text("use flake\n")
+        (self.main / "flake.nix").write_text("{}\n")
+        self._git("-C", str(self.main), "add", "-A")
+        self._git("-C", str(self.main), "commit", "-q", "-m", "init")
+        write_fake_binary(self.fake.bin_dir / "target-bin")
+        # metered: no warm-up is attempted (and no systemd-run needed).
+        self.fake.add("agent-net", stdout=json.dumps({"state": "metered"}))
+
+    def _git(self, *args):
+        result = subprocess.run(["git", *args], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result
+
+    def _env(self):
+        env = self.fake.env(HOME=str(self.home))
+        env["PATH"] += ":" + str(Path(shutil.which("git")).parent)
+        return env
+
+    def _run_in(self, root):
+        write_fake_direnv(
+            self.fake.bin_dir / "direnv",
+            self.calls_dir / "direnv.jsonl",
+            status_map={
+                str(root): not_allowed_status(str(root / ".envrc")),
+                str(self.main): allowed_status(str(self.main / ".envrc")),
+            },
+        )
+        result = self.fake.run(
+            SCRIPT, str(self.fake.bin_dir / "target-bin"), env=self._env(), cwd=str(root)
+        )
+        allow_calls = [c for c in self.fake.calls("direnv") if c["argv"][:1] == ["allow"]]
+        return json.loads(result.stdout), allow_calls
+
+    def test_real_worktree_auto_allowed(self):
+        wt = self.tmpdir / "wt"
+        self._git("-C", str(self.main), "worktree", "add", "-q", str(wt), "-b", "wtbranch")
+        out, allow_calls = self._run_in(wt)
+        self.assertEqual(out["AGENT_DEVSHELL"], "not-built")
+        self.assertEqual([c["argv"] for c in allow_calls], [["allow", str(wt)]])
+
+    def test_forged_git_file_not_allowed(self):
+        forged = self.tmpdir / "forged"
+        forged.mkdir()
+        (forged / ".git").write_text(f"gitdir: {self.main / '.git'}\n")
+        (forged / ".envrc").write_bytes((self.main / ".envrc").read_bytes())
+        out, allow_calls = self._run_in(forged)
+        self.assertEqual(out["AGENT_DEVSHELL"], "not-allowed")
+        self.assertEqual(allow_calls, [])
+
+    def test_forged_git_file_not_cached_via_main(self):
+        """The cache shortcut (main's .direnv) is a worktree privilege
+        too: a forged directory never borrows it."""
+        forged = self.tmpdir / "forged2"
+        forged.mkdir()
+        (forged / ".git").write_text(f"gitdir: {self.main / '.git'}\n")
+        self.assertIsNone(agent_devshell._worktree_main_root(forged))
 
 
 @unittest.skipUnless(shutil.which("git"), "git not available on PATH")

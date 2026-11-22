@@ -16,15 +16,16 @@
     # Wrap a bare-stdlib Python script as a CLI. `--suffix PATH` (never
     # `--prefix`) so the tool's own deps never shadow the user's or the dev
     # shell's PATH; later tasks (`nx`, `agent-devshell`) reuse this.
-    mkTool = name: script: deps:
+    mkToolWith = extraArgs: name: script: deps:
       pkgs.runCommand name {
         nativeBuildInputs = [pkgs.makeWrapper];
         meta.mainProgram = name;
       } ''
         makeWrapper ${pkgs.python3}/bin/python3 $out/bin/${name} \
           --add-flags ${script} \
-          --suffix PATH : ${lib.makeBinPath deps}
+          --suffix PATH : ${lib.makeBinPath deps} ${lib.escapeShellArgs extraArgs}
       '';
+    mkTool = mkToolWith [];
 
     agentNet = mkTool "agent-net" ./agent-env/agent_net.py [pkgs.networkmanager pkgs.iproute2];
     # nx: store-first tool runner. nix-index supplies nix-locate (attribute
@@ -35,7 +36,18 @@
     # project's direnv dev shell when one is cached and allowed (T3 Code's
     # Claude/OpenCode instances point at claude-devshell/opencode-devshell,
     # below). Never fails closed: it always execs the binary it's given.
-    agentDevshell = mkTool "agent-devshell" ./agent-env/agent_devshell.py [pkgs.direnv pkgs.git pkgs.systemd agentNet];
+    #
+    # DIRENV_CONFIG: NixOS's programs.direnv only exports it to login shells
+    # (environment.variables); T3's systemd service has none, so direnv
+    # would use its built-in use_flake (a full `nix print-dev-env` per call,
+    # a layout the cache check never sees). Default it to /etc/direnv
+    # (nix-direnv's direnvrc) unless the caller already set one; the
+    # warm-up forwards it to its systemd-run unit.
+    agentDevshell =
+      mkToolWith
+      (lib.optionals config.programs.direnv.enable ["--set-default" "DIRENV_CONFIG" "/etc/direnv"])
+      "agent-devshell"
+      ./agent-env/agent_devshell.py [pkgs.direnv pkgs.git pkgs.systemd agentNet];
 
     # The one Markdown file every agent reads (Claude via a CLAUDE.md import
     # line, OpenCode via its `instructions` config). Store path, world-readable

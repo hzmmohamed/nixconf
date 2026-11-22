@@ -23,7 +23,9 @@ varies is the AGENT_DEVSHELL environment variable BINARY sees, one of:
                 os.execvpe BINARY ourselves). If the export call itself
                 fails or answers with something unparseable, that's
                 `error`; if it times out, that's `not-built` (the dev shell
-                may be mid-rebuild) and no warm-up is fired for it.
+                may be mid-rebuild), its whole process group is killed (no
+                background `nix print-dev-env` left fetching) and no
+                warm-up is fired for it.
   error       - something in the logic above raised, or `direnv export
                 json` failed/answered with bad JSON; BINARY runs bare.
 
@@ -31,9 +33,12 @@ Root resolution: nearest ancestor of cwd (inclusive) with a `.envrc`,
 stopping before (and not including) $HOME or `/`.
 
 Worktree exception: when `root` is a linked git worktree (its
-`--git-common-dir` is not `<root>/.git`) and its main checkout's `.envrc` is
-both allowed and byte-identical, this script auto-allows the worktree root
-(`direnv allow <root>`) rather than reporting not-allowed, and considers the
+`--git-common-dir` is not `<root>/.git` AND the main checkout lists it in
+`git worktree list`, so a forged `.git` file doesn't qualify), its own
+`.envrc` is merely not yet allowed (never one the user explicitly denied),
+and its main checkout's `.envrc` is both allowed and byte-identical, this
+script auto-allows the worktree root (`direnv allow <root>`) rather than
+reporting not-allowed, and considers the
 worktree cached whenever the main checkout is cached and the shell-defining
 files are byte-identical between the two (no seeding: direnv re-evaluates
 locally against store paths the main checkout already roots). The main
@@ -46,6 +51,7 @@ allow check and the cache check.
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -121,11 +127,23 @@ def _direnv_status(root: Path):
     return json.loads(proc.stdout)
 
 
-def _is_allowed(status) -> bool:
+# direnv's AllowStatus values (foundRC.allowed in `direnv status --json`).
+ALLOWED, NOT_ALLOWED, DENIED = 0, 1, 2
+
+
+def _allow_status(status):
+    """foundRC.allowed (ALLOWED/NOT_ALLOWED/DENIED), or None when there's
+    no usable foundRC."""
     if not isinstance(status, dict):
-        return False
+        return None
     found = (status.get("state") or {}).get("foundRC")
-    return isinstance(found, dict) and found.get("allowed") == 0
+    if not isinstance(found, dict):
+        return None
+    return found.get("allowed")
+
+
+def _is_allowed(status) -> bool:
+    return _allow_status(status) == ALLOWED
 
 
 def _git_common_dir(root: Path):
@@ -154,19 +172,43 @@ def _git_common_dir(root: Path):
     return Path(lines[0]), Path(lines[1])
 
 
+def _registered_worktrees(main_toplevel: Path):
+    """Resolved paths of the worktrees `main_toplevel` itself has
+    registered (`git worktree list --porcelain`), or an empty set if git
+    failed."""
+    proc = _run(["git", "-C", str(main_toplevel), "worktree", "list", "--porcelain"])
+    if proc is None or proc.returncode != 0:
+        return set()
+    paths = set()
+    for line in proc.stdout.splitlines():
+        if line.startswith("worktree "):
+            paths.add(Path(line[len("worktree ") :]).resolve())
+    return paths
+
+
 def _worktree_main_root(root: Path):
     """The corresponding path in the main checkout if `root` is a linked
     worktree, else None: not a git repo, git failed, it IS the main
-    checkout (common-dir == <toplevel>/.git), or the computed main-checkout
-    path doesn't exist (a worktree subdirectory with no counterpart in the
-    main tree, e.g. untracked/uncommitted there)."""
+    checkout (common-dir == <toplevel>/.git), the main checkout hasn't
+    registered `root`'s toplevel as one of its worktrees, or the computed
+    main-checkout path doesn't exist (a worktree subdirectory with no
+    counterpart in the main tree, e.g. untracked/uncommitted there).
+
+    The registration check matters: any directory with a one-line `.git`
+    file (`gitdir: <main>/.git`) makes `rev-parse` report it as a linked
+    worktree of <main>. Only `git worktree list` run in the main checkout
+    (which reads <main>/.git/worktrees, not anything under `root`) tells a
+    real `git worktree add` from such a forgery."""
     got = _git_common_dir(root)
     if got is None:
         return None
     toplevel, common_dir = got  # both absolute (--path-format=absolute)
+    toplevel, common_dir = toplevel.resolve(), common_dir.resolve()
     if common_dir == (toplevel / ".git"):
         return None  # the main checkout, not a worktree
     main_toplevel = common_dir.parent
+    if toplevel not in _registered_worktrees(main_toplevel):
+        return None  # not a worktree main knows about (e.g. a forged .git file)
     try:
         rel = root.resolve().relative_to(toplevel)
     except ValueError:
@@ -187,11 +229,14 @@ def _files_identical(a: Path, b: Path) -> bool:
         return False
 
 
-def _try_worktree_auto_allow(root: Path, main_root) -> bool:
-    """The worktree exception: if `root`'s main checkout is allowed and its
+def _try_worktree_auto_allow(root: Path, main_root, root_status) -> bool:
+    """The worktree exception: if `root`'s `.envrc` is merely not yet
+    allowed (never explicitly denied), its main checkout is allowed and the
     `.envrc` is byte-identical, `direnv allow root` and report allowed."""
     if main_root is None:
         return False
+    if _allow_status(root_status) != NOT_ALLOWED:
+        return False  # a `direnv deny` is the user's call; never override it
     if not _is_allowed(_direnv_status(main_root)):
         return False
     if not _files_identical(root / ".envrc", main_root / ".envrc"):
@@ -201,9 +246,10 @@ def _try_worktree_auto_allow(root: Path, main_root) -> bool:
 
 
 def _check_allowed(root: Path, main_root) -> bool:
-    if _is_allowed(_direnv_status(root)):
+    status = _direnv_status(root)
+    if _is_allowed(status):
         return True
-    return _try_worktree_auto_allow(root, main_root)
+    return _try_worktree_auto_allow(root, main_root, status)
 
 
 def _profile_cached_locally(root: Path) -> bool:
@@ -265,6 +311,13 @@ def _agent_net_unmetered() -> bool:
 def _warm_up(root: Path) -> None:
     digest = hashlib.sha1(os.fsencode(root)).hexdigest()[:12]
     unit = f"agent-devshell-warm-{digest}"
+    # The unit runs under the user manager, which doesn't inherit our
+    # environment: without DIRENV_CONFIG (the wrapper defaults it to
+    # /etc/direnv) direnv falls back to its built-in use_flake, whose
+    # layout never makes the next start "cached".
+    setenv = []
+    if os.environ.get("DIRENV_CONFIG"):
+        setenv = [f"--setenv=DIRENV_CONFIG={os.environ['DIRENV_CONFIG']}"]
     _run(
         [
             "systemd-run",
@@ -273,6 +326,7 @@ def _warm_up(root: Path) -> None:
             "--quiet",
             "--unit",
             unit,
+            *setenv,
             "--",
             "direnv",
             "exec",
@@ -298,24 +352,34 @@ def _direnv_export(root: Path):
     env = dict(os.environ)
     env["DIRENV_LOG_FORMAT"] = ""
     try:
-        proc = subprocess.run(
+        # Own session/process group: on timeout the whole group (direnv,
+        # its bash, `nix print-dev-env`) is killed, not just direnv --
+        # otherwise a build/download keeps running in the background.
+        proc = subprocess.Popen(
             ["direnv", "export", "json"],
-            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=_export_timeout(),
             cwd=str(root),
             env=env,
+            start_new_session=True,
         )
+    except OSError:
+        return "error", None
+    try:
+        stdout, _ = proc.communicate(timeout=_export_timeout())
     except subprocess.TimeoutExpired:
-        # subprocess.run already killed and reaped the child on timeout.
+        _kill_group(proc)
         return "timeout", None
     except (OSError, UnicodeDecodeError):
+        _kill_group(proc)
         return "error", None
 
     if proc.returncode != 0:
         return "error", None
 
-    out = proc.stdout.strip()
+    out = (stdout or "").strip()
     if not out:
         return "ok", {}  # no changes
     try:
@@ -325,6 +389,28 @@ def _direnv_export(root: Path):
     if not isinstance(data, dict):
         return "error", None
     return "ok", data
+
+
+def _kill_group(proc) -> None:
+    """SIGKILL `proc`'s whole process group (it leads its own session),
+    then reap it. Never raises."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    for pipe in (proc.stdout, proc.stderr):
+        try:
+            if pipe is not None:
+                pipe.close()
+        except OSError:
+            pass
 
 
 def _exec_loaded(root: Path, binary: str, args: list) -> None:
