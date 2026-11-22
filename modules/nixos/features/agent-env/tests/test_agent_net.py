@@ -99,6 +99,27 @@ class AgentNetTests(unittest.TestCase):
         self.assertEqual(data["state"], "unmetered")
         self.assertEqual(data["source"], "none")
 
+    def test_nmcli_timeout_degrades_to_unmetered(self):
+        # A known route but a hung nmcli: the CLI must still answer (not
+        # raise), and the same way it would if nmcli were simply missing
+        # (test_no_nmcli above) — "unmetered, source none", not "offline".
+        # $AGENT_NET_TIMEOUT keeps this test fast: nmcli sleeps well past
+        # it, so subprocess.run times out quickly rather than the test
+        # waiting out the real 1.5s default.
+        self.fake.add(
+            "ip",
+            stdout=json.dumps([{"dst": "default", "dev": "wlo1", "metric": 600}]),
+        )
+        self.fake.add("nmcli", stdout="no\nhome\n", sleep=1)
+        env = self.fake.env(AGENT_NET_TIMEOUT="0.2")
+
+        result = self.fake.run(SCRIPT, "--json", env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(
+            data, {"state": "unmetered", "connection": None, "device": "wlo1", "source": "none"}
+        )
+
     def test_override(self):
         self.fake.add(
             "ip",

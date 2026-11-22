@@ -84,15 +84,45 @@ def _nmcli_metered(dev: str, timeout: float = 1.5):
     return metered, connection
 
 
-def status(timeout: float = 1.5) -> dict:
+def _default_timeout() -> float:
+    """The CLI's per-call timeout: 1.5s, overridable via $AGENT_NET_TIMEOUT
+    (tests only — lets a CLI test exercise a real timeout without an
+    actual 1.5s wait)."""
+    raw = os.environ.get("AGENT_NET_TIMEOUT")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return 1.5
+
+
+def status(timeout: float | None = None, strict: bool = False) -> dict:
     """The {"state", "connection", "device", "source"} shape used by --json.
 
-    `timeout` bounds each of the (up to two) external calls (`ip`, `nmcli`).
-    The CLI uses the default 1.5s; the Claude hooks pass a much shorter
-    budget and let subprocess.TimeoutExpired propagate out of here on a
-    hang, rather than returning a guessed status.
+    `timeout` bounds each of the (up to two) external calls (`ip`, `nmcli`);
+    defaults to `_default_timeout()` (1.5s, $AGENT_NET_TIMEOUT-overridable)
+    when not given.
+
+    `strict=False` (the CLI's own use) degrades a timed-out call exactly
+    like a missing tool: a timed-out `ip` still reports "offline", a
+    timed-out `nmcli` with a known route still reports "unmetered, source
+    none" — a hung tool and an absent one are both "nothing to say about
+    metering". `strict=True` (the Claude hooks) instead lets
+    subprocess.TimeoutExpired propagate, because there a guessed status is
+    worse than no status: it could be stored as this session's last-known
+    state and spuriously look like a "Network changed" transition on the
+    next prompt.
     """
-    dev = _default_route(timeout=timeout)
+    if timeout is None:
+        timeout = _default_timeout()
+
+    try:
+        dev = _default_route(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if strict:
+            raise
+        dev = None
     override = _read_override()
 
     if dev is None:
@@ -105,7 +135,12 @@ def status(timeout: float = 1.5) -> dict:
             "source": "override" if override else "none",
         }
 
-    nm = _nmcli_metered(dev, timeout=timeout)
+    try:
+        nm = _nmcli_metered(dev, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if strict:
+            raise
+        nm = None
     connection = nm[1] if nm else None
 
     if override is not None:
@@ -199,7 +234,7 @@ def _cmd_hook(kind: str) -> int:
     # the next prompt once the real state is read.
     try:
         session_id = _hook_session_id_from_stdin()
-        d = status(timeout=HOOK_TIMEOUT)
+        d = status(timeout=HOOK_TIMEOUT, strict=True)
         state = d["state"]
 
         if kind == "session-start":
@@ -257,13 +292,9 @@ def main(argv=None) -> int:
             return 2
         return _cmd_hook(argv[1])
 
-    try:
-        d = status()
-    except subprocess.TimeoutExpired:
-        # A hung `ip`/`nmcli` at the CLI's own 1.5s-per-call budget: same
-        # "nothing we can say" bucket as no connectivity at all, rather
-        # than a crash.
-        d = {"state": "offline", "connection": None, "device": None, "source": "none"}
+    # Non-strict: a hung ip/nmcli degrades to the same answer as a missing
+    # one (see status()'s docstring), so this never raises.
+    d = status()
     if "--json" in argv:
         print(json.dumps(d))
     else:
