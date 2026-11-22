@@ -108,6 +108,62 @@ class ImportScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(claude_md.read_text().count(IMPORT_LINE), 1)
 
+    def test_symlinked_claude_md_untouched(self):
+        """I6: a CLAUDE.md that is a symlink (e.g. into the store, managed
+        elsewhere) is left alone with a warning; activation must not fail."""
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            target = home / "managed-CLAUDE.md"
+            target.write_text("# managed elsewhere\n")
+            claude_dir = home / ".claude"
+            claude_dir.mkdir()
+            (claude_dir / "CLAUDE.md").symlink_to(target)
+
+            result = self.run_import(home, ".claude", ".claude-work")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((claude_dir / "CLAUDE.md").is_symlink())
+            self.assertEqual(target.read_text(), "# managed elsewhere\n")
+            self.assertIn("CLAUDE.md", result.stderr)
+            # The other account is still handled.
+            other = home / ".claude-work" / "CLAUDE.md"
+            self.assertEqual(other.read_text().count(IMPORT_LINE), 1)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_read_only_claude_md_untouched(self):
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            claude_dir = home / ".claude"
+            claude_dir.mkdir()
+            claude_md = claude_dir / "CLAUDE.md"
+            claude_md.write_text("# read-only notes\n")
+            claude_md.chmod(0o444)
+            try:
+                result = self.run_import(home, ".claude", ".claude-work")
+            finally:
+                claude_md.chmod(0o644)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(claude_md.read_text(), "# read-only notes\n")
+            self.assertIn("CLAUDE.md", result.stderr)
+            other = home / ".claude-work" / "CLAUDE.md"
+            self.assertEqual(other.read_text().count(IMPORT_LINE), 1)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_uncreatable_account_dir_skipped(self):
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            locked = home / "locked"
+            locked.mkdir()
+            locked.chmod(0o555)
+            try:
+                result = self.run_import(home, "locked/.claude", ".claude-work")
+            finally:
+                locked.chmod(0o755)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((locked / ".claude").exists())
+            self.assertIn("locked/.claude", result.stderr)
+            other = home / ".claude-work" / "CLAUDE.md"
+            self.assertEqual(other.read_text().count(IMPORT_LINE), 1)
+
     def test_multiple_dirs(self):
         with tempfile.TemporaryDirectory() as home:
             home = Path(home)
