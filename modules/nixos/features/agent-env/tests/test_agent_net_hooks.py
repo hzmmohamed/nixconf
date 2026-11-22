@@ -114,7 +114,25 @@ class AgentNetHookTests(unittest.TestCase):
         elapsed = time.monotonic() - start
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
-        self.assertLess(elapsed, 2)
+        # The hook's own budget (HOOK_TIMEOUT=0.25s per call, at most two
+        # calls) must bound this, not the 5s the fake nmcli sleeps for.
+        self.assertLess(elapsed, 1.0)
+        # A status that timed out is "undetermined", not "offline": it must
+        # not be stored, or the next prompt would see a bogus transition
+        # into/out of "offline" once the real state is read.
+        self.assertFalse((self.runtime_dir / "agent-net" / "s9").exists())
+
+    def test_prompt_fast_path_latency(self):
+        self._add_metered()
+        start = time.monotonic()
+        result = self.fake.run(
+            SCRIPT, "hook", "prompt", stdin='{"session_id":"s-fast"}', env=self.env
+        )
+        elapsed = time.monotonic() - start
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Loose bound (interpreter startup + two fast fake subprocesses)
+        # so this doesn't flake, but it does catch a budget regression.
+        self.assertLess(elapsed, 0.5)
 
 
 if __name__ == "__main__":

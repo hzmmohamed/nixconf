@@ -485,6 +485,8 @@
         };
 
         xdg.configFile."herdr/config.toml".source = herdrConfig;
+        # Store paths and hook event names only, no secrets: fine to be
+        # world-readable like the rest of $XDG_CONFIG_HOME.
         xdg.configFile."agents/claude-managed.json".source = claudeManagedSettingsFile;
 
         home.packages =

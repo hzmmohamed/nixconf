@@ -43,16 +43,20 @@ def _read_override():
     return value if value in VALID_OVERRIDES else None
 
 
-def _run(args):
+def _run(args, timeout: float = 1.5):
+    """Run an external tool. Returns None if it's missing or fails; lets
+    subprocess.TimeoutExpired propagate (a hung tool is a distinct failure
+    mode from a missing one — callers that care, like the hook path, need
+    to tell them apart rather than silently guessing a status)."""
     try:
-        return subprocess.run(args, capture_output=True, text=True, timeout=1.5)
-    except (OSError, subprocess.TimeoutExpired):
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except OSError:
         return None
 
 
-def _default_route():
+def _default_route(timeout: float = 1.5):
     """The device of the default route with the lowest metric, or None."""
-    proc = _run(["ip", "-j", "route", "show", "default"])
+    proc = _run(["ip", "-j", "route", "show", "default"], timeout=timeout)
     if proc is None or proc.returncode != 0 or not proc.stdout.strip():
         return None
     try:
@@ -65,10 +69,11 @@ def _default_route():
     return best.get("dev")
 
 
-def _nmcli_metered(dev: str):
+def _nmcli_metered(dev: str, timeout: float = 1.5):
     """(is_metered, connection_name) from NetworkManager, or None if unavailable."""
     proc = _run(
-        ["nmcli", "-t", "-g", "GENERAL.METERED,GENERAL.CONNECTION", "device", "show", dev]
+        ["nmcli", "-t", "-g", "GENERAL.METERED,GENERAL.CONNECTION", "device", "show", dev],
+        timeout=timeout,
     )
     if proc is None or proc.returncode != 0:
         return None
@@ -79,9 +84,15 @@ def _nmcli_metered(dev: str):
     return metered, connection
 
 
-def status() -> dict:
-    """The {"state", "connection", "device", "source"} shape used by --json."""
-    dev = _default_route()
+def status(timeout: float = 1.5) -> dict:
+    """The {"state", "connection", "device", "source"} shape used by --json.
+
+    `timeout` bounds each of the (up to two) external calls (`ip`, `nmcli`).
+    The CLI uses the default 1.5s; the Claude hooks pass a much shorter
+    budget and let subprocess.TimeoutExpired propagate out of here on a
+    hang, rather than returning a guessed status.
+    """
+    dev = _default_route(timeout=timeout)
     override = _read_override()
 
     if dev is None:
@@ -94,7 +105,7 @@ def status() -> dict:
             "source": "override" if override else "none",
         }
 
-    nm = _nmcli_metered(dev)
+    nm = _nmcli_metered(dev, timeout=timeout)
     connection = nm[1] if nm else None
 
     if override is not None:
@@ -173,12 +184,22 @@ def _hook_session_id_from_stdin():
     return _sanitize_session_id(data.get("session_id"))
 
 
+# Claude's UserPromptSubmit budget is well under a second; each of the (up
+# to two) external calls status() makes gets this, so the hook's worst case
+# is ~2x this plus interpreter startup, not the CLI's 1.5s-per-call budget.
+HOOK_TIMEOUT = 0.25
+
+
 def _cmd_hook(kind: str) -> int:
-    # Claude hooks must never fail closed: any error here is swallowed and
-    # the hook exits 0 with no output (Claude just gets no extra context).
+    # Claude hooks must never fail closed: any error here (including a
+    # hung `ip`/`nmcli` blowing the HOOK_TIMEOUT budget, raised by status()
+    # as subprocess.TimeoutExpired) is swallowed and the hook exits 0 with
+    # no output — and, importantly, without storing a state it never
+    # actually determined, which would cause a bogus "Network changed" on
+    # the next prompt once the real state is read.
     try:
         session_id = _hook_session_id_from_stdin()
-        d = status()
+        d = status(timeout=HOOK_TIMEOUT)
         state = d["state"]
 
         if kind == "session-start":
@@ -236,7 +257,13 @@ def main(argv=None) -> int:
             return 2
         return _cmd_hook(argv[1])
 
-    d = status()
+    try:
+        d = status()
+    except subprocess.TimeoutExpired:
+        # A hung `ip`/`nmcli` at the CLI's own 1.5s-per-call budget: same
+        # "nothing we can say" bucket as no connectivity at all, rather
+        # than a crash.
+        d = {"state": "offline", "connection": None, "device": None, "source": "none"}
     if "--json" in argv:
         print(json.dumps(d))
     else:
