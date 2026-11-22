@@ -42,6 +42,7 @@
       self.nixosModules.agent-common
       self.nixosModules.agent-host
       self.nixosModules.agent-t3code
+      self.nixosModules.github
       self.nixosModules.agent-opencode
       # Project secrets: file:///run/secrets/secretspec (none needed yet).
       # AWS comes from the instance role, never from secretspec.

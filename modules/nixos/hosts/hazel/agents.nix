@@ -14,6 +14,7 @@
       self.nixosModules.agent-common
       self.nixosModules.agent-client
       self.nixosModules.agent-t3code
+      self.nixosModules.github
       self.nixosModules.agent-opencode
       self.nixosModules.secretspec
     ];

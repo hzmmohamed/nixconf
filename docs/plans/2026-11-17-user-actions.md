@@ -467,6 +467,26 @@ butternut `bash scripts/aws-sso/setup.sh --dry-run && bash scripts/aws-sso/setup
 Admin / Operator / CloudBox), `bash scripts/aws-sso/store-config.sh` (sops), rebuild butternut + hazel,
 then `aws-login` and `bash scripts/aws-sso/verify.sh` on hazel. Static keys are retired later (phase 5).
 
+## GitHub login with gh (hazel, butternut, fern)
+
+`features/github.nix`: `gh` for T3's PR panel and agents, no tokens in sops. Once per host,
+after deploying it:
+
+```fish
+# Only if a stale backup exists: home-manager replaces ~/.config/gh/config.yml and refuses
+# to overwrite an existing .backup.
+test -e ~/.config/gh/config.yml.backup; and mv ~/.config/gh/config.yml.backup ~/.config/gh/config.yml.old
+gh auth login --web --git-protocol ssh --hostname github.com
+gh auth status
+```
+
+`gh auth login` prints a code: open github.com/login/device (any device), sign in (password
+from KeePassXC, Super+p), approve. Typing any `gh` command while logged out starts the same
+login; desktops also notify at session start, fern prints a reminder in new shells.
+
+- [ ] hazel   - [ ] butternut   - [ ] fern (when created)
+- [ ] T3: a GitHub repo's PR panel lists pull requests
+
 ## Deploy from hazel: builds on butternut, repo sync (hazel is the primary device)
 
 hazel's nix daemon offloads builds to butternut (`features/nix-builder.nix`), `deploy` builds
