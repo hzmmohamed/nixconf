@@ -17,7 +17,22 @@
 # Reachable on the tailnet (tailscale0 is trusted) and on trusted networks
 # (home LAN, cable) through preferences.trustedNetworks. No authentication:
 # never open it on untrusted interfaces.
-{...}: {
+#
+# Phone profile (`phone.enable`, for the Nixconf Android app, apps/phone/):
+# darkhttpd on `phone.port`, same reach as the server (tailnet + trusted
+# networks, no authentication), serving /var/lib/phone-profile:
+#   profile.json      servers, languages, Whisper prompt (fleet vocabulary),
+#                     draft retention and the on-phone Parakeet model: file
+#                     names, sizes, sha256 and URLs (`phone.profile`; its
+#                     shape is checked against the app by checks.phone-profile)
+#   models/parakeet/  the Parakeet int8 files (self.dictationModels, the same
+#                     pins as the laptops)
+#   app.json, app/    the published release APK, written by
+#                     `nix run .#phone-app -- publish` as the user (no redeploy)
+# profile.json and models/ are symlinks into the store, relinked (as root)
+# each time the unit starts; darkhttpd opens paths with plain open(), so it
+# follows them, and runs as a dynamic user with read-only access.
+{self, ...}: {
   flake.nixosModules.dictation-server = {
     config,
     lib,
@@ -25,6 +40,9 @@
     ...
   }: let
     cfg = config.preferences.dictation-server;
+    inherit (cfg) phone;
+    user = config.preferences.user.name;
+    models = self.dictationModels pkgs;
     backendPort = cfg.port + 1;
     idle = cfg.idleStopSec != null;
     listenPort =
@@ -82,6 +100,55 @@
       echo "whisper-server did not come up" >&2
       exit 1
     '';
+
+    stateDir = "/var/lib/phone-profile";
+    phoneUrl = "http://${config.networking.hostName}:${toString phone.port}";
+    parakeetFiles = ["encoder.int8.onnx" "decoder.int8.onnx" "joiner.int8.onnx" "tokens.txt"];
+
+    profile =
+      pkgs.runCommand "phone-profile.json" {
+        nativeBuildInputs = [pkgs.jq];
+        modelDir = models.parakeet;
+        modelFiles = parakeetFiles;
+        modelUrl = "${phoneUrl}/models/parakeet";
+        base = builtins.toJSON {
+          version = 1;
+          inherit (phone) servers defaultLanguage languages prompt keepDays;
+          localModel = {
+            name = "parakeet-tdt-0.6b-v2-int8";
+            language = "en";
+            archive = {
+              inherit (models.parakeetArchive) url;
+              sha256 = builtins.convertHash {
+                inherit (models.parakeetArchive) hash;
+                toHashFormat = "base16";
+              };
+            };
+          };
+          appUrl = "${phoneUrl}/app.json";
+        };
+      } ''
+        bash ${./dictation/phone-profile.sh}
+      '';
+
+    modelsDir = pkgs.linkFarm "phone-profile-models" [
+      {
+        name = "parakeet";
+        path = models.parakeet;
+      }
+    ];
+
+    # Root (ExecStartPre=+): the state dir belongs to the user, who publishes
+    # APKs into it; -T never follows an existing link.
+    linkStore = pkgs.writeShellScript "phone-profile-link" ''
+      set -eu
+      ln -sfnT ${profile} ${stateDir}/profile.json
+      ln -sfnT ${modelsDir} ${stateDir}/models
+    '';
+
+    mimeTypes = pkgs.writeText "phone-profile-mime.types" ''
+      application/vnd.android.package-archive apk
+    '';
   in {
     options.preferences.dictation-server = {
       port = lib.mkOption {
@@ -130,6 +197,56 @@
         type = lib.types.listOf lib.types.str;
         default = [];
         description = "Extra whisper-server arguments.";
+      };
+
+      phone = {
+        enable = lib.mkEnableOption "the phone profile, Parakeet files and APKs over HTTP (Nixconf Android app)";
+
+        port = lib.mkOption {
+          type = lib.types.port;
+          default = 8180;
+          description = "Port of the profile/model/APK server (tailnet + trusted networks only).";
+        };
+
+        servers = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = ["http://${config.networking.hostName}:${toString cfg.port}"];
+          defaultText = lib.literalExpression ''["http://''${config.networking.hostName}:''${toString config.preferences.dictation-server.port}"]'';
+          description = "Whisper servers the phone tries, in order (tailnet names resolve through MagicDNS).";
+        };
+
+        defaultLanguage = lib.mkOption {
+          type = lib.types.str;
+          default = "en";
+          description = "Language the keyboard starts in (one of `languages`).";
+        };
+
+        languages = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = ["en" "ar"];
+          description = "Languages the keyboard's toggle cycles through (Whisper codes; on-phone Parakeet is English only).";
+        };
+
+        prompt = lib.mkOption {
+          type = lib.types.str;
+          default = lib.concatStringsSep ", " self.dictationVocabulary + ".";
+          defaultText = lib.literalExpression ''lib.concatStringsSep ", " self.dictationVocabulary + "."'';
+          description = "Whisper initial prompt sent by the phone (fleet vocabulary, modules/dictation-vocabulary.nix).";
+        };
+
+        keepDays = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 7;
+          description = "Days the phone keeps delivered and cancelled drafts (pending ones are never pruned).";
+        };
+
+        profile = lib.mkOption {
+          type = lib.types.package;
+          readOnly = true;
+          default = profile;
+          defaultText = "profile.json built from the options above";
+          description = "The generated profile.json (served at /profile.json; checks.phone-profile).";
+        };
       };
     };
 
@@ -188,6 +305,50 @@
             DynamicUser = true;
           };
         };
+      })
+
+      (lib.mkIf phone.enable {
+        assertions = [
+          {
+            assertion = lib.elem phone.defaultLanguage phone.languages;
+            message = "preferences.dictation-server.phone.defaultLanguage must be one of phone.languages.";
+          }
+        ];
+
+        systemd.tmpfiles.rules = [
+          "d ${stateDir} 0755 ${user} ${config.users.users.${user}.group} -"
+          "d ${stateDir}/app 0755 ${user} ${config.users.users.${user}.group} -"
+        ];
+
+        systemd.services.phone-profile = {
+          description = "Phone profile, Parakeet files and APKs for the Nixconf app";
+          wantedBy = ["multi-user.target"];
+          after = ["network.target" "systemd-tmpfiles-setup.service"];
+          serviceConfig = {
+            ExecStartPre = "+${linkStore}";
+            ExecStart = lib.escapeShellArgs [
+              (lib.getExe pkgs.darkhttpd)
+              stateDir
+              "--port"
+              (toString phone.port)
+              "--ipv6"
+              "--no-listing"
+              "--hide-dotfiles"
+              "--no-server-id"
+              "--mimetypes"
+              "${mimeTypes}"
+            ];
+            DynamicUser = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
+
+        preferences.trustedNetworks.allowedTCPPorts = [phone.port];
       })
     ];
   };
