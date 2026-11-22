@@ -134,6 +134,8 @@
     # automatically (features/cable-link.nix). Binary cache served on eno2
     # (both cases) and the tailnet. `deploy hazel` pushes over the cable.
     preferences.cable.interface = "eno2";
+    # Mark hazel-shares as metered: hazel is on a phone hotspot.
+    preferences.cable.peerSharesMetered = true;
     preferences.nix-serve.firewallInterfaces = ["eno2"];
 
     networking = {
