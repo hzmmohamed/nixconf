@@ -59,7 +59,7 @@ class FakeBin:
         env.update(extra)
         return env
 
-    def run(self, script, *args, stdin="", env=None):
+    def run(self, script, *args, stdin="", env=None, cwd=None):
         return subprocess.run(
             [sys.executable, str(script), *args],
             input=stdin,
@@ -67,4 +67,5 @@ class FakeBin:
             text=True,
             timeout=10,
             env=env if env is not None else self.env(),
+            cwd=cwd,
         )

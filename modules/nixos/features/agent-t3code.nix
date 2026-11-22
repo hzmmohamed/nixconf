@@ -127,15 +127,17 @@
             # can be pinned; each instance keeps its own homePath.
             # Stable profile paths: a CLI bump reaches new sessions without
             # restarting T3. Claude is the claude-code input's build (the
-            # HM wrapper with plugins + MCP), OpenCode the agent-opencode one.
+            # HM wrapper with plugins + MCP), OpenCode the agent-opencode
+            # one; both run through agent-devshell (agent-common) so threads
+            # start inside the project's direnv dev shell when one is ready.
             instances = {
               claudeAgent = {
                 locked = true;
-                binaryPath = "${userBin}/claude";
+                binaryPath = "${userBin}/claude-devshell";
               };
               opencode = {
                 locked = true;
-                binaryPath = "${userBin}/opencode";
+                binaryPath = "${userBin}/opencode-devshell";
               };
             };
           };

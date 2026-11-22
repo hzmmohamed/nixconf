@@ -31,8 +31,21 @@
     # lookup when a bare prog name doesn't match its own nixpkgs attribute);
     # agentNet is its own metered/unmetered/offline source.
     nx = mkTool "nx" ./agent-env/nx.py [pkgs.nix pkgs.nix-index agentNet];
+    # agent-devshell: wraps a provider binary so it starts inside the
+    # project's direnv dev shell when one is cached and allowed (T3 Code's
+    # Claude/OpenCode instances point at claude-devshell/opencode-devshell,
+    # below). Never fails closed: it always execs the binary it's given.
+    agentDevshell = mkTool "agent-devshell" ./agent-env/agent_devshell.py [pkgs.direnv pkgs.git pkgs.systemd agentNet];
+
+    userBin = "/etc/profiles/per-user/${user}/bin";
+    claudeDevshell = pkgs.writeShellScriptBin "claude-devshell" ''
+      exec ${lib.getExe agentDevshell} ${userBin}/claude "$@"
+    '';
+    opencodeDevshell = pkgs.writeShellScriptBin "opencode-devshell" ''
+      exec ${lib.getExe agentDevshell} ${userBin}/opencode "$@"
+    '';
   in {
-    home-manager.users.${user}.home.packages = [agentNet nx];
+    home-manager.users.${user}.home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
 
     preferences.agents.claudeHooks = {
       SessionStart = ["${lib.getExe agentNet} hook session-start"];
