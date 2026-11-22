@@ -82,7 +82,10 @@
     glyphFont = d.type.family.glyph;
     glyphSize = d.type.size.glyph;
     px = n: "${toString n}px";
-    value = s: "<span size='${px d.type.size.caption}'>${s}</span>";
+    # Pango markup has no px unit: size is in 1024ths of a point, and a CSS
+    # px is 0.75 pt (96 dpi), so px × 768. A "11px" made Pango reject the
+    # whole label (empty module).
+    value = s: "<span size='${toString (d.type.size.caption * 768)}'>${s}</span>";
 
     # Signal the running waybar (main process only — never its module children).
     waybarSignal = sig: "systemctl --user kill --kill-whom=main -s ${sig} waybar.service";
@@ -166,7 +169,7 @@
       "custom/agents" = {
         exec = "${lib.getExe selfpkgs.agent-status} busy";
         return-type = "json";
-        format = "{icon}\n${value "{}"}";
+        format = "{icon}\n${value "{text}"}";
         format-icons = {
           working = "󰝲";
           done = "󰄬";

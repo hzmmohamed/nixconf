@@ -377,7 +377,8 @@ def bar(instance, label, caption):
                          ensure_ascii=False))
 
     def value(v):
-        return f"{LAPTOP}\n<span size='{caption * 1024}'>{v}</span>"
+        # caption is in CSS px; Pango sizes are 1024ths of a pt (1 px = 0.75 pt).
+        return f"{LAPTOP}\n<span size='{caption * 768}'>{v}</span>"
 
     if not st:
         return out("", "", "none")
