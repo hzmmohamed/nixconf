@@ -563,3 +563,61 @@ Then on **hazel**, whose history is now the old one (commit or push your work fi
 ```fish
 cd ~/nixconf; git fetch butternut; git checkout main; git reset --hard butternut/main
 ```
+
+### Agent environment rollout (agent-net, nx, agent-devshell, guidelines)
+
+Deploy the two desktops first:
+
+```fish
+just deploy hazel
+just deploy butternut
+```
+
+Then run these checks.
+
+**1. `agent-devshell` loads the project's dev shell.** New T3 thread in a
+direnv project (e.g. `~/nixconf`), ask the agent to run:
+
+```fish
+echo $AGENT_DEVSHELL
+```
+
+Expect `loaded`.
+
+**2. Metered-network context.** Check whether the session context the agent
+saw at thread start included a `Network:` line. If it didn't, the Agent SDK
+isn't loading user-settings hooks — tell Claude, it's a known open question
+to pin down via the provider's `environment` instead. In a plain terminal:
+
+```fish
+agent-net
+```
+
+prints e.g. `metered (wildflower, wlo1)`; override with
+`agent-net set metered`, `agent-net set unmetered`, or `agent-net set auto`.
+
+**3. T3 worktree threads start in the worktree.** In a T3 thread opened with
+"New worktree", ask the agent to run:
+
+```fish
+pwd
+```
+
+Expect the worktree directory, not the main checkout.
+
+**4. `nx` refuses an unmetered-looking pull when told it's metered.**
+
+```fish
+NX_METERED_LIMIT_MB=0 nx --exact -p hello hello
+```
+
+Expect it to refuse with a size (`hello` isn't in the store), or run
+straight through if `hello` is already there.
+
+**5. Guidelines import line.**
+
+```fish
+grep guidelines ~/.claude/CLAUDE.md ~/.claude-work/CLAUDE.md
+```
+
+Expect `@~/.config/agents/guidelines.md` in both.
