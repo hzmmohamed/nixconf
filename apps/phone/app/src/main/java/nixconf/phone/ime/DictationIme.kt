@@ -35,8 +35,9 @@ import nixconf.phone.ui.NixconfTheme
 /**
  * The dictation keyboard: a Compose panel (Panel.kt) over the shared
  * dictation session. It is the session's [EditorTarget]: the token names the
- * focused field (package/field id) and changes when the user moves on, so
- * text transcribed after a switch is kept as a draft instead of typed.
+ * focused input session ([InputTokens]) and changes when the user moves on,
+ * so text transcribed after a switch is kept as a draft instead of typed.
+ * Hiding or destroying the keyboard stops a recording (never records unseen).
  * Compose needs lifecycle/view-model/saved-state owners on the window, which
  * an InputMethodService does not provide: the service is all three.
  */
@@ -57,8 +58,8 @@ class DictationIme :
     private var language by mutableStateOf<String?>(null)
     private var message by mutableStateOf<String?>(null)
 
-    override var token: String? = null
-        private set
+    private val tokens = InputTokens()
+    override val token: String? get() = tokens.token
 
     override fun onCreate() {
         super.onCreate()
@@ -108,12 +109,12 @@ class DictationIme :
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        token = attribute?.let { "${it.packageName}/${it.fieldId}" }
+        if (attribute == null) tokens.finish() else tokens.start(attribute.packageName, attribute.fieldId, restarting)
     }
 
     override fun onFinishInput() {
         super.onFinishInput()
-        token = null
+        tokens.finish()
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -125,10 +126,12 @@ class DictationIme :
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        app.session.stop()
         registry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
+        app.session.stop()
         registry.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
         super.onDestroy()

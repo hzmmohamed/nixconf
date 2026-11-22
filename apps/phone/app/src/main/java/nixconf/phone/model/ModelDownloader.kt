@@ -19,6 +19,8 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
 class NotOnWifi : IOException("not on an unmetered network; download now to use mobile data")
 
+class UnsafeName(name: String) : IOException("unsafe file name in profile: \"$name\"")
+
 class HashMismatch(what: String) : IOException("$what: sha256 mismatch")
 
 // The on-phone model, in <dir>/<model name>/. A file is fetched to
@@ -34,10 +36,16 @@ class ModelDownloader(
 ) {
     fun modelDir(model: LocalModel) = File(dir, model.name)
 
-    fun isReady(model: LocalModel): Boolean = model.files.all { verified(modelDir(model), it) }
+    fun isReady(model: LocalModel): Boolean =
+        unsafeName(model) == null && model.files.all { verified(modelDir(model), it) }
 
-    /** The model directory once every file is verified. Fails with [NotOnWifi] on a metered network unless [force]. */
+    /**
+     * The model directory once every file is verified. Fails with [UnsafeName]
+     * (before touching the disk) when the profile names a path, and with
+     * [NotOnWifi] on a metered network unless [force].
+     */
     suspend fun download(model: LocalModel, force: Boolean = false, progress: (Long, Long) -> Unit): Result<File> {
+        unsafeName(model)?.let { return Result.failure(UnsafeName(it)) }
         if (isReady(model)) return Result.success(modelDir(model))
         if (!force && !isUnmetered()) return Result.failure(NotOnWifi())
         return try {
@@ -167,6 +175,13 @@ class ModelDownloader(
         whole.delete()
     }
 
+    // Names come from the profile and become paths under [dir]: plain file
+    // names only, no separators, no "." / "..".
+    private fun unsafeName(model: LocalModel): String? =
+        (listOf(model.name) + model.files.map { it.name }).firstOrNull {
+            !SAFE_NAME.matches(it) || it == "." || ".." in it
+        }
+
     private fun verified(out: File, f: ModelFile): Boolean = try {
         val file = File(out, f.name)
         val rec = File(out, "${f.name}.sha256")
@@ -189,5 +204,9 @@ class ModelDownloader(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private companion object {
+        val SAFE_NAME = Regex("[A-Za-z0-9._-]+")
     }
 }

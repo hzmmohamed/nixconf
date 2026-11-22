@@ -85,7 +85,11 @@ class DictationSession(
         var job: Job? = null
     }
 
-    private var current: Current? = null
+    // Read from IO threads too (activeDraftId, while listing drafts).
+    @Volatile private var current: Current? = null
+
+    // Drafts a retry is transcribing (main thread).
+    private val retrying = mutableSetOf<String>()
 
     /** The draft being recorded or transcribed: not one to list as pending or retry. */
     val activeDraftId: String? get() = current?.draft?.id
@@ -116,7 +120,7 @@ class DictationSession(
         }
     }
 
-    /** Stops recording, then transcribes and delivers. */
+    /** Stops recording, then transcribes and delivers; a no-op unless recording. */
     fun stop() {
         val cur = current ?: return
         if (cur.job != null) return
@@ -140,22 +144,35 @@ class DictationSession(
         end(SessionState.Idle)
     }
 
-    /** Transcribes a kept draft again; its text is stored but it stays PENDING until [deliver]ed. */
+    /**
+     * Transcribes a kept draft again; its text is stored but it stays PENDING
+     * until [deliver]ed. A no-op (returns [draft]) while that draft is being
+     * recorded, transcribed or retried; if it was delivered or discarded in
+     * the meantime, that state is kept and returned.
+     */
     suspend fun retry(draft: Draft): Draft {
-        val p = profile()
-        val outcome = transcribe(draft.audio, draft.language, p, choose(p, draft.language))
-        val updated = if (outcome.text != null) {
-            draft.copy(engine = outcome.engine, text = outcome.text, error = null)
-        } else {
-            draft.copy(error = outcome.error ?: outcome.reason)
+        if (draft.id == activeDraftId || !retrying.add(draft.id)) return draft
+        try {
+            val p = profile()
+            val outcome = transcribe(draft.audio, draft.language, p, choose(p, draft.language))
+            val now = onDisk(draft)
+            if (now.status != DraftStatus.PENDING) return now
+            val updated = if (outcome.text != null) {
+                now.copy(engine = outcome.engine, text = outcome.text, error = null)
+            } else {
+                now.copy(error = outcome.error ?: outcome.reason)
+            }
+            save(updated)
+            return updated
+        } finally {
+            retrying.remove(draft.id)
         }
-        save(updated)
-        return updated
     }
 
-    /** Types a draft's text (plus a space) into [target]; DELIVERED if it went in. */
+    /** Types a draft's text (plus a space) into [target]; DELIVERED if it went in. Only a still PENDING draft. */
     fun deliver(draft: Draft, target: EditorTarget): Boolean {
         val text = draft.text ?: return false
+        if (onDisk(draft).status != DraftStatus.PENDING) return false
         if (!target.commit("$text ")) return false
         save(draft.copy(status = DraftStatus.DELIVERED))
         val state = mutableState.value
@@ -225,6 +242,10 @@ class DictationSession(
         current = null
         mutableState.value = state
     }
+
+    // The draft as on disk now: it may have been delivered or discarded
+    // since [draft] was read. Gone from disk: the copy given.
+    private fun onDisk(draft: Draft): Draft = drafts.load(draft.id) ?: draft
 
     // The draft stays on disk as last written (at worst PENDING without text):
     // never crash the keyboard over a meta.json write.

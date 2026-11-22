@@ -77,7 +77,10 @@ fun Panel(model: PanelModel, actions: PanelActions) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = actions.switchKeyboard) { Text("⌨ Keyboard") }
+                // Not while recording: the mic would keep going behind another keyboard.
+                TextButton(onClick = actions.switchKeyboard, enabled = state !is SessionState.Recording) {
+                    Text("⌨ Keyboard")
+                }
                 if (model.languages.size > 1) {
                     TextButton(onClick = actions.language, enabled = !active) { Text(model.language.uppercase()) }
                 }

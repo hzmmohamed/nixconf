@@ -92,6 +92,64 @@ class DraftStoreTest {
         assertEquals(1600, WavFiles.readSamples(d.audio).size)
     }
 
+    @Test
+    fun active_draft_skipped_before_load_its_header_untouched() {
+        val other = store.create("en")
+        WavWriter(other.audio).apply {
+            write(ShortArray(800), 800)
+            flush()
+        }
+        val active = store.create("en")
+        val writer = WavWriter(active.audio)
+        writer.write(ShortArray(1600), 1600)
+        writer.flush()
+
+        assertEquals(listOf(other.id), store.pending(isActive = { it == active.id }).map { it.id })
+        // Still being written: header sizes left at 0 for close() to fill in.
+        assertEquals(0, dataSize(active.audio))
+        assertEquals(800 * 2, dataSize(other.audio)) // repaired: not being written
+
+        writer.write(ShortArray(400), 400)
+        writer.close()
+        assertEquals(2000, WavFiles.readSamples(active.audio).size)
+    }
+
+    @Test
+    fun audio_without_readable_meta_is_listed_as_pending() {
+        val lost = store.create("ar")
+        WavWriter(lost.audio).apply {
+            write(ShortArray(1600), 1600)
+            close()
+        }
+        File(lost.dir, "meta.json").delete()
+        val garbled = store.create("en")
+        WavWriter(garbled.audio).apply {
+            write(ShortArray(1600), 1600)
+            close()
+        }
+        File(garbled.dir, "meta.json").writeText("{\"status\":")
+        // No audio either: nothing to keep.
+        val empty = store.create("en")
+        File(empty.dir, "meta.json").delete()
+
+        val listed = store.pending()
+        assertEquals(setOf(lost.id, garbled.id), listed.map { it.id }.toSet())
+        for (d in listed) {
+            assertEquals(DraftStatus.PENDING, d.status)
+            assertEquals(now / 1000 * 1000, d.createdMs) // from the id (second precision)
+            assertNull(d.text)
+        }
+        // A retry can still write its meta.
+        val restored = listed.first { it.id == lost.id }.copy(text = "hi")
+        store.update(restored)
+        assertEquals("hi", store.load(lost.id)!!.text)
+    }
+
+    private fun dataSize(wav: File): Int = java.io.RandomAccessFile(wav, "r").use {
+        it.seek(40)
+        Integer.reverseBytes(it.readInt())
+    }
+
     private companion object {
         const val DAY = 24 * 3_600_000L
     }

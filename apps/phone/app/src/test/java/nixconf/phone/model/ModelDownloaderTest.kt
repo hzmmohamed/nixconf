@@ -172,4 +172,22 @@ class ModelDownloaderTest {
         assertTrue(download(m).exceptionOrNull() is HashMismatch)
         assertFalse(downloader.isReady(m))
     }
+
+    @Test
+    fun unsafe_names_rejected_before_any_file_io() {
+        val m = model()
+        val outside = File(tmp.root, "evil")
+        for (bad in listOf("../evil", "..", ".", "a/b", "a\\b", "", "x..y", "tokens.txt\u0000")) {
+            val files = m.files.mapIndexed { i, f -> if (i == 0) f.copy(name = bad) else f }
+            val result = download(m.copy(files = files))
+            assertTrue(bad, result.exceptionOrNull() is UnsafeName)
+            assertFalse(bad, downloader.isReady(m.copy(files = files)))
+        }
+        val result = download(m.copy(name = "../evil"))
+        assertTrue(result.exceptionOrNull() is UnsafeName)
+        assertFalse(downloader.isReady(m.copy(name = "../evil")))
+        assertFalse(outside.exists())
+        assertFalse(modelDir.exists())
+        assertTrue(server.requestCount == 0)
+    }
 }

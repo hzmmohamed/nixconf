@@ -5,6 +5,7 @@ import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -285,6 +286,83 @@ class DictationSessionTest {
         assertEquals(DictationSession.NO_SERVER, retried.error)
         assertEquals(DraftStatus.PENDING, onlyDraft().status)
         assertFalse(s.deliver(retried, editor))
+    }
+
+    // A kept draft with text: the field changed while it was transcribing.
+    private fun TestScope.keptWithText(s: DictationSession): Draft {
+        s.start("en", editor)
+        advanceUntilIdle()
+        editor.token = "org.browser/7"
+        s.stop()
+        advanceUntilIdle()
+        editor.token = "org.notes/42"
+        return (s.state.value as SessionState.Kept).draft.also { assertEquals("hello world", it.text) }
+    }
+
+    @Test
+    fun late_retry_after_deliver_leaves_it_delivered() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        remote = {
+            delay(5000)
+            "second take"
+        }
+        launch { s.retry(kept) }
+        advanceTimeBy(1000)
+        assertTrue(s.deliver(kept, editor))
+        advanceUntilIdle()
+        val d = onlyDraft()
+        assertEquals(DraftStatus.DELIVERED, d.status)
+        assertEquals("hello world", d.text)
+        assertEquals(listOf("hello world "), editor.commits)
+    }
+
+    @Test
+    fun late_retry_after_discard_leaves_it_cancelled() = runTest {
+        serverUp = false
+        val s = session()
+        dictate(s, "ar")
+        val kept = (s.state.value as SessionState.Kept).draft
+        serverUp = true
+        remote = {
+            delay(5000)
+            "hello world"
+        }
+        launch { s.retry(kept) }
+        advanceTimeBy(1000)
+        drafts.update(kept.copy(status = DraftStatus.CANCELLED)) // discarded in the app meanwhile
+        advanceUntilIdle()
+        val d = onlyDraft()
+        assertEquals(DraftStatus.CANCELLED, d.status)
+        assertNull(d.text)
+    }
+
+    @Test
+    fun concurrent_retries_transcribe_once() = runTest {
+        serverUp = false
+        val s = session()
+        dictate(s, "ar")
+        val kept = (s.state.value as SessionState.Kept).draft
+        serverUp = true
+        remote = {
+            delay(5000)
+            "hello world"
+        }
+        launch { s.retry(kept) }
+        launch { s.retry(kept) }
+        advanceUntilIdle()
+        assertEquals(1, remoteCalls.size)
+        assertEquals("hello world", onlyDraft().text)
+        assertEquals(DraftStatus.PENDING, onlyDraft().status)
+    }
+
+    @Test
+    fun deliver_twice_types_once() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        assertTrue(s.deliver(kept, editor))
+        assertFalse(s.deliver(kept, editor))
+        assertEquals(listOf("hello world "), editor.commits)
     }
 
     @Test

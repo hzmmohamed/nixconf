@@ -133,7 +133,8 @@ class AppServices private constructor(context: Context) {
     }
 
     private suspend fun loadPending() {
-        val list = withContext(Dispatchers.IO) { drafts.pending() }
+        // The draft being recorded is skipped before it is loaded: loading repairs the WAV header.
+        val list = withContext(Dispatchers.IO) { drafts.pending { it == session.activeDraftId } }
         mutablePending.value = list.filter { it.id != session.activeDraftId }
     }
 
