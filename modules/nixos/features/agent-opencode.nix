@@ -126,11 +126,26 @@
       };
     };
 
+    # The one guidelines file every agent reads (agent-env.nix, which also
+    # installs it at ~/.config/agents/guidelines.md and wires Claude's
+    # CLAUDE.md import line). OpenCode 2.x's `instructions` config reads
+    # each entry as a file and folds its content into context — confirmed
+    # from the packaged opencode2 binary (llm-agents input): the normalizer
+    # validates `instructions` as a string array (`kH(e.instructions, ...)`)
+    # and a document loader reads each path's content
+    # (`Me.type==="document"?Me.info.instructions??[]`, then read with a
+    # 5s cache). That's a single source of truth, so it's used here instead
+    # of also installing a global `~/.config/opencode/AGENTS.md` (the binary
+    # does read one automatically too, resolved from the app config dir, but
+    # duplicating the content there would just be a second copy to drift).
+    guidelinesFile = ./agent-env/guidelines.md;
+
     settings = {
       update = "disable";
       share = "disabled";
       model = "claude-agent/opus";
       default_agent = "build";
+      instructions = ["${guidelinesFile}"];
 
       # Last match wins; unmatched = ask. Mirrors agent-common's Claude denies.
       permissions = [

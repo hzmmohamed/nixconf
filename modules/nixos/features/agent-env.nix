@@ -37,6 +37,24 @@
     # below). Never fails closed: it always execs the binary it's given.
     agentDevshell = mkTool "agent-devshell" ./agent-env/agent_devshell.py [pkgs.direnv pkgs.git pkgs.systemd agentNet];
 
+    # The one Markdown file every agent reads (Claude via a CLAUDE.md import
+    # line, OpenCode via its `instructions` config). Store path, world-readable
+    # like the rest of $XDG_CONFIG_HOME.
+    guidelinesFile = ./agent-env/guidelines.md;
+
+    # Claude config dirs (relative to $HOME), one per subscription. Mirrors
+    # agent-common's own `accountDirs` (not exposed from there: features stay
+    # independent, and this is the only other place that needs it).
+    accountDirs = lib.unique (lib.mapAttrsToList (_: a: a.configDir) config.preferences.agents.claudeAccounts);
+
+    # Appends the `@~/.config/agents/guidelines.md` import line to every
+    # account's CLAUDE.md (idempotent, never rewrites the rest of the file).
+    guidelinesImport = pkgs.writeShellApplication {
+      name = "agent-guidelines-import";
+      runtimeInputs = [pkgs.coreutils pkgs.gnugrep];
+      text = builtins.readFile ./agent-env/guidelines-import.sh;
+    };
+
     userBin = "/etc/profiles/per-user/${user}/bin";
     claudeDevshell = pkgs.writeShellScriptBin "claude-devshell" ''
       exec ${lib.getExe agentDevshell} ${userBin}/claude "$@"
@@ -45,7 +63,21 @@
       exec ${lib.getExe agentDevshell} ${userBin}/opencode "$@"
     '';
   in {
-    home-manager.users.${user}.home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
+    home-manager.users.${user} = {
+      home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
+
+      xdg.configFile."agents/guidelines.md".source = guidelinesFile;
+
+      # (NixOS lib has no lib.hm: spell out the DAG entry, like agent-common's
+      # claudeSettingsMerge.)
+      home.activation.agentGuidelinesImport = {
+        after = ["writeBoundary"];
+        before = [];
+        data = ''
+          run ${lib.getExe guidelinesImport} ${lib.escapeShellArgs accountDirs}
+        '';
+      };
+    };
 
     preferences.agents.claudeHooks = {
       SessionStart = ["${lib.getExe agentNet} hook session-start"];
