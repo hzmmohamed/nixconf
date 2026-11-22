@@ -15,6 +15,7 @@
         pkgs.libsecret
         pkgs.gnome-keyring
         pkgs.xdg-utils
+        pkgs.util-linux
         pkgs.python3
       ]}:$PATH"
 
@@ -66,7 +67,9 @@
 
               echo "Opening browser for $account ($provider) authorization..."
               echo "If browser doesn't open, visit: $auth_link"
-              xdg-open "$auth_link" 2>/dev/null || true
+              # Detached: when the browser isn't running yet, xdg-open waits for
+              # it to exit, and the callback listener below would never start.
+              setsid -f xdg-open "$auth_link" >/dev/null 2>&1 || true
 
               echo "Waiting for OAuth2 callback on localhost:8089..."
               local code
