@@ -87,6 +87,9 @@ class DictationSession(
 
     private var current: Current? = null
 
+    /** The draft being recorded or transcribed: not one to list as pending or retry. */
+    val activeDraftId: String? get() = current?.draft?.id
+
     /** Starts recording; ignored while a session is recording or transcribing. */
     fun start(language: String, target: EditorTarget) {
         if (current != null) return
