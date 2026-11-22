@@ -27,8 +27,12 @@
       '';
 
     agentNet = mkTool "agent-net" ./agent-env/agent_net.py [pkgs.networkmanager pkgs.iproute2];
+    # nx: store-first tool runner. nix-index supplies nix-locate (attribute
+    # lookup when a bare prog name doesn't match its own nixpkgs attribute);
+    # agentNet is its own metered/unmetered/offline source.
+    nx = mkTool "nx" ./agent-env/nx.py [pkgs.nix pkgs.nix-index agentNet];
   in {
-    home-manager.users.${user}.home.packages = [agentNet];
+    home-manager.users.${user}.home.packages = [agentNet nx];
 
     preferences.agents.claudeHooks = {
       SessionStart = ["${lib.getExe agentNet} hook session-start"];
