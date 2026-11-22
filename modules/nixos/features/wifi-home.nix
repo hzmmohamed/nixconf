@@ -8,9 +8,14 @@
   #                                  WIFI_HOME_PSK=...
   #   office   20        no        secrets/shared/wifi-office.yaml   key wifi_office_env:
   #                                  WIFI_OFFICE_SSID=...  WIFI_OFFICE_PSK=...
-  #   hotspot  10        yes       secrets/shared/wifi-hotspot.yaml  key wifi_hotspot_env:
+  #   hotspot  10        no        secrets/shared/wifi-hotspot.yaml  key wifi_hotspot_env:
   #                                  WIFI_HOTSPOT_SSID=...  WIFI_HOTSPOT_PSK=...
   #   (* trusted-networks: LAN service ports open on that connection)
+  #
+  # The hotspot is untrusted (friends join it): no LAN service ports, no mDNS.
+  # Phone ↔ laptop traffic stays on the tailnet, direct over the hotspot LAN
+  # (docs/tailscale-policy.hujson). key-mgmt `wpa-psk` (the default) joins
+  # WPA2 and WPA2/WPA3-transition hotspots; a WPA3-only one needs `sae`.
   #
   # NM picks the highest-priority VISIBLE known network, so at home/office the
   # phone's mobile data is never used just because the hotspot is on. office
