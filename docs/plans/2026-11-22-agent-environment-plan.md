@@ -191,10 +191,10 @@ Guidelines content (about 40 lines, four `##` sections; the wording within them 
 - Modify: `modules/nixos/hosts/butternut/network.nix` (or `configuration.nix`, wherever `preferences.cable` is set for butternut)
 
 **Interfaces:**
-- Produces: `preferences.cable.peerSharesMetered : bool`, default `false`, description "Mark `<peer>-shares` as metered (the peer is a carried device that may be on a phone hotspot)." When true, `${sharePeer}` gets `connection.metered = "yes"`. butternut sets `true`; hazel keeps the default.
+- Produces: `preferences.cable.peerSharesMetered : bool`, default `false`, description "Mark `<peer>-shares` as metered (the peer is a carried device that may be on a phone hotspot)." When true, `${sharePeer}` gets `connection.metered = 1` (NM keyfiles store the enum as an integer; `"yes"` is silently dropped). butternut sets `true`; hazel keeps the default.
 
-- [ ] **Step 1: Add the option and the conditional** (`lib.optionalAttrs cfg.peerSharesMetered {connection.metered = "yes";}` merged into the profile), and set it on butternut.
-- [ ] **Step 2: Verify:** `nix eval .#nixosConfigurations.butternut.config.networking.networkmanager.ensureProfiles.profiles.hazel-shares.connection.metered` → `"yes"`; the same path for hazel's `butternut-shares` has no `metered` attribute (`nix eval … --apply 'c: c ? metered'` → `false`).
+- [ ] **Step 1: Add the option and the conditional** (`lib.optionalAttrs cfg.peerSharesMetered {connection.metered = 1;}` merged into the profile), and set it on butternut.
+- [ ] **Step 2: Verify:** `nix eval .#nixosConfigurations.butternut.config.networking.networkmanager.ensureProfiles.profiles.hazel-shares.connection.metered` → `1`; the same path for hazel's `butternut-shares` has no `metered` attribute (`nix eval … --apply 'c: c ? metered'` → `false`).
 
 ### Task 7: Whole-repo check and hand-off notes
 

@@ -295,7 +295,9 @@
               autoconnect = false;
             }
             // lib.optionalAttrs cfg.peerSharesMetered {
-              metered = "yes";
+              # NM keyfiles store the NMMetered enum as an integer
+              # (1 = yes); the string "yes" is silently dropped.
+              metered = 1;
             };
           ipv4 = {
             method = "auto";
