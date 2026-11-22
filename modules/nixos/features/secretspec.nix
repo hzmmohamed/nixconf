@@ -10,8 +10,7 @@
 #   human = human-only secrets (desktops only)
 #
 #   host kind        team                                    human
-#   desktop          keyring:// (Secret Service: gnome-keyring keyring://
-#                    today, KeePassXC later)
+#   desktop          keyring:// (Secret Service: gnome-keyring) keyring://
 #   + devVault       kdbx://<home>/VaultDev/dev.kdbx?keyfile=…  keyring://
 #   headless (fern)  file:///run/secrets/secretspec          -
 #
