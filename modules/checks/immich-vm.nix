@@ -4,8 +4,31 @@
 # loopback only, applies the declarative settings (read back over the API),
 # has no serve unit without Tailscale, and survives a server restart. Builds Immich + ML + Postgres: run it on butternut.
 #   nix build --no-link -L .#checks.x86_64-linux.immich-vm
-{self, ...}: {
+#
+# immich-butternut-config: eval-only, butternut's pilot wiring (Immich 3.x,
+# serve on 8444, externalDomain, serve unit). Fails at eval, naming the
+# condition.
+{
+  lib,
+  self,
+  ...
+}: {
   perSystem = {pkgs, ...}: {
+    checks.immich-butternut-config = let
+      c = self.nixosConfigurations.butternut.config;
+      url = "https://butternut.${self.tailnet.domain}:8444";
+    in
+      assert lib.assertMsg c.services.immich.enable "butternut: services.immich.enable is not true";
+      assert lib.assertMsg (lib.versions.major c.services.immich.package.version == "3")
+      "butternut: Immich is ${c.services.immich.package.version}, not 3.x";
+      assert lib.assertMsg (c.preferences.immich.tailscaleServePort == 8444)
+      "butternut: preferences.immich.tailscaleServePort is not 8444";
+      assert lib.assertMsg (c.services.immich.settings.server.externalDomain == url)
+      "butternut: server.externalDomain is not ${url}";
+      assert lib.assertMsg (c.systemd.services ? immich-tailscale-serve)
+      "butternut: no immich-tailscale-serve unit";
+        pkgs.runCommand "immich-butternut-config" {} "echo ok > $out";
+
     checks.immich-vm = pkgs.testers.runNixOSTest {
       name = "immich-vm";
       nodes.machine = {pkgs, ...}: {

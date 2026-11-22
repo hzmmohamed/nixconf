@@ -80,6 +80,7 @@
       self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
       self.nixosModules.syncthing
+      self.nixosModules.immich
 
       self.nixosModules.powersave
 
@@ -142,6 +143,10 @@
     # (both cases) and the tailnet. `deploy hazel` pushes over the cable.
     preferences.cable.interface = "eno2";
     preferences.nix-serve.firewallInterfaces = ["eno2"];
+
+    # Immich pilot (phone backup) until peacelily takes over: tailnet HTTPS on
+    # 8444, as 443 is T3 Code and 8443 OpenCode (features/immich.nix).
+    preferences.immich.tailscaleServePort = 8444;
 
     networking = {
       hostName = "butternut";

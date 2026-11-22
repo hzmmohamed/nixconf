@@ -64,6 +64,13 @@
         }
       ];
 
+      # Pinned rather than picked by system.stateVersion (butternut's 23.05
+      # would get 14, EOL 2026-11): 17 is what VectorChord was checked against
+      # above, and the same major on every host keeps the butternut ->
+      # peacelily move a plain dump/restore. A host already running another
+      # Postgres gets an eval conflict here and has to choose.
+      services.postgresql.package = pkgs.postgresql_17;
+
       services.immich = {
         enable = true;
         package = unstable.immich;
