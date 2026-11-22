@@ -1,4 +1,8 @@
-{inputs, ...}: {
+{
+  inputs,
+  self,
+  ...
+}: {
   # Immich (photo/video library, phone backup), on loopback.
   # Design: docs/plans/2026-11-22-photos-immich-design.md.
   #
@@ -12,7 +16,11 @@
   # Drop the override (disabledModules, imports, package) once the release
   # branch ships >= 3.x (26.11).
   #
-  # Media stays plain files under `mediaLocation` (lock-in guard).
+  # Media stays plain files under `mediaLocation` (lock-in guard: the storage
+  # template below gives library/<user>/2026/2026-11-22/IMG_….jpg). Settings
+  # are declarative (the web settings page is read-only); keys not set here
+  # keep Immich's defaults. Published on the tailnet by `tailscale serve`
+  # (HTTPS, MagicDNS cert) when the host runs Tailscale; never Funnel.
   flake.nixosModules.immich = {
     config,
     lib,
@@ -21,6 +29,12 @@
   }: let
     cfg = config.preferences.immich;
     unstable = inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system};
+    hostName = config.networking.hostName;
+    tailnetName = (self.hosts.${hostName} or {}).tailnetName or hostName;
+    port = 2283;
+    externalDomain =
+      "https://${tailnetName}.${self.tailnet.domain}"
+      + lib.optionalString (cfg.tailscaleServePort != 443) ":${toString cfg.tailscaleServePort}";
   in {
     disabledModules = ["services/web-apps/immich.nix"];
     imports = ["${inputs.nixpkgs-unstable}/nixos/modules/services/web-apps/immich.nix"];
@@ -54,10 +68,53 @@
         enable = true;
         package = unstable.immich;
         host = "127.0.0.1";
-        port = 2283;
+        inherit port;
         openFirewall = false;
         inherit (cfg) mediaLocation;
         machine-learning.enable = true;
+        # Immich 3.4 config-file keys (server/src/dtos/config.dto.ts).
+        settings = {
+          storageTemplate = {
+            enabled = true;
+            template = "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}";
+          };
+          # Immich's defaults, made explicit: the restic backup (phase 2)
+          # runs after this dump.
+          backup.database = {
+            enabled = true;
+            cronExpression = "0 02 * * *";
+            keepLastAmount = 14;
+          };
+          newVersionCheck.enabled = false; # Nix pins the version
+          server = {inherit externalDomain;};
+          # The ML unit binds `localhost` (module default), so not 127.0.0.1.
+          machineLearning.urls = ["http://localhost:3003"];
+        };
+      };
+
+      # Publish the loopback service on the tailnet (copied from
+      # agent-opencode's opencode-tailscale-serve). Runs as root; the serve
+      # config persists in tailscaled state. No Funnel.
+      systemd.services.immich-tailscale-serve = lib.mkIf config.services.tailscale.enable {
+        description = "Tailscale Serve for Immich";
+        after = ["tailscaled.service" "tailscaled-autoconnect.service" "tailscaled-set.service"];
+        wants = ["tailscaled.service"];
+        wantedBy = ["multi-user.target"];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+        };
+        path = [config.services.tailscale.package pkgs.coreutils];
+        script = ''
+          for _ in $(seq 60); do
+            if tailscale serve --bg --https=${toString cfg.tailscaleServePort} http://127.0.0.1:${toString port}; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "tailscale serve failed (logged in? HTTPS certificates enabled for the tailnet?)" >&2
+          exit 1
+        '';
       };
     };
   };

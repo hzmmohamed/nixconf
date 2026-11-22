@@ -1,7 +1,8 @@
 # immich-vm: a NixOS VM running features/immich.nix with no Tailscale. Proves
 # nixpkgs-unstable's Immich 3.x (module + package) comes up on 26.05's
-# Postgres/VectorChord (DB migrations run on first start) and listens on
-# loopback only. Builds Immich + ML + Postgres: run it on butternut.
+# Postgres/VectorChord (DB migrations run on first start), listens on
+# loopback only, applies the declarative settings (read back over the API),
+# has no serve unit without Tailscale, and survives a server restart. Builds Immich + ML + Postgres: run it on butternut.
 #   nix build --no-link -L .#checks.x86_64-linux.immich-vm
 {self, ...}: {
   perSystem = {pkgs, ...}: {
@@ -24,6 +25,34 @@
         assert v["major"] == 3, v
         machine.succeed("curl -sf http://127.0.0.1:2283/api/server/ping | grep -q pong")
         machine.fail("ss -ltn | grep -q '0.0.0.0:2283'")  # loopback only
+
+        # Settings file applied: Immich only warns on unknown keys, so read the
+        # effective config back over the API (admin token needed).
+        api = "http://127.0.0.1:2283/api"
+        creds = '{"email":"admin@example.com","password":"test-password","name":"Admin"}'
+        machine.succeed(f"curl -sf -H 'Content-Type: application/json' -d '{creds}' {api}/auth/admin-sign-up")
+        tok = json.loads(machine.succeed(
+            f"curl -sf -H 'Content-Type: application/json' "
+            f"-d '{{\"email\":\"admin@example.com\",\"password\":\"test-password\"}}' {api}/auth/login"
+        ))["accessToken"]
+        # /admin/config replaces /system-config (deprecated in 3.2); same DTO.
+        c = json.loads(machine.succeed(f"curl -sf -H 'Authorization: Bearer {tok}' {api}/admin/config"))
+        assert c["storageTemplate"]["enabled"] is True, c["storageTemplate"]
+        assert c["storageTemplate"]["template"] == "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}", c["storageTemplate"]
+        assert c["backup"]["database"]["enabled"] is True, c["backup"]
+        assert c["backup"]["database"]["cronExpression"] == "0 02 * * *", c["backup"]
+        assert c["backup"]["database"]["keepLastAmount"] == 14, c["backup"]
+        assert c["newVersionCheck"]["enabled"] is False, c["newVersionCheck"]
+        assert c["server"]["externalDomain"] == "https://machine.${self.tailnet.domain}", c["server"]
+        assert c["machineLearning"]["urls"] == ["http://localhost:3003"], c["machineLearning"]["urls"]
+
+        # No Tailscale on this node: no serve unit.
+        machine.fail("systemctl cat immich-tailscale-serve.service")
+
+        # Comes back after a restart.
+        machine.succeed("systemctl restart immich-server.service")
+        machine.wait_for_open_port(2283)
+        machine.succeed("curl -sf http://127.0.0.1:2283/api/server/ping | grep -q pong")
       '';
     };
   };
