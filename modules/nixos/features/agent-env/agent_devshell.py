@@ -12,12 +12,20 @@ varies is the AGENT_DEVSHELL environment variable BINARY sees, one of:
   none        - no .envrc between cwd and $HOME/"/".
   not-allowed - a .envrc exists but direnv hasn't allowed it (and the
                 worktree auto-allow exception below doesn't apply).
-  not-built   - allowed, but the dev shell isn't cached yet. BINARY runs
-                bare; on an unmetered connection a background warm-up
-                (`systemd-run ... direnv exec <root> true`) is kicked off
-                so the next run can be `loaded`.
-  loaded      - allowed and cached: BINARY runs under `direnv exec <root>`.
-  error       - something in the logic above raised; BINARY runs bare.
+  not-built   - allowed, but the dev shell isn't cached yet (or `direnv
+                export json` timed out -- see below). BINARY runs bare; on
+                an unmetered connection a background warm-up (`systemd-run
+                ... direnv exec <root> true`) is kicked off so the next run
+                can be `loaded`.
+  loaded      - allowed and cached: `direnv export json` ran at `root`, its
+                output was applied to BINARY's environment, and BINARY runs
+                with that environment (no subprocess in between -- we
+                os.execvpe BINARY ourselves). If the export call itself
+                fails or answers with something unparseable, that's
+                `error`; if it times out, that's `not-built` (the dev shell
+                may be mid-rebuild) and no warm-up is fired for it.
+  error       - something in the logic above raised, or `direnv export
+                json` failed/answered with bad JSON; BINARY runs bare.
 
 Root resolution: nearest ancestor of cwd (inclusive) with a `.envrc`,
 stopping before (and not including) $HOME or `/`.
@@ -28,7 +36,12 @@ both allowed and byte-identical, this script auto-allows the worktree root
 (`direnv allow <root>`) rather than reporting not-allowed, and considers the
 worktree cached whenever the main checkout is cached and the shell-defining
 files are byte-identical between the two (no seeding: direnv re-evaluates
-locally against store paths the main checkout already roots).
+locally against store paths the main checkout already roots). The main
+root is resolved with `git rev-parse --path-format=absolute ...` (plain
+`--show-toplevel --git-common-dir` prints `--git-common-dir` *relative to
+the `-C` directory*, not the toplevel -- from a subdirectory that silently
+points at the wrong tree) and computed once per run, reused for both the
+allow check and the cache check.
 """
 import hashlib
 import json
@@ -51,15 +64,31 @@ SHELL_FILES = [
 ]
 
 
-def _run(args, timeout=10, cwd=None):
-    """Run an external tool. None on any failure to launch/timeout -- every
-    caller treats that the same as a hard "no" (never raises)."""
+EXPORT_TIMEOUT_ENV = "AGENT_DEVSHELL_EXPORT_TIMEOUT"
+DEFAULT_EXPORT_TIMEOUT = 20.0
+
+
+def _run(args, timeout=10, cwd=None, env=None):
+    """Run an external tool. None on any failure to launch/timeout/decode --
+    every caller treats that the same as a hard "no" (never raises)."""
     try:
         return subprocess.run(
-            args, capture_output=True, text=True, timeout=timeout, cwd=cwd
+            args, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return None
+
+
+def _export_timeout() -> float:
+    """20s by default; $AGENT_DEVSHELL_EXPORT_TIMEOUT overrides it (tests
+    only -- lets a timeout test run in well under a second)."""
+    raw = os.environ.get(EXPORT_TIMEOUT_ENV)
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return DEFAULT_EXPORT_TIMEOUT
 
 
 def _find_root(start: Path):
@@ -100,10 +129,22 @@ def _is_allowed(status) -> bool:
 
 
 def _git_common_dir(root: Path):
-    """(toplevel, common_dir) from `git -C root rev-parse --show-toplevel
-    --git-common-dir`, or None if git failed / output didn't parse."""
+    """(toplevel, common_dir) from `git -C root rev-parse
+    --path-format=absolute --show-toplevel --git-common-dir`, or None if
+    git failed / output didn't parse. `--path-format=absolute` is required:
+    plain `--git-common-dir` prints a path *relative to the `-C` directory*
+    (root), not to the toplevel -- from a subdirectory that silently
+    resolves to the wrong tree if naively joined against toplevel."""
     proc = _run(
-        ["git", "-C", str(root), "rev-parse", "--show-toplevel", "--git-common-dir"]
+        [
+            "git",
+            "-C",
+            str(root),
+            "rev-parse",
+            "--path-format=absolute",
+            "--show-toplevel",
+            "--git-common-dir",
+        ]
     )
     if proc is None or proc.returncode != 0:
         return None
@@ -115,15 +156,14 @@ def _git_common_dir(root: Path):
 
 def _worktree_main_root(root: Path):
     """The corresponding path in the main checkout if `root` is a linked
-    worktree, else None (not a git repo, git failed, or it IS the main
-    checkout: common-dir == <toplevel>/.git)."""
+    worktree, else None: not a git repo, git failed, it IS the main
+    checkout (common-dir == <toplevel>/.git), or the computed main-checkout
+    path doesn't exist (a worktree subdirectory with no counterpart in the
+    main tree, e.g. untracked/uncommitted there)."""
     got = _git_common_dir(root)
     if got is None:
         return None
-    toplevel, common_dir = got
-    toplevel = toplevel.resolve()
-    common_dir = common_dir if common_dir.is_absolute() else (toplevel / common_dir)
-    common_dir = common_dir.resolve()
+    toplevel, common_dir = got  # both absolute (--path-format=absolute)
     if common_dir == (toplevel / ".git"):
         return None  # the main checkout, not a worktree
     main_toplevel = common_dir.parent
@@ -131,7 +171,8 @@ def _worktree_main_root(root: Path):
         rel = root.resolve().relative_to(toplevel)
     except ValueError:
         rel = Path(".")
-    return main_toplevel / rel
+    main_root = main_toplevel / rel
+    return main_root if main_root.is_dir() else None
 
 
 def _files_identical(a: Path, b: Path) -> bool:
@@ -146,10 +187,9 @@ def _files_identical(a: Path, b: Path) -> bool:
         return False
 
 
-def _try_worktree_auto_allow(root: Path) -> bool:
+def _try_worktree_auto_allow(root: Path, main_root) -> bool:
     """The worktree exception: if `root`'s main checkout is allowed and its
     `.envrc` is byte-identical, `direnv allow root` and report allowed."""
-    main_root = _worktree_main_root(root)
     if main_root is None:
         return False
     if not _is_allowed(_direnv_status(main_root)):
@@ -160,10 +200,10 @@ def _try_worktree_auto_allow(root: Path) -> bool:
     return proc is not None and proc.returncode == 0
 
 
-def _check_allowed(root: Path) -> bool:
+def _check_allowed(root: Path, main_root) -> bool:
     if _is_allowed(_direnv_status(root)):
         return True
-    return _try_worktree_auto_allow(root)
+    return _try_worktree_auto_allow(root, main_root)
 
 
 def _profile_cached_locally(root: Path) -> bool:
@@ -198,10 +238,9 @@ def _profile_cached_locally(root: Path) -> bool:
     return False
 
 
-def _is_cached(root: Path) -> bool:
+def _is_cached(root: Path, main_root) -> bool:
     if _profile_cached_locally(root):
         return True
-    main_root = _worktree_main_root(root)
     if main_root is None:
         return False
     if not _profile_cached_locally(main_root):
@@ -224,7 +263,7 @@ def _agent_net_unmetered() -> bool:
 
 
 def _warm_up(root: Path) -> None:
-    digest = hashlib.sha1(str(root).encode()).hexdigest()[:12]
+    digest = hashlib.sha1(os.fsencode(root)).hexdigest()[:12]
     unit = f"agent-devshell-warm-{digest}"
     _run(
         [
@@ -248,9 +287,70 @@ def _exec_bare(state: str, binary: str, args: list) -> None:
     os.execvp(binary, [binary, *args])
 
 
+def _direnv_export(root: Path):
+    """Run `direnv export json` at `root`. Returns one of:
+      ("ok", {var: value_or_None})  -- parsed export (value None = unset)
+      ("timeout", None)             -- the call itself timed out
+      ("error", None)               -- nonzero exit / unparseable output
+
+    `DIRENV_LOG_FORMAT=""` keeps direnv's own log noise off stderr/stdout so
+    it can't be mistaken for part of the JSON."""
+    env = dict(os.environ)
+    env["DIRENV_LOG_FORMAT"] = ""
+    try:
+        proc = subprocess.run(
+            ["direnv", "export", "json"],
+            capture_output=True,
+            text=True,
+            timeout=_export_timeout(),
+            cwd=str(root),
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        # subprocess.run already killed and reaped the child on timeout.
+        return "timeout", None
+    except (OSError, UnicodeDecodeError):
+        return "error", None
+
+    if proc.returncode != 0:
+        return "error", None
+
+    out = proc.stdout.strip()
+    if not out:
+        return "ok", {}  # no changes
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return "error", None
+    if not isinstance(data, dict):
+        return "error", None
+    return "ok", data
+
+
 def _exec_loaded(root: Path, binary: str, args: list) -> None:
-    os.environ[AGENT_DEVSHELL_ENV] = "loaded"
-    os.execvp("direnv", ["direnv", "exec", str(root), binary, *args])
+    """Apply `direnv export json`'s output to a copy of our own environment
+    and os.execvpe BINARY directly -- no `direnv exec` subprocess in
+    between, so a hung/failing direnv can't block or wrap thread start."""
+    status, data = _direnv_export(root)
+    if status == "timeout":
+        # The dev shell looked cached a moment ago; a hang here means
+        # something's off (e.g. a concurrent rebuild), not "never built".
+        # Don't fire a warm-up for this -- it's not the "not yet built"
+        # case the warm-up exists for.
+        _exec_bare("not-built", binary, args)
+        return
+    if status != "ok":
+        _exec_bare("error", binary, args)
+        return
+
+    env = dict(os.environ)
+    for key, value in data.items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    env[AGENT_DEVSHELL_ENV] = "loaded"
+    os.execvpe(binary, [binary, *args], env)
 
 
 def _decide_and_exec(binary: str, args: list) -> None:
@@ -259,11 +359,15 @@ def _decide_and_exec(binary: str, args: list) -> None:
         _exec_bare("none", binary, args)
         return
 
-    if not _check_allowed(root):
+    # Computed once and reused for both the allow check and the cache
+    # check, instead of shelling out to git twice for the same answer.
+    main_root = _worktree_main_root(root)
+
+    if not _check_allowed(root, main_root):
         _exec_bare("not-allowed", binary, args)
         return
 
-    if _is_cached(root):
+    if _is_cached(root, main_root):
         _exec_loaded(root, binary, args)
         return
 

@@ -54,7 +54,7 @@
   };
 
   perSystem = {pkgs, ...}: {
-    checks.agent-env = pkgs.runCommand "agent-env-check" {nativeBuildInputs = [pkgs.python3 pkgs.bash pkgs.coreutils];} ''
+    checks.agent-env = pkgs.runCommand "agent-env-check" {nativeBuildInputs = [pkgs.python3 pkgs.bash pkgs.coreutils pkgs.git];} ''
       cp -r ${./agent-env} agent-env
       export HOME=$TMPDIR
       python3 -m unittest discover -s agent-env/tests -v
