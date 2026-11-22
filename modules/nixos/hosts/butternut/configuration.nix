@@ -62,6 +62,8 @@
       self.nixosModules.doas
       self.nixosModules.reticulum
       self.nixosModules.kdeconnect
+      # On AC always, but a laptop: alerts during a power cut.
+      self.nixosModules.battery-notify
       self.nixosModules.dictation
       self.nixosModules.dictation-server
       self.nixosModules.openrgb
@@ -118,6 +120,9 @@
 
     # Desktop shell: "waybar" (waybar + swaync) or "noctalia" (Noctalia v5).
     preferences.desktopShell = "waybar";
+
+    # Battery status for hazel's watcher (café: headless, unplugged).
+    preferences.batteryAlert.serve.enable = true;
 
     # Dictation (Mod4+d): Whisper large-v3-turbo on the RTX 3050 (Vulkan,
     # loaded on demand, unloaded after 15 min), also serving hazel over the

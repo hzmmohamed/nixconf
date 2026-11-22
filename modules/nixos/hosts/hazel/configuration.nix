@@ -99,6 +99,9 @@
 
     preferences.bibata-cursor.enable = true;
 
+    # Watch butternut's battery (café: it runs headless, hazel is the screen).
+    preferences.batteryAlert.remotes = ["butternut"];
+
     # Trial of the wallpaper-reactive palette (matugen, Catppuccin fallback).
     preferences.theme.source = "wallpaper";
 
