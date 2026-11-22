@@ -19,20 +19,30 @@ Resolution order for `nx PROG`:
         with -p; exactly one -> use it.
   3. `nix eval --raw nixpkgs#<attr>.outPath`; if `<path>/bin/<PROG>` exists
      on disk, exec it directly (the pinned version is already present).
+     Split-output packages (`outPath` is the *first* output, e.g. lz4's
+     `dev`; the binary is in `bin` or another of `meta.outputsToInstall`):
+     if that eval succeeded but has no `bin/<PROG>`, one more eval lists
+     the outPaths of `bin` (if present) and `meta.outputsToInstall`, and
+     each is checked the same way.
   4. Unless `--exact`: `nix eval --raw nixpkgs#<attr>.pname`, then scan
      $NX_STORE_DIR (default /nix/store) for `*-<pname>-<version>/bin/<PROG>`
-     paths that `nix-store --check-validity` accepts, newest version wins.
+     paths that `nix-store --check-validity` accepts, newest version wins
+     (`*-env` dirs, i.e. withPackages environments, are skipped).
      If found, run it (and say so: it is *not* the pinned version).
   5. `nix build --dry-run nixpkgs#<attr>`: parse the download size and the
      derivations that would need building. On a metered link, refuse (exit
      3) unless NX_FORCE=1, a real download under $NX_METERED_LIMIT_MB
      (default 50) is the only thing needed. Derivations whose name ends in
-     `-env` don't count as a build for this gate. Otherwise:
+     `-env` don't count as a build for this gate. A dry run that fails or
+     times out can't size anything: refused on a metered link (exit 3)
+     unless NX_FORCE=1, run anyway when unmetered. Otherwise:
      `nix shell nixpkgs#<attr> -c <PROG> ARGS...`.
 
 `nx --py PKG... -- ARGS...` runs the same gate against a throwaway
 `python3.withPackages` environment, then
-`nix shell --impure --expr <expr> -c python3 ARGS...`.
+`nix shell --impure --expr <expr> -c python3 ARGS...`. PKG names must be
+plain Nix identifiers (`^[A-Za-z_][A-Za-z0-9_'-]*$`); anything else exits 2
+before nix runs, since they're spliced into the expression.
 """
 import json
 import os
@@ -45,6 +55,10 @@ from pathlib import Path
 NX_FORCE_ENV = "NX_FORCE"
 NX_METERED_LIMIT_ENV = "NX_METERED_LIMIT_MB"
 NX_STORE_DIR_ENV = "NX_STORE_DIR"
+# Tests only: shortens the dry-run timeout so a timeout test runs fast.
+NX_DRY_RUN_TIMEOUT_ENV = "NX_DRY_RUN_TIMEOUT"
+DEFAULT_DRY_RUN_TIMEOUT = 300.0
+_PY_PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_'-]*$")
 DEFAULT_METERED_LIMIT_MB = 50
 DEFAULT_STORE_DIR = "/nix/store"
 
@@ -87,6 +101,22 @@ def _nix_eval_raw(expr: str):
 
 def _try_outpath(attr: str):
     return _nix_eval_raw(f"nixpkgs#{attr}.outPath")
+
+
+# Outputs that may carry the binaries when `outPath` (the first output)
+# doesn't: `bin` if the package has one, then meta.outputsToInstall.
+_INSTALL_OUTPATHS_EXPR = (
+    'p: builtins.concatStringsSep "\\n" (map (o: p.${o}.outPath) '
+    "(builtins.filter (o: builtins.elem o (p.outputs or [\"out\"])) "
+    '(["bin"] ++ (p.meta.outputsToInstall or ["out"]))))'
+)
+
+
+def _try_install_outpaths(attr: str) -> list:
+    proc = _run(["nix", "eval", "--raw", f"nixpkgs#{attr}", "--apply", _INSTALL_OUTPATHS_EXPR])
+    if proc is None or proc.returncode != 0:
+        return []
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
 def _try_pname(attr: str):
@@ -151,6 +181,8 @@ def _scan_store(store_dir: str, pname: str, prog: str):
     except OSError:
         return None
     for entry in entries:
+        if entry.name.endswith("-env"):
+            continue  # a withPackages/buildEnv environment, not the package
         m = pattern.match(entry.name)
         if not m or not entry.is_dir():
             continue
@@ -183,10 +215,22 @@ def _agent_net_status() -> dict:
     return data
 
 
+def _dry_run_timeout() -> float:
+    raw = os.environ.get(NX_DRY_RUN_TIMEOUT_ENV)
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return DEFAULT_DRY_RUN_TIMEOUT
+
+
 def _dry_run(build_args: list):
-    proc = _run(["nix", "build", "--dry-run", *build_args], timeout=300)
-    if proc is None:
-        return 0.0, []
+    """(download MiB, drv names), or None when the dry run failed to start,
+    timed out or exited non-zero (i.e. the download couldn't be sized)."""
+    proc = _run(["nix", "build", "--dry-run", *build_args], timeout=_dry_run_timeout())
+    if proc is None or proc.returncode != 0:
+        return None
     return parse_dry_run(proc.stderr)
 
 
@@ -200,16 +244,29 @@ def _metered_limit_mb() -> float:
     return DEFAULT_METERED_LIMIT_MB
 
 
-def _gate_and_run(label: str, download_mib: float, build_names: list, run_fn):
-    """The metered-link gate shared by `nx PROG` and `nx --py`. Refuses
-    (exit 3) when metered and not forced and there's a real build or the
-    download exceeds the limit; otherwise reports the download (if any)
-    and runs `run_fn()`."""
+def _gate_and_run(label: str, sized, run_fn):
+    """The metered-link gate shared by `nx PROG` and `nx --py`. `sized` is
+    `_dry_run`'s result. Refuses (exit 3) when metered and not forced and
+    the download couldn't be sized, there's a real build, or the download
+    exceeds the limit; otherwise reports the download (if any) and runs
+    `run_fn()`."""
     force = os.environ.get(NX_FORCE_ENV) == "1"
     limit = _metered_limit_mb()
     net = _agent_net_status()
     metered = net.get("state") == "metered"
     connection = net.get("connection")
+
+    if sized is None:
+        if metered and not force:
+            print(
+                f"nx: couldn't size the download for {label}; "
+                f"on a metered link ({connection}). "
+                "Re-run with NX_FORCE=1 to fetch.",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        sized = (0.0, [])
+    download_mib, build_names = sized
 
     real_builds = [n for n in build_names if not n.endswith("-env")]
 
@@ -269,6 +326,12 @@ def _run_normal(prog: str, args: list, p_attr, exact: bool) -> int:
         candidate = Path(outpath) / "bin" / prog
         if candidate.is_file():
             os.execvp(str(candidate), [str(candidate), *args])
+        # Split outputs: the binary may live in another output (lz4's
+        # outPath is its `dev`). One extra eval at most.
+        for other in _try_install_outpaths(attr):
+            candidate = Path(other) / "bin" / prog
+            if candidate.is_file():
+                os.execvp(str(candidate), [str(candidate), *args])
 
     if not exact:
         pname = _try_pname(attr)
@@ -283,12 +346,12 @@ def _run_normal(prog: str, args: list, p_attr, exact: bool) -> int:
                 )
                 os.execvp(str(binpath), [str(binpath), *args])
 
-    download_mib, build_names = _dry_run([f"nixpkgs#{attr}"])
+    sized = _dry_run([f"nixpkgs#{attr}"])
 
     def run_shell():
         os.execvp("nix", ["nix", "shell", f"nixpkgs#{attr}", "-c", prog, *args])
 
-    _gate_and_run(attr, download_mib, build_names, run_shell)
+    _gate_and_run(attr, sized, run_shell)
     return 0
 
 
@@ -300,8 +363,12 @@ def _py_expr(pkgs: list) -> str:
 
 
 def _run_py(pkgs: list, py_args: list) -> int:
+    for pkg in pkgs:
+        if not _PY_PKG_RE.match(pkg):
+            print(f"nx: invalid package name: {pkg}", file=sys.stderr)
+            return 2
     expr = _py_expr(pkgs)
-    download_mib, build_names = _dry_run(["--impure", "--expr", expr])
+    sized = _dry_run(["--impure", "--expr", expr])
 
     def run_shell():
         os.execvp(
@@ -310,7 +377,7 @@ def _run_py(pkgs: list, py_args: list) -> int:
         )
 
     label = f"python3 ({' '.join(pkgs)})"
-    _gate_and_run(label, download_mib, build_names, run_shell)
+    _gate_and_run(label, sized, run_shell)
     return 0
 
 
