@@ -23,6 +23,12 @@ class PanelTextTest {
     }
 
     @Test
+    fun magicdns_name_shown_as_its_host_label() {
+        assertEquals("butternut", engineLabel(Engine.Remote("http://butternut.tail1a9f7c.ts.net:8178")))
+        assertEquals("100.105.41.75", hostOf("http://100.105.41.75:8178"))
+    }
+
+    @Test
     fun host_of_garbage_is_the_input() {
         assertEquals("not a url", hostOf("not a url"))
     }

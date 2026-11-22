@@ -7,7 +7,7 @@ import nixconf.phone.session.DictationSession
 // The words on the keyboard panel and the drafts list, kept out of the
 // Compose code so they can be tested on the JVM.
 
-/** Who transcribes: the server's host name ("butternut"), "on phone" or "no server"; null while probing. */
+/** Who transcribes: the server's host label ("butternut"), "on phone" or "no server"; null while probing. */
 fun engineLabel(engine: Engine?): String = when (engine) {
     null -> "checking…"
     is Engine.Remote -> hostOf(engine.url)
@@ -22,8 +22,14 @@ fun draftEngineLabel(engine: String?): String? = when (engine) {
     else -> hostOf(engine)
 }
 
+/** The host's first label (MagicDNS "butternut.<tailnet>.ts.net" → "butternut"); an IP as is. */
 fun hostOf(url: String): String = try {
-    URI(url).host ?: url
+    val host = URI(url).host
+    when {
+        host == null -> url
+        host.all { it.isDigit() || it == '.' } || host.startsWith("[") -> host
+        else -> host.substringBefore('.')
+    }
 } catch (e: Exception) {
     url
 }

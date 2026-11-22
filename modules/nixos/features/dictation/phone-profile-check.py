@@ -6,12 +6,15 @@ Reads the `data class` declarations of Profile.kt and walks the JSON from
 `Profile`: every object must carry exactly the class's fields (the app
 ignores unknown keys, so a misspelt key in Nix would silently fall back to
 the app's default), with matching JSON types. Then the values the app
-relies on: version 1, servers, four model files with hex sha256.
+relies on: version 1, servers, four model files with hex sha256, and
+fully qualified hosts in its own URLs (servers, model files, appUrl): the
+phone's resolver may not search the tailnet domain, so a short name fails.
 """
 
 import json
 import re
 import sys
+from urllib.parse import urlparse
 
 kotlin_path, profile_path = sys.argv[1:]
 source = open(kotlin_path).read()
@@ -119,6 +122,14 @@ for h in hexes:
 for f in files:
     if not isinstance(f.get("size"), int) or f["size"] <= 0:
         errors.append(f"$.localModel.files {f.get('name')}: size {f.get('size')}")
+
+own_urls = [("$.servers", u) for u in profile.get("servers", [])]
+own_urls += [(f"$.localModel.files {f.get('name')}", f.get("url", "")) for f in files]
+own_urls.append(("$.appUrl", profile.get("appUrl") or ""))
+for where, url in own_urls:
+    host = urlparse(str(url)).hostname or ""
+    if "." not in host:
+        errors.append(f"{where}: {url!r} has no fully qualified host")
 
 if errors:
     print("\n".join(errors), file=sys.stderr)

@@ -76,6 +76,7 @@ run_gradle() {
   gradle --project-dir "$root/apps/phone" \
     "-Pandroid.aapt2FromMavenOverride=$aapt2" \
     "-PsherpaAar=$sherpa_aar" \
+    "-PprofileUrl=$profile_url" \
     "$@" "${extra[@]}"
 }
 

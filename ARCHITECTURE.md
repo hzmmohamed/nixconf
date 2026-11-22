@@ -118,7 +118,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `reticulum` | Reticulum mesh networking, MeshChat launchers | `inputs.reticulum-flake` |
 | `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
 | `dictation` | Push-to-talk dictation (`dictate`, Mod4+d): first reachable whisper server, else Parakeet/Whisper small on the CPU; drafts, overlay | |
-| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
+| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`; every URL uses the MagicDNS FQDN, `phone.url` = `http://<host>.<self.tailnet.domain>:8180`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -256,7 +256,9 @@ pending on the panel). Single Gradle module, Kotlin + Compose; pure logic
 
 Built on butternut with `nix run .#phone-app -- build [--release] | test |
 install | publish` (`modules/packages/phone-app.{nix,sh}`: nixpkgs Gradle +
-an `androidenv` SDK, refuses on hosts that offload builds). `publish` copies
+an `androidenv` SDK, refuses on hosts that offload builds). The app's default
+profile URL is built in from flake data (`-PprofileUrl` → `BuildConfig.PROFILE_URL`:
+`phone.url` of the host with `dictation-server.phone.enable`). `publish` copies
 the release APK to `/var/lib/phone-profile/app/` and writes `app.json`, which
 the app's in-app update reads. The release key lives in
 `~/.config/phone-app/` (never in git).

@@ -2,6 +2,7 @@ package nixconf.phone.profile
 
 import java.io.File
 import java.io.IOException
+import nixconf.phone.BuildConfig
 
 // Last good profile, cached as `profile.json` in [dir]; its mtime (set from
 // [clock]) is the time of the last successful fetch. Never throws: without a
@@ -41,6 +42,7 @@ class ProfileStore(
     }
 
     companion object {
-        const val DEFAULT_URL = "http://butternut:8180/profile.json"
+        /** Built in by `phone-app` from the flake (the dictation-server host's phone.url); "" if built without it. */
+        val DEFAULT_URL: String = BuildConfig.PROFILE_URL
     }
 }

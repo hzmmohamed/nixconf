@@ -589,7 +589,8 @@ cd ~/nixconf; git fetch butternut; git checkout main; git reset --hard butternut
 The Android app in `apps/phone/` (design: `docs/plans/2026-11-22-phone-dictation-keyboard-design.md`)
 dictates through butternut's Whisper server over the tailnet and falls back to Parakeet on the
 phone. butternut serves its profile, the Parakeet files and the published APKs on port 8180
-(tailnet + trusted networks). Gradle and the Android SDK run on **butternut** only
+(tailnet + trusted networks), at its MagicDNS name `butternut.tail1a9f7c.ts.net` (the app's
+built-in profile URL; the phone's resolver may not search the tailnet domain, so no short names). Gradle and the Android SDK run on **butternut** only
 (`phone-app build|test` refuse on hazel). Commands are fish.
 
 - [ ] **hazel or butternut**: deploy butternut (adds the `phone-profile` service on 8180):
@@ -598,12 +599,12 @@ phone. butternut serves its profile, the Parakeet files and the published APKs o
   cd ~/nixconf; just deploy butternut
   ```
 
-- [ ] **any tailnet machine**: the profile and a model file answer (expect `["http://butternut:8178"]`
+- [ ] **any tailnet machine**: the profile and a model file answer (expect `["http://butternut.tail1a9f7c.ts.net:8178"]`
       and `200`):
 
   ```fish
-  curl -s http://butternut:8180/profile.json | jq .servers
-  curl -s -o /dev/null -w '%{http_code}\n' http://butternut:8180/models/parakeet/tokens.txt
+  curl -s http://butternut.tail1a9f7c.ts.net:8180/profile.json | jq .servers
+  curl -s -o /dev/null -w '%{http_code}\n' http://butternut.tail1a9f7c.ts.net:8180/models/parakeet/tokens.txt
   ```
 
   On butternut, `ls -la /var/lib/phone-profile` shows the dir and `app/` owned by you,
@@ -640,7 +641,7 @@ phone. butternut serves its profile, the Parakeet files and the published APKs o
   ```fish
   cd ~/nixconf
   nix run .#phone-app -- build --release; and nix run .#phone-app -- install; and nix run .#phone-app -- publish
-  curl -s http://butternut:8180/app.json | jq
+  curl -s http://butternut.tail1a9f7c.ts.net:8180/app.json | jq
   ```
 
   Debug and release builds are signed with different keys: switching between them needs

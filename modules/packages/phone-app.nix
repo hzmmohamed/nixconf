@@ -8,8 +8,23 @@
 #
 # Release key and passwords live in ~/.config/phone-app/ (never in git);
 # `publish` writes into /var/lib/phone-profile/, served by dictation-server.
+# The app's default profile URL is that server's (-PprofileUrl, BuildConfig).
 # Logic and docs: phone-app.sh next to this file.
-{lib, ...}: {
+{
+  lib,
+  self,
+  ...
+}: let
+  # The registry host serving the phone profile (dictation-server
+  # phone.enable); hosts are evaluated in order only until one matches.
+  phoneServer =
+    lib.findFirst
+    (nixos: nixos.config.preferences.dictation-server.phone.enable or false)
+    (throw "phone-app: no host sets preferences.dictation-server.phone.enable")
+    (map (name: self.nixosConfigurations.${name})
+      (builtins.filter (name: self.nixosConfigurations ? ${name}) (builtins.attrNames self.hosts)));
+  profileUrl = "${phoneServer.config.preferences.dictation-server.phone.url}/profile.json";
+in {
   perSystem = {pkgs, ...}: let
     buildToolsVersion = "36.0.0";
     android = pkgs.androidenv.composeAndroidPackages {
@@ -40,6 +55,7 @@
           aapt2=${q "${sdk}/build-tools/${buildToolsVersion}/aapt2"}
           sherpa_aar=${q sherpaAar}
           adb=${q "${sdk}/platform-tools/adb"}
+          profile_url=${q profileUrl}
         ''
         + builtins.readFile ./phone-app.sh;
     };

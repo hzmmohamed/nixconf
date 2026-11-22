@@ -20,6 +20,10 @@ android {
         // `phone-app build` passes git's commit count and short rev.
         versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("versionName").orNull ?: "dev"
+        // Default profile URL: `phone-app` passes the serving host's
+        // (dictation-server phone.url, flake data); empty means set it in the app.
+        val profileUrl = providers.gradleProperty("profileUrl").orNull.orEmpty()
+        buildConfigField("String", "PROFILE_URL", "\"$profileUrl\"")
         ndk { abiFilters += "arm64-v8a" }
     }
 
@@ -58,7 +62,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 kotlin {

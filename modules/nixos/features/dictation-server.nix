@@ -29,6 +29,8 @@
 #                     pins as the laptops)
 #   app.json, app/    the published release APK, written by
 #                     `nix run .#phone-app -- publish` as the user (no redeploy)
+# URLs use the MagicDNS FQDN (`phone.url`: http://<host>.<tailnet domain>:port),
+# which `phone-app` also builds into the app as its default profile URL.
 # profile.json and models/ are symlinks into the store, relinked (as root)
 # each time the unit starts; darkhttpd opens paths with plain open(), so it
 # follows them, and runs as a dynamic user with read-only access.
@@ -102,7 +104,9 @@
     '';
 
     stateDir = "/var/lib/phone-profile";
-    phoneUrl = "http://${config.networking.hostName}:${toString phone.port}";
+    # MagicDNS FQDN: the phone's resolver may not search the tailnet domain.
+    tailnetName = "${config.networking.hostName}.${self.tailnet.domain}";
+    phoneUrl = "http://${tailnetName}:${toString phone.port}";
     parakeetFiles = ["encoder.int8.onnx" "decoder.int8.onnx" "joiner.int8.onnx" "tokens.txt"];
 
     profile =
@@ -210,9 +214,9 @@
 
         servers = lib.mkOption {
           type = lib.types.listOf lib.types.str;
-          default = ["http://${config.networking.hostName}:${toString cfg.port}"];
-          defaultText = lib.literalExpression ''["http://''${config.networking.hostName}:''${toString config.preferences.dictation-server.port}"]'';
-          description = "Whisper servers the phone tries, in order (tailnet names resolve through MagicDNS).";
+          default = ["http://${tailnetName}:${toString cfg.port}"];
+          defaultText = lib.literalExpression ''["http://''${config.networking.hostName}.''${self.tailnet.domain}:''${toString config.preferences.dictation-server.port}"]'';
+          description = "Whisper servers the phone tries, in order (MagicDNS FQDNs).";
         };
 
         defaultLanguage = lib.mkOption {
@@ -238,6 +242,14 @@
           type = lib.types.ints.positive;
           default = 7;
           description = "Days the phone keeps delivered and cancelled drafts (pending ones are never pruned).";
+        };
+
+        url = lib.mkOption {
+          type = lib.types.str;
+          readOnly = true;
+          default = phoneUrl;
+          defaultText = lib.literalExpression ''"http://''${config.networking.hostName}.''${self.tailnet.domain}:''${toString phone.port}"'';
+          description = "Base URL of the profile/model/APK server (`phone-app` builds `<url>/profile.json` into the app).";
         };
 
         profile = lib.mkOption {
