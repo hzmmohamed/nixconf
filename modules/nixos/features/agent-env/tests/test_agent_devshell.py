@@ -328,7 +328,7 @@ class AgentDevshellTests(unittest.TestCase):
 
         result = self.fake.run(SCRIPT, str(binpath), "y", env=self._env(), cwd=str(root))
         out = json.loads(result.stdout)
-        self.assertEqual(out["AGENT_DEVSHELL"], "not-allowed")
+        self.assertEqual(out["AGENT_DEVSHELL"], "error")
         self.assertEqual(out["argv"], ["y"])
 
     def test_worktree_auto_allow(self):

@@ -75,14 +75,21 @@ def _find_root(start: Path):
 
 
 def _direnv_status(root: Path):
-    proc = _run(["direnv", "status", "--json"], cwd=str(root))
-    if proc is None or proc.returncode != 0:
-        return None
-    try:
-        data = json.loads(proc.stdout)
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None
+    """Deliberately not wrapped in a try/except: a direnv that's missing,
+    times out, or answers with something that isn't the expected JSON is
+    exactly the kind of surprise the top-level catch-all in main() exists
+    for (-> AGENT_DEVSHELL=error, BINARY still runs). git's equivalent
+    lookup (_git_common_dir) stays graceful instead, because "this isn't a
+    git repo" / "no worktree" is an expected, common outcome, not a
+    surprise."""
+    proc = subprocess.run(
+        ["direnv", "status", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        cwd=str(root),
+    )
+    return json.loads(proc.stdout)
 
 
 def _is_allowed(status) -> bool:
