@@ -222,7 +222,7 @@ def _hook_session_id_from_stdin():
 # Claude's UserPromptSubmit budget is well under a second; each of the (up
 # to two) external calls status() makes gets this, so the hook's worst case
 # is ~2x this plus interpreter startup, not the CLI's 1.5s-per-call budget.
-HOOK_TIMEOUT = 0.25
+HOOK_TIMEOUT = 0.5
 
 
 def _cmd_hook(kind: str) -> int:

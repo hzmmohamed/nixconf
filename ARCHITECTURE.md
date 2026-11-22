@@ -114,6 +114,8 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `openrgb` | OpenRGB service + GUI for hardware RGB lighting | |
 | `reticulum` | Reticulum mesh networking, MeshChat launchers | `inputs.reticulum-flake` |
 | `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
+| `agent-common` (`agent-env.nix` part) | Network-aware agent tooling: `agent-net` (metered/unmetered/offline from NetworkManager, override via `agent-net set`; Claude SessionStart/UserPromptSubmit hooks), `nx` (store-first tool runner that refuses big downloads/builds on metered links), `agent-devshell` (starts T3's Claude/OpenCode inside the project's cached direnv dev shell, never fails closed), shared guidelines at `~/.config/agents/guidelines.md` (Claude `CLAUDE.md` import line, OpenCode `instructions`). Options: `preferences.agents.claudeHooks` (extra Claude Code hook commands per event, appended to the built-in ones), `preferences.agents.guidelinesFile` (read-only store path). Unit tests run as `checks.agent-env` | |
+| `cable-link` | Ethernet between the laptops: `lan` (DHCP) falls through to a static `cable` link; manual `<me>-shares`/`<peer>-shares` internet sharing. `preferences.cable.peerSharesMetered` marks `<peer>-shares` metered (NM `metered=1`) so `agent-net` sees a carried peer's hotspot | |
 
 ### `modules/nixos/extra/` — integration layers
 

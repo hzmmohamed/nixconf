@@ -605,14 +605,15 @@ pwd
 
 Expect the worktree directory, not the main checkout.
 
-**4. `nx` refuses an unmetered-looking pull when told it's metered.**
+**4. `nx` refuses a pull when told the link is metered.**
 
 ```fish
-NX_METERED_LIMIT_MB=0 nx --exact -p hello hello
+agent-net set metered; NX_METERED_LIMIT_MB=0 nx --exact -p hello hello; agent-net set auto
 ```
 
 Expect it to refuse with a size (`hello` isn't in the store), or run
-straight through if `hello` is already there.
+straight through if `hello` is already there. `agent-net set auto` drops
+the override again.
 
 **5. Guidelines import line.**
 

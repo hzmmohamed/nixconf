@@ -101,6 +101,21 @@ class AgentNetHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
 
+    def test_session_start_tolerates_somewhat_slow_nmcli(self):
+        """M5: an nmcli that takes ~0.3s (a busy laptop) is still within
+        the hook's per-call budget, so the session still gets its network
+        line instead of silently nothing."""
+        self.fake.add(
+            "ip",
+            stdout=json.dumps([{"dst": "default", "dev": "wlo1", "metric": 600}]),
+        )
+        self.fake.add("nmcli", stdout="yes (guessed)\nwildflower\n", sleep=0.3)
+        result = self.fake.run(
+            SCRIPT, "hook", "session-start", stdin='{"session_id":"s-slowish"}', env=self.env
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("metered (wildflower, wlo1)", result.stdout)
+
     def test_hook_survives_slow_nmcli(self):
         self.fake.add(
             "ip",
@@ -114,9 +129,9 @@ class AgentNetHookTests(unittest.TestCase):
         elapsed = time.monotonic() - start
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
-        # The hook's own budget (HOOK_TIMEOUT=0.25s per call, at most two
+        # The hook's own budget (HOOK_TIMEOUT=0.5s per call, at most two
         # calls) must bound this, not the 5s the fake nmcli sleeps for.
-        self.assertLess(elapsed, 1.0)
+        self.assertLess(elapsed, 1.5)
         # A status that timed out is "undetermined", not "offline": it must
         # not be stored, or the next prompt would see a bogus transition
         # into/out of "offline" once the real state is read.
