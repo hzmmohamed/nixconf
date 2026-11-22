@@ -18,13 +18,16 @@
         pkgs.python3
       ]}:$PATH"
 
-            # Provider configs
-            GOOGLE_CLIENT_ID="903830131492-crpilk15k0n1q5h0c3gl94rcj5co4533.apps.googleusercontent.com"
-            GOOGLE_CLIENT_SECRET=""
+            # Provider configs: Thunderbird's built-in OAuth clients
+            # (mailnews/base/src/OAuth2Providers.sys.mjs in comm-central). An
+            # installed app can't keep a secret; Mozilla publishes this one.
+            GOOGLE_CLIENT_ID="406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com"
+            GOOGLE_CLIENT_SECRET="kSmqreRr0qwBWJgbf5Y-PjSU"
             GOOGLE_AUTH_URL="https://accounts.google.com/o/oauth2/v2/auth"
             GOOGLE_TOKEN_URL="https://oauth2.googleapis.com/token"
             GOOGLE_SCOPE="https://mail.google.com/"
-            GOOGLE_REDIRECT_URI="http://localhost:8089"
+            # Desktop-app loopback redirect (any port); the callback listener binds 127.0.0.1.
+            GOOGLE_REDIRECT_URI="http://127.0.0.1:8089"
 
             MS_CLIENT_ID="9e5f94bc-e8a4-4e73-b8be-63364c29d753"
             MS_AUTH_URL="https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
