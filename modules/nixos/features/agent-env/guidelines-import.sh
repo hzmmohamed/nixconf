@@ -12,6 +12,10 @@
 set -euo pipefail
 
 IMPORT_LINE='@~/.config/agents/guidelines.md'
+# Tolerates leading/trailing whitespace on an otherwise-matching existing
+# line (e.g. a user's editor trimmed or padded it) so it isn't treated as
+# missing and duplicated.
+IMPORT_LINE_RE='[[:space:]]*@~/\.config/agents/guidelines\.md[[:space:]]*'
 
 for dir in "$@"; do
   target_dir="$HOME/$dir"
@@ -23,7 +27,7 @@ for dir in "$@"; do
     continue
   fi
 
-  if grep -qxF "$IMPORT_LINE" "$file"; then
+  if grep -qxE "$IMPORT_LINE_RE" "$file"; then
     continue
   fi
 

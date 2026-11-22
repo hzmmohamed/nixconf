@@ -39,6 +39,13 @@ class GuidelinesContentTests(unittest.TestCase):
         for token in ("AGENT_DEVSHELL", "direnv exec .", "nx", "agent-net"):
             self.assertIn(token, text, f"guidelines.md should mention {token!r}")
 
+        for value in ("loaded", "not-allowed", "not-built", "none", "error"):
+            self.assertIn(
+                f"`{value}`",
+                text,
+                f"guidelines.md should cover $AGENT_DEVSHELL={value!r}",
+            )
+
 
 class ImportScriptTests(unittest.TestCase):
     def run_import(self, home, *dirs):
@@ -86,6 +93,20 @@ class ImportScriptTests(unittest.TestCase):
             self.assertIn(user_text, content_again)
             self.assertEqual(content_again.count(IMPORT_LINE), 1)
             self.assertEqual(content, content_again)
+
+    def test_import_line_with_trailing_whitespace_not_duplicated(self):
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            claude_dir = home / ".claude"
+            claude_dir.mkdir(parents=True)
+            claude_md = claude_dir / "CLAUDE.md"
+            # A user-edited line with trailing spaces should still count as
+            # "already present" and not get a duplicate appended.
+            claude_md.write_text(f"{IMPORT_LINE}   \n")
+
+            result = self.run_import(home, ".claude")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(claude_md.read_text().count(IMPORT_LINE), 1)
 
     def test_multiple_dirs(self):
         with tempfile.TemporaryDirectory() as home:

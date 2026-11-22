@@ -15,7 +15,9 @@ Check `$AGENT_DEVSHELL`:
 - `not-built` or `error` — mention it, and use `direnv exec . <cmd>` only
   when you actually need the shell now (it builds the shell in the
   foreground; on a metered link say so first).
-- unset — not started through T3; assume your shell as-is.
+- `none` — started through T3, but this project has no dev shell (no
+  `.envrc`); use what's already on `PATH` plus `nx`.
+- unset — not started through T3 at all; assume your shell as-is.
 
 After editing `flake.nix`, `.envrc`, or devenv files this session, run
 project commands as `direnv exec . <cmd>` to pick up the change.

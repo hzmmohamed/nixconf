@@ -63,25 +63,34 @@
       exec ${lib.getExe agentDevshell} ${userBin}/opencode "$@"
     '';
   in {
-    home-manager.users.${user} = {
-      home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
-
-      xdg.configFile."agents/guidelines.md".source = guidelinesFile;
-
-      # (NixOS lib has no lib.hm: spell out the DAG entry, like agent-common's
-      # claudeSettingsMerge.)
-      home.activation.agentGuidelinesImport = {
-        after = ["writeBoundary"];
-        before = [];
-        data = ''
-          run ${lib.getExe guidelinesImport} ${lib.escapeShellArgs accountDirs}
-        '';
-      };
+    options.preferences.agents.guidelinesFile = lib.mkOption {
+      type = lib.types.path;
+      readOnly = true;
+      default = guidelinesFile;
+      description = "Store path of the shared agent guidelines markdown (installed at ~/.config/agents/guidelines.md).";
     };
 
-    preferences.agents.claudeHooks = {
-      SessionStart = ["${lib.getExe agentNet} hook session-start"];
-      UserPromptSubmit = ["${lib.getExe agentNet} hook prompt"];
+    config = {
+      home-manager.users.${user} = {
+        home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
+
+        xdg.configFile."agents/guidelines.md".source = guidelinesFile;
+
+        # (NixOS lib has no lib.hm: spell out the DAG entry, like agent-common's
+        # claudeSettingsMerge.)
+        home.activation.agentGuidelinesImport = {
+          after = ["writeBoundary"];
+          before = [];
+          data = ''
+            run ${lib.getExe guidelinesImport} ${lib.escapeShellArgs accountDirs}
+          '';
+        };
+      };
+
+      preferences.agents.claudeHooks = {
+        SessionStart = ["${lib.getExe agentNet} hook session-start"];
+        UserPromptSubmit = ["${lib.getExe agentNet} hook prompt"];
+      };
     };
   };
 
