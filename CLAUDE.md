@@ -30,6 +30,7 @@ just lint             # deadnix (fatal) + statix (advisory)
 just eval <host>      # eval one host, no build
 just eval-all         # eval every nixosConfiguration: OK / FAIL / SKIP per host
 just check            # fmt-check + lint + eval-all — run before handing work back
+nix run .#phone-app -- test   # Android app JVM tests (butternut only; apps/phone/)
 ```
 
 `just` is in the dev shell (`nix develop --impure`, or direnv). Without it, the
@@ -70,9 +71,10 @@ Deploying the machine you are on switches locally.
 ```
 modules/
   user.nix, theme.nix, ssh-keys.nix   flake-level data: self.user, palettes/fonts, self.sshKeys
+  dictation-{models,vocabulary}.nix   flake-level data: self.dictationModels pkgs, self.dictationVocabulary
   flake-parts.nix                     systems (x86_64-linux only), mergeable flake options
   devshell.nix                        devenv shell + treefmt (alejandra) + git hooks
-  checks.nix                          checks.<host>-eval (eval-only)
+  checks.nix                          checks.<host>-eval (eval-only), design-contrast, phone-profile
   nixos/base/        option declarations → flake.nixosModules.base
   nixos/features/    one flake.nixosModules.<name> per file (or dir)
   nixos/extra/       integration layers: extra_hjem (home-manager bridge), extra_theme, impermanence
@@ -80,6 +82,7 @@ modules/
   wrappedPrograms/   perSystem.packages with baked-in config (fish, kitty, git, neovim, …)
   packages/          other perSystem packages
   vms/               test VMs
+apps/phone/          Android companion app (Gradle; nix run .#phone-app)
 docs/plans/          designs, backlog, user action list
 secrets/             sops files (see secrets/README.md)
 scripts/             install-host.sh (nixos-anywhere)

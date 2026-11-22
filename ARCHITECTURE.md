@@ -39,7 +39,9 @@ config. Hosts compose both.
 | `theme.nix` | `flake.palettes`, `flake.fonts`, `flake.color`, `flake.theme`, `flake.catppuccin`, `flake.catppuccinMocha` | Palettes (Catppuccin Latte/Mocha `{light,dark}` consumed via `preferences.theme.palette`; legacy Gruvbox `theme` for the niri wrappers) and fonts. |
 | `flake-parts.nix` | systems (x86_64-linux), options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
 | `devshell.nix` | `perSystem.devShells.default`, treefmt | devenv shell (`nix develop --impure`) with nix tooling, sops, age, just, claude-code; alejandra + deadnix git hooks. |
-| `checks.nix` | `perSystem.checks.<host>-eval` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent). |
+| `checks.nix` | `perSystem.checks.<host>-eval`, `design-contrast`, `phone-profile` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent); palette contrast contract; butternut's phone profile against the app's `Profile.kt`. |
+| `dictation-models.nix` | `flake.dictationModels` | `pkgs -> { parakeet; parakeetArchive; whisperSmall; sileroVadOnnx; }`: dictation model pins shared by the laptops and the phone profile (`dictation.nix` still carries identical copies until it is rewired). |
+| `dictation-vocabulary.nix` | `flake.dictationVocabulary` | Fleet vocabulary for the Whisper prompt (phone profile; desktop clients later). |
 
 ### `modules/nixos/base/` — option declarations
 
@@ -115,6 +117,8 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `openrgb` | OpenRGB service + GUI for hardware RGB lighting | |
 | `reticulum` | Reticulum mesh networking, MeshChat launchers | `inputs.reticulum-flake` |
 | `music` | Ardour, Audacity, Carla, Surge XT, Hydrogen, Yabridge, plugin paths | |
+| `dictation` | Push-to-talk dictation (`dictate`, Mod4+d): first reachable whisper server, else Parakeet/Whisper small on the CPU; drafts, overlay | |
+| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -239,6 +243,23 @@ preferences.zotero.sharing = false;
 
 This pattern can be reused for other shared resources that need per-host
 secrets and syncthing folders.
+
+### `apps/phone/` — Android companion app
+
+"Nixconf" (`nixconf.phone`): a dictation keyboard (IME) for the phone. Records
+to crash-safe WAV drafts, sends them to the first reachable `servers` entry of
+the phone profile (butternut's whisper server over the tailnet), falls back to
+Parakeet int8 on the phone (sherpa-onnx; files and hashes from the profile),
+and only types into the field the dictation started in (else the draft stays
+pending on the panel). Single Gradle module, Kotlin + Compose; pure logic
+(profile, engine choice, WAV, drafts, session) is JVM-tested.
+
+Built on butternut with `nix run .#phone-app -- build [--release] | test |
+install | publish` (`modules/packages/phone-app.{nix,sh}`: nixpkgs Gradle +
+an `androidenv` SDK, refuses on hosts that offload builds). `publish` copies
+the release APK to `/var/lib/phone-profile/app/` and writes `app.json`, which
+the app's in-app update reads. The release key lives in
+`~/.config/phone-app/` (never in git).
 
 ### `scripts/` — deployment automation
 

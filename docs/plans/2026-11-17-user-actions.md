@@ -583,3 +583,88 @@ Then on **hazel**, whose history is now the old one (commit or push your work fi
 ```fish
 cd ~/nixconf; git fetch butternut; git checkout main; git reset --hard butternut/main
 ```
+
+## Phone: Nixconf dictation keyboard (butternut + the phone)
+
+The Android app in `apps/phone/` (design: `docs/plans/2026-11-22-phone-dictation-keyboard-design.md`)
+dictates through butternut's Whisper server over the tailnet and falls back to Parakeet on the
+phone. butternut serves its profile, the Parakeet files and the published APKs on port 8180
+(tailnet + trusted networks). Gradle and the Android SDK run on **butternut** only
+(`phone-app build|test` refuse on hazel). Commands are fish.
+
+- [ ] **hazel or butternut**: deploy butternut (adds the `phone-profile` service on 8180):
+
+  ```fish
+  cd ~/nixconf; just deploy butternut
+  ```
+
+- [ ] **any tailnet machine**: the profile and a model file answer (expect `["http://butternut:8178"]`
+      and `200`):
+
+  ```fish
+  curl -s http://butternut:8180/profile.json | jq .servers
+  curl -s -o /dev/null -w '%{http_code}\n' http://butternut:8180/models/parakeet/tokens.txt
+  ```
+
+  On butternut, `ls -la /var/lib/phone-profile` shows the dir and `app/` owned by you,
+  `profile.json` and `models` as links into `/nix/store`.
+
+- [ ] **butternut**: create the release key once (keytool asks for a store password and the
+      key's details; then put the real passwords in `signing.properties`):
+
+  ```fish
+  mkdir -p ~/.config/phone-app
+  nix shell --inputs-from ~/nixconf nixpkgs#jdk17 -c keytool -genkeypair -v -keystore ~/.config/phone-app/release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias nixconf-phone
+  printf '%s\n' 'storePassword=<store password>' 'keyAlias=nixconf-phone' 'keyPassword=<key password>' > ~/.config/phone-app/signing.properties
+  chmod 600 ~/.config/phone-app/signing.properties
+  $EDITOR ~/.config/phone-app/signing.properties
+  ```
+
+- [ ] **butternut**: back both files up in the vault (a lost key means uninstalling the app, and
+      its drafts, to install a new one). With KeePassXC locked or closed:
+
+  ```fish
+  set db ~/Vault/<your database>.kdbx
+  keepassxc-cli add $db "Nixconf phone release key"
+  keepassxc-cli attachment-import $db "Nixconf phone release key" release.jks ~/.config/phone-app/release.jks
+  keepassxc-cli attachment-import $db "Nixconf phone release key" signing.properties ~/.config/phone-app/signing.properties
+  ```
+
+- [ ] **phone**: Settings → About phone → tap "OS version" 7× → Developer options → turn on
+      **USB debugging** and **Install via USB** (Xiaomi blocks `adb install` without the
+      second). Plug the phone into butternut and accept "Allow USB debugging?".
+
+- [ ] **butternut**: build the signed release, install it over USB, publish it (gives the in-app
+      update a baseline):
+
+  ```fish
+  cd ~/nixconf
+  nix run .#phone-app -- build --release; and nix run .#phone-app -- install; and nix run .#phone-app -- publish
+  curl -s http://butternut:8180/app.json | jq
+  ```
+
+  Debug and release builds are signed with different keys: switching between them needs
+  `adb uninstall nixconf.phone`, which deletes the app's drafts. Stay on release builds.
+
+- [ ] **phone**: open **Nixconf** → **Allow microphone** → **Enable keyboard** (toggle Nixconf in
+      the system list) → **Test**: the profile is fetched and butternut answers.
+
+- [ ] **phone, on Wi-Fi**: Parakeet downloads by itself (~650 MB; or **Download now** in the
+      app); wait for **"Parakeet ready"**.
+
+- [ ] **phone**: the checklist (any text field, Nixconf picked as keyboard):
+  - [ ] Dictate with butternut up: label **"butternut"**, text typed with a trailing space.
+  - [ ] Wi-Fi and mobile data off: label **"on phone"**, text still typed (English).
+  - [ ] Switch to another app while it transcribes: nothing is typed there; the panel shows
+        **"1 pending"**; tap it, then tap the draft to type it into the current field or
+        long-press to copy it.
+  - [ ] Kill the app mid-recording (recents → swipe away): the draft is listed in Nixconf,
+        **Share audio** plays the recording.
+  - [ ] Language toggle (en ↔ ar), **Cancel** (nothing typed, draft cancelled), **⌨** switches
+        back to the previous keyboard.
+  - [ ] Update: commit something (versionCode = commit count, so each commit bumps it), then
+        on butternut `nix run .#phone-app -- build --release; and nix run .#phone-app -- publish`;
+        the app shows **"Update available"** → tap to install.
+
+Later updates are the last item: commit, `build --release`, `publish`, tap "Update" on the phone.
+No butternut redeploy is needed for a new APK.
