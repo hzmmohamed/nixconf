@@ -44,6 +44,8 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.okhttp)
+    // Model archive fallback (tar.bz2).
+    implementation(libs.commons.compress)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
