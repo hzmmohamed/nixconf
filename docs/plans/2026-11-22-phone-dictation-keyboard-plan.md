@@ -237,3 +237,9 @@ apps/phone/app/src/test/java/nixconf/phone/…   JVM unit tests mirroring the ab
 - [ ] **Step 1: User actions** (fish-safe, one block each): deploy butternut (`just deploy butternut`); check `curl -s http://butternut:8180/profile.json | jq .servers`; create the keystore (keytool line from Task 8) and back it up in the vault; on the phone: enable USB debugging once, `nix run .#phone-app -- build --release && nix run .#phone-app -- install`; enable the keyboard, grant the mic; first Wi-Fi session downloads the model (~640 MB); later updates: `nix run .#phone-app -- build --release && nix run .#phone-app -- publish`, then "Update" in the app.
 - [ ] **Step 2: Verify** — `just check` (or the raw commands) passes; `nix build --no-link .#checks.x86_64-linux.phone-profile` passes.
 - [ ] **Step 3: Commit** — "Docs: phone companion app"
+
+---
+
+## Follow-up
+
+- **Rewire `dictation.nix` to the shared data** (Task 1, Step 4, deferred): `dictation.nix` had uncommitted changes from another session when Tasks 1–2 were done, so only `dictation-server` reads `self.dictationModels` / `self.dictationVocabulary` for now and `dictation.nix` keeps its own `parakeet`, `whisperSmall` and `sileroVad` let-bindings. The pins are identical (same output paths, checked with `nix derivation show --recursive` of hazel's toplevel). Once that work is committed: `models = self.dictationModels pkgs;` in `dictation.nix`, drop the three let-bindings, make the `prompt` default `lib.concatStringsSep ", " self.dictationVocabulary + "."`, and re-check the output paths as in Task 1, Step 5.
