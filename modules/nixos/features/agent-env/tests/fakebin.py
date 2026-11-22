@@ -8,6 +8,7 @@ so tests can assert on exactly how it was invoked.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -54,10 +55,23 @@ class FakeBin:
 
     def env(self, **extra):
         env = dict(os.environ)
-        python_dir = str(Path(sys.executable).parent)
-        env["PATH"] = f"{self.bin_dir}:{python_dir}"
+        env["PATH"] = f"{self.bin_dir}:{self._sys_path()}"
         env.update(extra)
         return env
+
+    def _sys_path(self) -> str:
+        # Hermetic: python3 alone (a symlink, not its whole profile dir,
+        # which may hold the real agent-net/nx/direnv once deployed) plus the
+        # coreutils store dir for the shell fakes (sleep, cat, ...).
+        py_dir = self.dir / "py"
+        if not py_dir.exists():
+            py_dir.mkdir()
+            (py_dir / "python3").symlink_to(sys.executable)
+        dirs = [str(py_dir)]
+        sleep = shutil.which("sleep")
+        if sleep:
+            dirs.append(str(Path(sleep).resolve().parent))
+        return ":".join(dirs)
 
     def run(self, script, *args, stdin="", env=None, cwd=None):
         return subprocess.run(

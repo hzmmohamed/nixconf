@@ -54,11 +54,13 @@ def write_fake_nix(
     outpaths = outpaths or {}
     pnames = pnames or {}
     script = f'''#!{sys.executable}
-import json, sys
+import json, os, sys
 
 argv = sys.argv[1:]
 with open({str(calls_file)!r}, "a") as f:
     f.write(json.dumps(argv) + chr(10))
+with open({str(calls_file) + ".env"!r}, "a") as f:
+    f.write(json.dumps({{"argv": argv, "NIX_PATH": os.environ.get("NIX_PATH")}}) + chr(10))
 
 outpaths = {outpaths!r}
 pnames = {pnames!r}
@@ -393,6 +395,40 @@ class NxCliTests(unittest.TestCase):
         )
         self.assertFalse(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
 
+    def test_metered_refusal_small_download_not_zero(self):
+        # With the limit at 0, a sub-MiB download is refused; the line must
+        # not claim "0 MiB".
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"hello": "hello"},
+            dry_run_stderr="these paths will be fetched (52.40 KiB download, 210 KiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(
+            SCRIPT,
+            "--exact",
+            "-p",
+            "hello",
+            "hello",
+            env=self._env(NX_METERED_LIMIT_MB="0"),
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(
+            "nx: hello needs <1 MiB download; on a metered link (wildflower). "
+            "Re-run with NX_FORCE=1 to fetch.",
+            result.stderr,
+        )
+        self.assertNotIn("0 MiB", result.stderr)
+
     def test_metered_force(self):
         write_fake_nix(
             self.fake.bin_dir / "nix",
@@ -687,6 +723,31 @@ class NxCliTests(unittest.TestCase):
         expr = argv[argv.index("--expr") + 1]
         self.assertIn("[requests rich]", expr)
         self.assertEqual(argv[-4:], ["-c", "python3", "-c", "print(1)"])
+
+    def test_py_drops_nix_path(self):
+        # NixOS's default NIX_PATH names a channels dir that may not exist,
+        # and nix warns about it on every --impure eval. The --py expression
+        # uses getFlake, so nx runs nix without NIX_PATH.
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls, dry_run_stderr="")
+
+        result = self.fake.run(
+            SCRIPT,
+            "--py",
+            "requests",
+            "--",
+            "-c",
+            "print(1)",
+            env=self._env(NIX_PATH="nixpkgs=flake:nixpkgs:/nonexistent/channels"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envs = [
+            json.loads(line)
+            for line in Path(str(self.nix_calls) + ".env").read_text().splitlines()
+        ]
+        self.assertTrue(any(e["argv"][:2] == ["build", "--dry-run"] for e in envs))
+        self.assertTrue(any(e["argv"][:1] == ["shell"] for e in envs))
+        for e in envs:
+            self.assertIsNone(e["NIX_PATH"], e["argv"])
 
 
 if __name__ == "__main__":

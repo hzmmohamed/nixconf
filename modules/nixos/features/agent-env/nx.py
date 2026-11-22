@@ -225,13 +225,27 @@ def _dry_run_timeout() -> float:
     return DEFAULT_DRY_RUN_TIMEOUT
 
 
-def _dry_run(build_args: list):
+def _dry_run(build_args: list, env=None):
     """(download MiB, drv names), or None when the dry run failed to start,
     timed out or exited non-zero (i.e. the download couldn't be sized)."""
-    proc = _run(["nix", "build", "--dry-run", *build_args], timeout=_dry_run_timeout())
+    proc = _run(
+        ["nix", "build", "--dry-run", *build_args],
+        timeout=_dry_run_timeout(),
+        env=env,
+    )
     if proc is None or proc.returncode != 0:
         return None
     return parse_dry_run(proc.stderr)
+
+
+def _size_text(download_mib: float):
+    """"<N> MiB", "<1 MiB" for a nonzero size that would round to 0, or None
+    for no download at all."""
+    if download_mib <= 0:
+        return None
+    if download_mib < 0.5:
+        return "<1 MiB"
+    return f"{round(download_mib)} MiB"
 
 
 def _metered_limit_mb() -> float:
@@ -281,27 +295,20 @@ def _gate_and_run(label: str, sized, run_fn):
             sys.exit(3)
         if download_mib > limit:
             print(
-                f"nx: {label} needs {round(download_mib)} MiB download; "
+                f"nx: {label} needs {_size_text(download_mib)} download; "
                 f"on a metered link ({connection}). "
                 "Re-run with NX_FORCE=1 to fetch.",
                 file=sys.stderr,
             )
             sys.exit(3)
 
-    # The line itself is never omitted; only the size parenthetical is
-    # ("omitted when 0" is about the size, not the whole line): a raw
-    # download of exactly 0 drops the parenthetical entirely, a nonzero
-    # download under 0.5 MiB (which would otherwise round to "0 MiB") is
-    # shown as "<1 MiB", and everything else rounds to the nearest MiB.
-    if download_mib <= 0:
+    # The line is always printed; only the size is left out for a zero
+    # download.
+    size = _size_text(download_mib)
+    if size is None:
         print(f"nx: fetching {label}", file=sys.stderr)
-    elif download_mib < 0.5:
-        print(f"nx: fetching {label} (<1 MiB download)", file=sys.stderr)
     else:
-        print(
-            f"nx: fetching {label} ({round(download_mib)} MiB download)",
-            file=sys.stderr,
-        )
+        print(f"nx: fetching {label} ({size} download)", file=sys.stderr)
     run_fn()
 
 
@@ -362,18 +369,26 @@ def _py_expr(pkgs: list) -> str:
     )
 
 
+def _py_env() -> dict:
+    # The expression uses getFlake, not <nixpkgs>; NixOS's default NIX_PATH
+    # names a channels dir that usually doesn't exist and nix warns about it.
+    return {k: v for k, v in os.environ.items() if k != "NIX_PATH"}
+
+
 def _run_py(pkgs: list, py_args: list) -> int:
     for pkg in pkgs:
         if not _PY_PKG_RE.match(pkg):
             print(f"nx: invalid package name: {pkg}", file=sys.stderr)
             return 2
     expr = _py_expr(pkgs)
-    sized = _dry_run(["--impure", "--expr", expr])
+    env = _py_env()
+    sized = _dry_run(["--impure", "--expr", expr], env=env)
 
     def run_shell():
-        os.execvp(
+        os.execvpe(
             "nix",
             ["nix", "shell", "--impure", "--expr", expr, "-c", "python3", *py_args],
+            env,
         )
 
     label = f"python3 ({' '.join(pkgs)})"
