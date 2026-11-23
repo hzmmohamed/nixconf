@@ -3,7 +3,7 @@
     user = config.preferences.user.name;
   in {
     # KDEConnect uses UDP 1716 for discovery and TCP 1714-1764 for data.
-    # Trusted networks only (home/hotspot Wi-Fi, cable, tailscale0): never
+    # Trusted networks only (home Wi-Fi, cable, tailscale0): never
     # announced to strangers on café Wi-Fi. From anywhere, pair the phone
     # "by IP" with the tailnet address (hosts registry).
     preferences.trustedNetworks = {

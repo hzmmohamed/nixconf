@@ -587,6 +587,65 @@ Then on **hazel**, whose history is now the old one (commit or push your work fi
 cd ~/nixconf; git fetch butternut; git checkout main; git reset --hard butternut/main
 ```
 
+### Agent environment rollout (agent-net, nx, agent-devshell, guidelines)
+
+Deploy the two desktops first:
+
+```fish
+just deploy hazel
+just deploy butternut
+```
+
+Then run these checks.
+
+**1. `agent-devshell` loads the project's dev shell.** New T3 thread in a
+direnv project (e.g. `~/nixconf`), ask the agent to run:
+
+```fish
+echo $AGENT_DEVSHELL
+```
+
+Expect `loaded`.
+
+**2. Metered-network context.** Check whether the session context the agent
+saw at thread start included a `Network:` line. If it didn't, the Agent SDK
+isn't loading user-settings hooks — tell Claude, it's a known open question
+to pin down via the provider's `environment` instead. In a plain terminal:
+
+```fish
+agent-net
+```
+
+prints e.g. `metered (wildflower, wlo1)`; override with
+`agent-net set metered`, `agent-net set unmetered`, or `agent-net set auto`.
+
+**3. T3 worktree threads start in the worktree.** In a T3 thread opened with
+"New worktree", ask the agent to run:
+
+```fish
+pwd
+```
+
+Expect the worktree directory, not the main checkout.
+
+**4. `nx` refuses a pull when told the link is metered.**
+
+```fish
+agent-net set metered; NX_METERED_LIMIT_MB=0 nx --exact -p hello hello; agent-net set auto
+```
+
+Expect it to refuse with a size (`hello` isn't in the store), or run
+straight through if `hello` is already there. `agent-net set auto` drops
+the override again.
+
+**5. Guidelines import line.**
+
+```fish
+grep guidelines ~/.claude/CLAUDE.md ~/.claude-work/CLAUDE.md
+```
+
+Expect `@~/.config/agents/guidelines.md` in both.
+
 ## Phone: Nixconf dictation keyboard (butternut + the phone)
 
 The Android app in `apps/phone/` (design: `docs/plans/2026-11-22-phone-dictation-keyboard-design.md`)
@@ -672,6 +731,100 @@ built-in profile URL; the phone's resolver may not search the tailnet domain, so
 
 Later updates are the last item: commit, `build --release`, `publish`, tap "Update" on the phone.
 No butternut redeploy is needed for a new APK.
+
+## Phone hotspot (wildflower): direct tailnet path, untrusted profile
+
+Design: `docs/plans/2026-11-22-hotspot-mode-design.md`. The tailnet policy now
+carries `disable-android-bind-to-active-network`, so phone ↔ laptop traffic on
+the hotspot goes direct instead of through DERP twice over mobile data. The
+hotspot becomes a declared Wi-Fi profile on hazel and butternut: metered,
+**untrusted** (friends join it, so no LAN service ports and no mDNS there; the
+phone uses the services over the tailnet). The phone's tailnet name becomes
+`wildflower`. Commands are fish.
+
+- [ ] **Tailscale admin console** (login.tailscale.com → Machines):
+  - the phone (`21081111rg`) → ⋯ → **Edit machine name** → untick "Auto-generate" →
+    `wildflower` → Update.
+  - the stale **`xiaomi-21081111rg`** node (offline, an old registration of the same
+    phone) → ⋯ → **Remove**.
+
+- [ ] **hazel or butternut**: apply the policy (expect one added entry in `nodeAttrs`; on
+      mobile data the tofu provider may download if it isn't in the store yet):
+
+  ```fish
+  cd ~/nixconf
+  bash scripts/tailscale/plan.sh
+  bash scripts/tailscale/apply.sh     # answer y
+  ```
+
+- [ ] **phone, on the hotspot with a laptop joined**: Tailscale app → toggle off, then on.
+
+- [ ] **hazel or butternut, on the hotspot**: the path is direct (expect `pong … via
+      10.19.167.40:…`, not `via DERP(par)`; the address is whatever the phone's
+      tether gateway is today):
+
+  ```fish
+  tailscale ping -c 3 wildflower
+  tailscale status | grep wildflower  # expect: direct 10.19.167.40:…
+  ```
+
+  Rollback: delete the `disable-android-bind-to-active-network` line in
+  `docs/tailscale-policy.hujson`, run `plan.sh`/`apply.sh` again.
+
+- [ ] **hazel**: create the hotspot secret (sops opens your editor; replace the sample with the
+      content below, save and quit):
+
+  ```fish
+  cd ~/nixconf
+  sops secrets/shared/wifi-hotspot.yaml
+  ```
+
+  ```yaml
+  wifi_hotspot_env: |
+    WIFI_HOTSPOT_SSID=wildflower
+    WIFI_HOTSPOT_PSK=<the hotspot password>
+  ```
+
+  ```fish
+  git add secrets/shared/wifi-hotspot.yaml
+  just eval hazel 2>&1 | grep -i hotspot   # expect: no "hotspot profile skipped" warning
+  ```
+
+- [ ] **hazel**: deploy both laptops (the hotspot enable is already in their configs; this also
+      puts `wildflower` in `/etc/hosts`):
+
+  ```fish
+  cd ~/nixconf
+  just deploy butternut
+  just deploy hazel
+  ```
+
+- [ ] **hazel, on the hotspot**: switch to the declarative profile (NM id `hotspot`, under
+      `/run/NetworkManager/system-connections/`) and delete the imperative `wildflower` one.
+      Wi-Fi drops for a few seconds:
+
+  ```fish
+  nmcli connection up hotspot; and nmcli connection delete wildflower
+  ```
+
+  butternut, from hazel (the ssh session rides the tailnet and survives the switch):
+
+  ```fish
+  ssh butternut 'nmcli connection up hotspot && nmcli connection delete wildflower'
+  ```
+
+  If `nmcli` refuses for lack of privileges, run it as `doas nmcli …`. If it says the
+  `wildflower` connection doesn't exist, there is nothing to delete: check
+  `nmcli -f NAME,TYPE connection show` for another imperative copy of the hotspot.
+
+- [ ] **each laptop, on the hotspot**: metered, untrusted, hotspot profile active:
+
+  ```fish
+  nmcli -f NAME,TYPE,DEVICE connection show --active    # expect: hotspot  wifi  <wlan>
+  nmcli -g connection.metered connection show hotspot   # expect: yes
+  nmcli -f GENERAL.CONNECTION,GENERAL.METERED device show (nmcli -g DEVICE,TYPE device | string replace -rf ':wifi$' '')
+  ls /run/trusted-networks                              # expect: the Wi-Fi interface NOT listed
+  ```
 
 ## Immich pilot (butternut)
 

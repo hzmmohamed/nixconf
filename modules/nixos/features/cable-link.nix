@@ -13,7 +13,8 @@
   #   <me>-shares        manual: THIS host shares its internet (NM shared mode:
   #                      dnsmasq DHCP/DNS + NAT) on `cableShare`
   #   <peer>-shares      manual: take internet FROM the peer (DHCP, route
-  #                      metric 700, so any Wi-Fi uplink still wins)
+  #                      metric 700, so any Wi-Fi uplink still wins); optionally
+  #                      marked metered (peerSharesMetered)
   #
   # How the fallthrough works (NetworkManager 1.56, src/core/nm-policy.c):
   # with carrier, NM autoconnects the highest-priority profile, `lan`. If no
@@ -224,6 +225,15 @@
           link comes up).
         '';
       };
+
+      peerSharesMetered = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Mark `<peer>-shares` as metered (the peer is a carried device that
+          may be on a phone hotspot).
+        '';
+      };
     };
 
     config = {
@@ -280,7 +290,15 @@
         };
 
         ${sharePeer} = lib.recursiveUpdate (base sharePeer) {
-          connection.autoconnect = false;
+          connection =
+            {
+              autoconnect = false;
+            }
+            // lib.optionalAttrs cfg.peerSharesMetered {
+              # NM keyfiles store the NMMetered enum as an integer
+              # (1 = yes); the string "yes" is silently dropped.
+              metered = 1;
+            };
           ipv4 = {
             method = "auto";
             route-metric = 700; # Wi-Fi (600) keeps the default route when present

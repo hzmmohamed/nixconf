@@ -6,7 +6,7 @@
   #   - tailscale0           (already a trusted interface, tailscale.nix)
   #   - `interfaces`         static list, e.g. butternut's cable port eno2
   #   - trusted connections  a NetworkManager connection whose id is in
-  #                          `connections` (home, hotspot, cable, …): an NM
+  #                          `connections` (home, cable, …): an NM
   #                          dispatcher hook marks its interface as trusted
   #                          while it is up
   #   - gateway connections  a connection in `gatewayConnections` (the wired
@@ -18,8 +18,11 @@
   #                          the journal says which MAC it saw
   #                          (`journalctl -t trusted-networks`).
   #
-  # On any other Wi-Fi (café, office, an imperative profile) those ports stay
-  # closed. Stationary servers set `everywhere = true` and get plain global
+  # On any other Wi-Fi (café, office, the phone hotspot, an imperative
+  # profile) those ports stay closed. The hotspot is untrusted because friends
+  # join it: the phone reaches the laptops' services over the tailnet, which
+  # goes direct over the hotspot LAN (docs/tailscale-policy.hujson,
+  # docs/plans/2026-11-22-hotspot-mode-design.md). Stationary servers set `everywhere = true` and get plain global
   # ports instead.
   #
   # Mechanism (iptables backend, the repo default): the firewall jumps from
@@ -156,9 +159,9 @@
         type = lib.types.listOf lib.types.str;
         default = [];
         description = ''
-          NetworkManager connection ids treated as trusted. `home` and
-          `hotspot` are always added (wifi-home profiles), cable-link adds its
-          own profiles. The office profile is deliberately NOT trusted.
+          NetworkManager connection ids treated as trusted. `home` is always
+          added (wifi-home), cable-link adds its own profiles. The office and
+          hotspot profiles are deliberately NOT trusted.
         '';
       };
 
@@ -233,7 +236,7 @@
         (lib.mkIf cfg.everywhere {networking.firewall = ports;})
 
         (lib.mkIf (!cfg.everywhere) {
-          preferences.trustedNetworks.connections = ["home" "hotspot"];
+          preferences.trustedNetworks.connections = ["home"];
 
           assertions = [
             {

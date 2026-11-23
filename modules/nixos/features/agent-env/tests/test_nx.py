@@ -1,0 +1,754 @@
+#!/usr/bin/env python3
+"""Tests for nx.py — run via `python3 -m unittest discover`.
+
+`parse_dry_run` is tested by importing nx.py directly (it has no
+module-level side effects). Everything else runs nx.py as a subprocess
+against fakes on PATH, the same way test_agent_net.py exercises agent_net.py
+— so the test covers argv parsing, exec, exit codes, and stderr wording,
+not just the importable helpers.
+
+`nix` itself needs to answer differently depending on the subcommand
+(`eval --raw ...`, `build --dry-run ...`, `shell ...`), so unlike the other
+fakes (plain FakeBin.add) it is a small Python dispatcher this file writes
+itself (fakebin.FakeBin stays generic: one scripted response per binary).
+"""
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from fakebin import FakeBin  # noqa: E402
+
+NX_DIR = Path(__file__).parent.parent
+sys.path.insert(0, str(NX_DIR))
+import nx  # noqa: E402
+
+SCRIPT = NX_DIR / "nx.py"
+
+
+def write_fake_nix(
+    path,
+    calls_file,
+    outpaths=None,
+    pnames=None,
+    dry_run_stderr="",
+    dry_run_exit=0,
+    dry_run_sleep=0,
+    install_outpaths=None,
+):
+    """A fake `nix` that logs every call and answers:
+    - `eval --raw nixpkgs#<attr>.outPath` / `.pname` from `outpaths`/`pnames`
+      (missing attr -> exit 1, simulating "no such path"/eval failure).
+    - `eval --raw nixpkgs#<attr> --apply <expr>` (nx's split-output
+      lookup: outPaths of `bin` + meta.outputsToInstall) from
+      `install_outpaths[attr]`, a list printed one per line (missing attr
+      -> exit 1).
+    - `build --dry-run ...` (attr or `--impure --expr ...`): sleeps
+      `dry_run_sleep` seconds, then `dry_run_stderr` on stderr and exit
+      `dry_run_exit`.
+    - anything else (notably `shell ...`) -> logged only, exit 0.
+    """
+    outpaths = outpaths or {}
+    pnames = pnames or {}
+    script = f'''#!{sys.executable}
+import json, os, sys
+
+argv = sys.argv[1:]
+with open({str(calls_file)!r}, "a") as f:
+    f.write(json.dumps(argv) + chr(10))
+with open({str(calls_file) + ".env"!r}, "a") as f:
+    f.write(json.dumps({{"argv": argv, "NIX_PATH": os.environ.get("NIX_PATH")}}) + chr(10))
+
+outpaths = {outpaths!r}
+pnames = {pnames!r}
+install_outpaths = {install_outpaths or {}!r}
+
+if argv[:2] == ["eval", "--raw"] and len(argv) == 5 and argv[3] == "--apply":
+    attr = argv[2][len("nixpkgs#"):]
+    if attr in install_outpaths:
+        sys.stdout.write(chr(10).join(install_outpaths[attr]))
+        sys.exit(0)
+    sys.exit(1)
+
+if argv[:2] == ["eval", "--raw"] and len(argv) == 3:
+    expr = argv[2]
+    if expr.startswith("nixpkgs#") and expr.endswith(".outPath"):
+        attr = expr[len("nixpkgs#"):-len(".outPath")]
+        table = outpaths
+    elif expr.startswith("nixpkgs#") and expr.endswith(".pname"):
+        attr = expr[len("nixpkgs#"):-len(".pname")]
+        table = pnames
+    else:
+        sys.exit(1)
+    if attr in table:
+        sys.stdout.write(table[attr])
+        sys.exit(0)
+    sys.exit(1)
+
+if argv[:2] == ["build", "--dry-run"]:
+    if {dry_run_sleep!r}:
+        import time
+        time.sleep({dry_run_sleep!r})
+    sys.stderr.write({dry_run_stderr!r})
+    sys.exit({dry_run_exit!r})
+
+sys.exit(0)
+'''
+    path.write_text(script)
+    path.chmod(0o755)
+
+
+class ParseDryRunTests(unittest.TestCase):
+    def test_parse_dry_run_units(self):
+        mib, _ = nx.parse_dry_run(
+            "these 3 paths will be fetched (1.50 MiB download, 6 MiB unpacked):"
+        )
+        self.assertEqual(mib, 1.5)
+
+        mib, _ = nx.parse_dry_run("(512.0 KiB download")
+        self.assertEqual(mib, 0.5)
+
+        mib, _ = nx.parse_dry_run("(2.00 GiB download")
+        self.assertEqual(mib, 2048)
+
+        self.assertEqual(nx.parse_dry_run(""), (0.0, []))
+
+        stderr = (
+            "these 2 derivations will be built:\n"
+            "  /nix/store/abc-foo-1.0.drv\n"
+            "  /nix/store/def-python3-3.13-env.drv"
+        )
+        _, names = nx.parse_dry_run(stderr)
+        self.assertEqual(names, ["foo-1.0", "python3-3.13-env"])
+
+
+class NxCliTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmpdir = Path(self._tmp.name)
+        self.fake = FakeBin(self.tmpdir)
+        self.nix_calls = self.tmpdir / "nix_calls.jsonl"
+
+    def _nix_call_argvs(self):
+        if not self.nix_calls.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in self.nix_calls.read_text().splitlines()
+            if line
+        ]
+
+    def _env(self, **extra):
+        # A from-scratch PATH (not fake.env()'s bin_dir:python_dir): the
+        # python interpreter dir can contain a real `python3`/`openssl`
+        # etc., which would defeat tests that rely on the prog being
+        # *absent* from PATH. nx.py itself is still launched by absolute
+        # interpreter path, so it never needs python on PATH to start.
+        env = {
+            "PATH": str(self.fake.bin_dir),
+            # A nonexistent dir by default, so a test that doesn't care
+            # about the store scan can never accidentally hit the real
+            # /nix/store and exec something real.
+            "NX_STORE_DIR": str(self.tmpdir / "no-such-store"),
+        }
+        for k in ("HOME", "LANG", "LC_ALL"):
+            if k in os.environ:
+                env[k] = os.environ[k]
+        env.update(extra)
+        return env
+
+    def _store_pkg(self, name):
+        """A standalone directory with a fake `bin/<name>` executable,
+        used as the pretend nixpkgs outPath / store entry for `name`."""
+        pkg_dir = self.tmpdir / f"pkg-{name}-{len(list(self.tmpdir.glob('pkg-*')))}"
+        (pkg_dir / "bin").mkdir(parents=True)
+        self.fake.add(name, stdout=f"{name} output\n")
+        # fake.add writes into fake.bin_dir; copy it into pkg_dir/bin instead.
+        src = self.fake.bin_dir / name
+        dst = pkg_dir / "bin" / name
+        dst.write_text(src.read_text())
+        dst.chmod(0o755)
+        src.unlink()
+        return pkg_dir
+
+    # -- PATH short-circuit --------------------------------------------
+
+    def test_on_path_execs_directly(self):
+        self.fake.add("widget", stdout="widget output\n")
+
+        result = self.fake.run(SCRIPT, "widget", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "widget output\n")
+        self.assertFalse(self.nix_calls.exists())
+
+    # -- attribute resolution --------------------------------------------
+
+    def test_pinned_present(self):
+        # Ruling 2b: `nix eval --raw nixpkgs#openssl.outPath` succeeds, so
+        # openssl never goes through nix-locate.
+        pkg_dir = self._store_pkg("openssl")
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={"openssl": str(pkg_dir)},
+        )
+
+        result = self.fake.run(SCRIPT, "openssl", "version", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "openssl output\n")
+        argvs = self._nix_call_argvs()
+        self.assertIn(["eval", "--raw", "nixpkgs#openssl.outPath"], argvs)
+        self.assertFalse(any(a[:1] == ["build"] for a in argvs))
+        self.assertFalse(any(a[:1] == ["shell"] for a in argvs))
+
+    def test_locate_single_toplevel(self):
+        # rg -> ripgrep: nix eval on "rg" itself fails, nix-locate returns
+        # several dotted/nested outputs that must all be filtered down to
+        # the one real top-level attribute.
+        pkg_dir = self._store_pkg("rg")
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={"ripgrep": str(pkg_dir)},
+        )
+        self.fake.add(
+            "nix-locate",
+            stdout="ripgrep.out\nsomeSet.ripgrep.out\nripgrep.out\n",
+        )
+
+        result = self.fake.run(SCRIPT, "rg", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "rg output\n")
+        argvs = self._nix_call_argvs()
+        self.assertIn(["eval", "--raw", "nixpkgs#ripgrep.outPath"], argvs)
+
+    def test_ambiguous(self):
+        self.fake.add("nix-locate", stdout="foo.out\nbar.bin\nbaz.qux.out\n")
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls)
+
+        result = self.fake.run(SCRIPT, "baz", env=self._env())
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("baz is provided by several packages: bar, foo", result.stderr)
+        self.assertIn("pick one with -p", result.stderr)
+        self.assertNotIn("qux", result.stderr)
+
+    def test_no_package_provides(self):
+        self.fake.add("nix-locate", stdout="")
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls)
+
+        result = self.fake.run(SCRIPT, "nonexistent", env=self._env())
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("nx: no package provides nonexistent", result.stderr)
+
+    # -- store scan --------------------------------------------------------
+
+    def test_other_version_from_store(self):
+        store_dir = self.tmpdir / "store"
+        for name in ("aaa-widget-3.12.11", "bbb-widget-3.13.18"):
+            d = store_dir / name / "bin"
+            d.mkdir(parents=True)
+            (d / "widget").write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({name!r} + chr(10))\n")
+            (d / "widget").chmod(0o755)
+
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            # eval succeeds (attr = prog via ruling 2b) but the outPath it
+            # names doesn't actually exist on disk (e.g. GC'd) -> falls
+            # through to the store scan.
+            outpaths={"widget": str(store_dir / "ghost-widget-0.0.0")},
+            pnames={"widget": "widget"},
+        )
+        self.fake.add("nix-store", exit=0)
+
+        result = self.fake.run(
+            SCRIPT, "widget", env=self._env(NX_STORE_DIR=str(store_dir))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "bbb-widget-3.13.18\n")
+        self.assertIn(
+            "nx: using bbb-widget-3.13.18 from the store (not the pinned version)",
+            result.stderr,
+        )
+        self.assertFalse(any(a[:1] == ["build"] for a in self._nix_call_argvs()))
+
+    def test_store_scan_skips_env_dirs(self):
+        """M2: `python3.withPackages` env dirs (`*-python3-3.13.x-env`)
+        match `<pname>-<digit>...` and carry bin/python3; they must not be
+        picked (a newer-looking env would win over the real interpreter)."""
+        store_dir = self.tmpdir / "store"
+        for name in ("aaa-widget-3.12.11", "zzz-widget-3.13.18-env"):
+            d = store_dir / name / "bin"
+            d.mkdir(parents=True)
+            (d / "widget").write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({name!r} + chr(10))\n")
+            (d / "widget").chmod(0o755)
+
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={"widget": str(store_dir / "ghost-widget-0.0.0")},
+            pnames={"widget": "widget"},
+        )
+        self.fake.add("nix-store", exit=0)
+
+        result = self.fake.run(
+            SCRIPT, "widget", env=self._env(NX_STORE_DIR=str(store_dir))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "aaa-widget-3.12.11\n")
+
+    def test_split_output_bin_used(self):
+        """M3: `outPath` is a package's *first* output (lz4's is `dev`);
+        the binary lives in another output (`bin`, or one of
+        meta.outputsToInstall). The pinned output on disk is used directly:
+        no store scan, no "not the pinned version" line, no dry run."""
+        dev_dir = self.tmpdir / "lz4-dev"
+        dev_dir.mkdir()  # first output exists but has no bin/lz4
+        man_dir = self.tmpdir / "lz4-man"
+        man_dir.mkdir()
+        out_dir = self._store_pkg("lz4")
+        store_dir = self.tmpdir / "store"
+        d = store_dir / "ccc-lz4-9.9.9" / "bin"
+        d.mkdir(parents=True)
+        (d / "lz4").write_text(f"#!{sys.executable}\nprint('scanned')\n")
+        (d / "lz4").chmod(0o755)
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={"lz4": str(dev_dir)},
+            pnames={"lz4": "lz4"},
+            install_outpaths={"lz4": [str(man_dir), str(out_dir)]},
+        )
+        self.fake.add("nix-store", exit=0)
+
+        result = self.fake.run(
+            SCRIPT, "lz4", "-V", env=self._env(NX_STORE_DIR=str(store_dir))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "lz4 output\n")
+        self.assertNotIn("not the pinned version", result.stderr)
+        argvs = self._nix_call_argvs()
+        self.assertTrue(any(a[:3] == ["eval", "--raw", "nixpkgs#lz4"] and "--apply" in a for a in argvs))
+        self.assertFalse(any(a[:1] == ["build"] for a in argvs))
+        # At most one extra eval beyond outPath.
+        evals = [a for a in argvs if a[:1] == ["eval"]]
+        self.assertEqual(len(evals), 2)
+
+    def test_exact_skips_store_scan(self):
+        store_dir = self.tmpdir / "store"
+        for name in ("aaa-widget-3.12.11", "bbb-widget-3.13.18"):
+            d = store_dir / name / "bin"
+            d.mkdir(parents=True)
+            (d / "widget").write_text(f"#!{sys.executable}\nimport sys\nsys.exit(0)\n")
+            (d / "widget").chmod(0o755)
+
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={"widget": str(store_dir / "ghost-widget-0.0.0")},
+            pnames={"widget": "widget"},
+        )
+
+        result = self.fake.run(
+            SCRIPT,
+            "--exact",
+            "widget",
+            env=self._env(NX_STORE_DIR=str(store_dir)),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argvs = self._nix_call_argvs()
+        self.assertIn(["build", "--dry-run", "nixpkgs#widget"], argvs)
+        self.assertTrue(any(a[:1] == ["shell"] for a in argvs))
+        # pname was never even looked up, since the store scan was skipped.
+        self.assertFalse(
+            any(a == ["eval", "--raw", "nixpkgs#widget.pname"] for a in argvs)
+        )
+
+    # -- metered gate --------------------------------------------------------
+
+    def test_metered_refuses_large(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (312.00 MiB download, 320 MiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(
+            "nx: openssl needs 312 MiB download; on a metered link (wildflower). "
+            "Re-run with NX_FORCE=1 to fetch.",
+            result.stderr,
+        )
+        self.assertFalse(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_refusal_small_download_not_zero(self):
+        # With the limit at 0, a sub-MiB download is refused; the line must
+        # not claim "0 MiB".
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"hello": "hello"},
+            dry_run_stderr="these paths will be fetched (52.40 KiB download, 210 KiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(
+            SCRIPT,
+            "--exact",
+            "-p",
+            "hello",
+            "hello",
+            env=self._env(NX_METERED_LIMIT_MB="0"),
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(
+            "nx: hello needs <1 MiB download; on a metered link (wildflower). "
+            "Re-run with NX_FORCE=1 to fetch.",
+            result.stderr,
+        )
+        self.assertNotIn("0 MiB", result.stderr)
+
+    def test_metered_force(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (312.00 MiB download, 320 MiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(
+            SCRIPT,
+            "-p",
+            "openssl",
+            "openssl",
+            env=self._env(NX_FORCE="1"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_refuses_build_but_not_env(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr=(
+                "these derivations will be built:\n"
+                "  /nix/store/abc-foo-1.0.drv\n"
+            ),
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(
+            "nx: openssl needs building foo-1.0; on a metered link (wildflower). "
+            "Re-run with NX_FORCE=1 to build.",
+            result.stderr,
+        )
+
+        # Only an -env derivation (doesn't count) plus a small download:
+        # proceeds normally.
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr=(
+                "these 2 paths will be fetched (1.00 MiB download, 2 MiB unpacked):\n"
+                "these derivations will be built:\n"
+                "  /nix/store/def-python3-3.13-env.drv\n"
+            ),
+        )
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl (1 MiB download)", result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_dry_run_failure_refuses(self):
+        """I5: a dry run that fails can't size the download; on a metered
+        link that's a refusal, not a free pass."""
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="error: cannot connect to cache.nixos.org\n",
+            dry_run_exit=1,
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn(
+            "nx: couldn't size the download for openssl; on a metered link "
+            "(wildflower). Re-run with NX_FORCE=1 to fetch.",
+            result.stderr,
+        )
+        self.assertFalse(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_dry_run_timeout_refuses(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_sleep=5,
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(
+            SCRIPT, "-p", "openssl", "openssl", env=self._env(NX_DRY_RUN_TIMEOUT="0.3")
+        )
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn("nx: couldn't size the download for openssl", result.stderr)
+        self.assertFalse(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_dry_run_failure_force_proceeds(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_exit=1,
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(
+            SCRIPT, "-p", "openssl", "openssl", env=self._env(NX_FORCE="1")
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_unmetered_dry_run_failure_proceeds(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_exit=1,
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps({"state": "unmetered", "connection": "home"}) + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_metered_py_dry_run_failure_refuses(self):
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls, dry_run_exit=1)
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "metered", "connection": "wildflower", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "--py", "requests", "--", "-c", "1", env=self._env())
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn("nx: couldn't size the download for python3 (requests)", result.stderr)
+        self.assertFalse(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_unmetered_large_proceeds(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (312.00 MiB download, 320 MiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "unmetered", "connection": "home", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl (312 MiB download)", result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    def test_fetching_line_omits_size_when_zero(self):
+        # No download at all (e.g. everything's already substituted):
+        # the "fetching" line itself is still printed, just with no
+        # parenthetical — "omitted when 0" is about the size, not the
+        # whole line.
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "unmetered", "connection": "home", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl\n", result.stderr)
+        self.assertNotIn("nx: fetching openssl (", result.stderr)
+
+    def test_fetching_line_rounds_small_download_up(self):
+        # 300 KiB ~= 0.29 MiB: nonzero, but rounds to 0 MiB if displayed
+        # naively. Shown as "<1 MiB" instead of "(0 MiB download)".
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (300.0 KiB download, 1 MiB unpacked):\n",
+        )
+        self.fake.add(
+            "agent-net",
+            stdout=json.dumps(
+                {"state": "unmetered", "connection": "home", "device": "wlo1"}
+            )
+            + "\n",
+        )
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl (<1 MiB download)", result.stderr)
+
+    def test_agent_net_missing(self):
+        write_fake_nix(
+            self.fake.bin_dir / "nix",
+            self.nix_calls,
+            outpaths={},
+            pnames={"openssl": "openssl"},
+            dry_run_stderr="these paths will be fetched (312.00 MiB download, 320 MiB unpacked):\n",
+        )
+        # No fake agent-net on PATH at all.
+
+        result = self.fake.run(SCRIPT, "-p", "openssl", "openssl", env=self._env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nx: fetching openssl (312 MiB download)", result.stderr)
+        self.assertTrue(any(a[:1] == ["shell"] for a in self._nix_call_argvs()))
+
+    # -- --py mode --------------------------------------------------------
+
+    def test_py_invalid_package_name(self):
+        """M4: --py names are spliced into a Nix expression; anything that
+        isn't a plain identifier is refused before nix ever runs."""
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls)
+        for bad in ["requests]; x", "a b", "${x}", "1abc", ""]:
+            result = self.fake.run(SCRIPT, "--py", "rich", bad, "--", env=self._env())
+            self.assertEqual(result.returncode, 2, (bad, result.stderr))
+            self.assertIn(f"nx: invalid package name: {bad}", result.stderr)
+        self.assertEqual(self._nix_call_argvs(), [])
+
+    def test_py_valid_package_names(self):
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls)
+        result = self.fake.run(
+            SCRIPT, "--py", "scikit-learn", "zope_interface", "foo'", "--", env=self._env()
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_py_builds_expression(self):
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls, dry_run_stderr="")
+
+        result = self.fake.run(
+            SCRIPT, "--py", "requests", "rich", "--", "-c", "print(1)", env=self._env()
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argvs = self._nix_call_argvs()
+        shell_calls = [a for a in argvs if a[:1] == ["shell"]]
+        self.assertEqual(len(shell_calls), 1)
+        argv = shell_calls[0]
+        self.assertIn("--impure", argv)
+        self.assertIn("--expr", argv)
+        expr = argv[argv.index("--expr") + 1]
+        self.assertIn("[requests rich]", expr)
+        self.assertEqual(argv[-4:], ["-c", "python3", "-c", "print(1)"])
+
+    def test_py_drops_nix_path(self):
+        # NixOS's default NIX_PATH names a channels dir that may not exist,
+        # and nix warns about it on every --impure eval. The --py expression
+        # uses getFlake, so nx runs nix without NIX_PATH.
+        write_fake_nix(self.fake.bin_dir / "nix", self.nix_calls, dry_run_stderr="")
+
+        result = self.fake.run(
+            SCRIPT,
+            "--py",
+            "requests",
+            "--",
+            "-c",
+            "print(1)",
+            env=self._env(NIX_PATH="nixpkgs=flake:nixpkgs:/nonexistent/channels"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envs = [
+            json.loads(line)
+            for line in Path(str(self.nix_calls) + ".env").read_text().splitlines()
+        ]
+        self.assertTrue(any(e["argv"][:2] == ["build", "--dry-run"] for e in envs))
+        self.assertTrue(any(e["argv"][:1] == ["shell"] for e in envs))
+        for e in envs:
+            self.assertIsNone(e["NIX_PATH"], e["argv"])
+
+
+if __name__ == "__main__":
+    unittest.main()
