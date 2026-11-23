@@ -57,14 +57,35 @@ interface EditorTarget {
     val token: String?
     fun commit(text: String): Boolean
     fun compose(text: String): Boolean
+
+    /** Incognito field (no personalized learning): a draft typed into it is deleted, not kept as DELIVERED. */
+    val incognito: Boolean get() = false
+
+    /** Composing text suits the field (stream mode): not number, date or incognito fields. */
+    val composable: Boolean get() = true
 }
+
+/** What [DictationSession.deliver] did; BUSY: a session is running (its text must not be mixed in). */
+enum class Delivery { TYPED, NO_TEXT, GONE, NO_FIELD, BUSY }
+
+/** start() failed: the draft could not be written ([storage]) or the microphone would not open. */
+class StartException(val storage: Boolean, cause: Exception) : Exception(cause.message, cause)
 
 sealed interface SessionState {
     data object Idle : SessionState
 
-    /** engine is null while the servers are still being probed; transcribing: a segment, while recording goes on. */
+    /**
+     * engine is null while the servers are still being probed (Local once the
+     * phone took over); transcribing: a segment, while recording goes on.
+     */
     data class Recording(val engine: Engine?, val startedMs: Long, val transcribing: Boolean = false) : SessionState
-    data class Transcribing(val engine: Engine) : SessionState
+
+    /**
+     * Stopped, the text not there yet: engine null while the probe still runs;
+     * segmented, [done] of the [total] segments cut so far are transcribed
+     * (total 0: the recording is transcribed as a whole).
+     */
+    data class Finishing(val engine: Engine?, val done: Int = 0, val total: Int = 0) : SessionState
     data class Done(val text: String) : SessionState
     data class Kept(val draft: Draft, val reason: String) : SessionState
 }
@@ -103,8 +124,9 @@ class DictationSession(
         val target: EditorTarget,
         val token: String?,
         val feed: SegmentFeed?,
+        val startedMs: Long,
     ) {
-        lateinit var engine: Deferred<Engine>
+        lateinit var chosen: Deferred<Engine>
         var job: Job? = null
 
         // The segments' outcome; null: the VAD failed, transcribe the whole file.
@@ -112,7 +134,16 @@ class DictationSession(
 
         // Composing text is showing in the field (stream mode).
         var composed = false
-        val stream = profile?.mode == MODE_STREAM
+        val stream = profile?.mode == MODE_STREAM && target.composable
+
+        // What the state shows: the engine (null while probing, Local once the
+        // phone took over), stop pressed, a segment being transcribed, and how
+        // many are done (wholeFile: the VAD failed, no segments to count).
+        var engine: Engine? = null
+        var stopped = false
+        var transcribing = false
+        var done = 0
+        var wholeFile = false
 
         fun inField(): Boolean = target.token.let { it != null && it == token }
     }
@@ -126,12 +157,24 @@ class DictationSession(
     /** The draft being recorded or transcribed: not one to list as pending or retry. */
     val activeDraftId: String? get() = current?.draft?.id
 
-    /** Starts recording; ignored while a session is recording or transcribing. */
+    /**
+     * Starts recording; ignored while a session is recording or transcribing.
+     * Throws [StartException] if the draft or the microphone cannot be opened.
+     */
     fun start(language: String, target: EditorTarget) {
         if (current != null) return
         val p = profile()
-        val draft = drafts.create(language)
-        val writer = WavWriter(draft.audio)
+        val draft = try {
+            drafts.create(language)
+        } catch (e: IOException) {
+            throw StartException(storage = true, e)
+        }
+        val writer = try {
+            WavWriter(draft.audio)
+        } catch (e: IOException) {
+            save(draft.copy(status = DraftStatus.CANCELLED, error = e.message))
+            throw StartException(storage = true, e)
+        }
         val startedMs = clock()
         val feed = vad?.let { SegmentFeed(it, p?.pauseMs ?: PAUSE_MS, p?.maxSegmentSec ?: MAX_SEGMENT_SEC, scope, io) }
         try {
@@ -140,39 +183,45 @@ class DictationSession(
             feed?.cancel()
             closeQuietly(writer)
             save(draft.copy(status = DraftStatus.CANCELLED, error = e.message))
-            throw e
+            throw StartException(storage = false, e)
         }
-        val cur = Current(draft, writer, p, target, target.token, feed)
+        val cur = Current(draft, writer, p, target, target.token, feed, startedMs)
         current = cur
-        mutableState.value = SessionState.Recording(null, startedMs)
-        cur.engine = scope.async {
-            choose(p, language).also { engine -> recording(cur) { it.copy(engine = engine) } }
+        publish(cur)
+        cur.chosen = scope.async {
+            choose(p, language).also {
+                cur.engine = it
+                publish(cur)
+            }
         }
         if (feed != null) cur.segmented = scope.async { transcribeSegments(cur, feed) }
     }
 
-    /** Stops recording, then transcribes and delivers; a no-op unless recording. */
+    /**
+     * Stops recording, then transcribes and delivers; a no-op unless recording.
+     * The state turns Finishing at once: the probe may still take a while.
+     */
     fun stop() {
         val cur = current ?: return
-        if (cur.job != null) return
+        if (cur.stopped) return
+        cur.stopped = true
         audio.stop()
         cur.feed?.end()
         closeQuietly(cur.writer)
+        publish(cur)
         cur.job = scope.launch { finish(cur) }
     }
 
     /** Discards the session: draft CANCELLED, nothing typed. */
     fun cancel() {
         val cur = current ?: return
-        cur.engine.cancel()
+        cur.chosen.cancel()
         cur.segmented?.cancel()
         cur.feed?.cancel()
-        val job = cur.job
-        if (job == null) {
+        cur.job?.cancel()
+        if (!cur.stopped) {
             audio.stop()
             closeQuietly(cur.writer)
-        } else {
-            job.cancel()
         }
         dropComposing(cur)
         save(cur.draft.copy(status = DraftStatus.CANCELLED))
@@ -180,10 +229,11 @@ class DictationSession(
     }
 
     /**
-     * Transcribes a kept draft again; its text is stored but it stays PENDING
-     * until [deliver]ed. A no-op (returns [draft]) while that draft is being
-     * recorded, transcribed or retried; if it was delivered or discarded in
-     * the meantime, that state is kept and returned.
+     * Transcribes a kept draft again; its text is stored (and shown, if it is
+     * the Kept one) but it stays PENDING until [deliver]ed. A no-op (returns
+     * [draft]) while that draft is being recorded, transcribed or retried; if
+     * it was delivered or discarded in the meantime, that state is kept and
+     * returned.
      */
     suspend fun retry(draft: Draft): Draft {
         if (draft.id == activeDraftId || !retrying.add(draft.id)) return draft
@@ -198,28 +248,51 @@ class DictationSession(
                 now.copy(error = outcome.error ?: outcome.reason)
             }
             save(updated)
+            // The panel offers the draft it shows as it is now (with its text: Insert here).
+            val state = mutableState.value
+            if (state is SessionState.Kept && state.draft.id == draft.id) mutableState.value = state.copy(draft = updated)
             return updated
         } finally {
             retrying.remove(draft.id)
         }
     }
 
-    /** Types a draft's text (plus a space) into [target]; DELIVERED if it went in. Only a still PENDING draft. */
-    fun deliver(draft: Draft, target: EditorTarget): Boolean {
-        val text = draft.text ?: return false
-        if (onDisk(draft).status != DraftStatus.PENDING) return false
-        if (!target.commit("$text ")) return false
-        save(draft.copy(status = DraftStatus.DELIVERED))
+    /**
+     * Types a draft's text (plus a space) into [target]; DELIVERED if it went
+     * in (and the state shows it Done). Only a still PENDING draft (else GONE:
+     * delivered or discarded since), and not while a session runs.
+     */
+    fun deliver(draft: Draft, target: EditorTarget): Delivery {
+        val text = draft.text ?: return Delivery.NO_TEXT
+        if (current != null) return Delivery.BUSY
+        if (onDisk(draft).status != DraftStatus.PENDING) return Delivery.GONE
+        if (!target.commit("$text ")) return Delivery.NO_FIELD
+        delivered(draft, target)
+        mutableState.value = SessionState.Done(text)
+        return Delivery.TYPED
+    }
+
+    /**
+     * A new field: the last result was not typed there, so the panel goes back
+     * to Idle, except for a draft still pending with its text (offered to
+     * insert here). Nothing changes while a session runs.
+     */
+    fun newInput() {
+        if (current != null) return
         val state = mutableState.value
-        if (state is SessionState.Kept && state.draft.id == draft.id) mutableState.value = SessionState.Done(text)
-        return true
+        if (state is SessionState.Kept && state.draft.text != null && onDisk(state.draft).status == DraftStatus.PENDING) return
+        mutableState.value = SessionState.Idle
     }
 
     private suspend fun finish(cur: Current) {
-        val engine = cur.engine.await()
-        mutableState.value = SessionState.Transcribing(engine)
-        val outcome = cur.segmented?.await()
-            ?: transcribe(cur.draft.audio, cur.draft.language, cur.profile, engine, cur.profile?.prompt.orEmpty())
+        val engine = cur.chosen.await()
+        val outcome = cur.segmented?.await() ?: run {
+            cur.wholeFile = true
+            publish(cur)
+            transcribe(cur.draft.audio, cur.draft.language, cur.profile, engine, cur.profile?.prompt.orEmpty()) {
+                onPhone(cur)
+            }
+        }
         val draft = cur.draft.copy(engine = outcome.engine, text = outcome.text, error = outcome.error ?: outcome.reason)
         val text = outcome.text
         if (text == null) {
@@ -232,7 +305,7 @@ class DictationSession(
         // switched app (or closed the keyboard) while it was transcribing.
         if (cur.inField() && cur.target.commit("$text ")) {
             cur.composed = false
-            save(draft.copy(status = DraftStatus.DELIVERED))
+            delivered(draft, cur.target)
             end(SessionState.Done(text))
         } else {
             dropComposing(cur)
@@ -249,7 +322,7 @@ class DictationSession(
      * a whole-file retry). Null if the feed failed.
      */
     private suspend fun transcribeSegments(cur: Current, feed: SegmentFeed): Outcome? {
-        var engine = cur.engine.await()
+        var engine = cur.chosen.await()
         val texts = mutableListOf<String>()
         var used: String? = null
         var i = 0
@@ -257,12 +330,16 @@ class DictationSession(
         try {
             for (segment in feed.segments) {
                 val index = i++
-                recording(cur) { it.copy(engine = engine, transcribing = true) }
+                cur.transcribing = true
+                publish(cur)
                 val prompt = "${cur.profile?.prompt.orEmpty()} ${joinTexts(texts).takeLast(PROMPT_CONTEXT)}".trim()
                 withContext(io) { WavFiles.write(wav, segment.samples) }
-                val outcome = transcribe(wav, cur.draft.language, cur.profile, engine, prompt)
-                recording(cur) { it.copy(transcribing = false) }
-                if (outcome.text == null && outcome.reason != NOTHING_HEARD) {
+                val outcome = transcribe(wav, cur.draft.language, cur.profile, engine, prompt) { onPhone(cur) }
+                cur.transcribing = false
+                val failed = outcome.text == null && outcome.reason != NOTHING_HEARD
+                if (!failed) cur.done++
+                publish(cur)
+                if (failed) {
                     feed.cancel()
                     return outcome
                 }
@@ -300,9 +377,29 @@ class DictationSession(
         cur.composed = false
     }
 
-    private fun recording(cur: Current, update: (SessionState.Recording) -> SessionState.Recording) {
-        val state = mutableState.value
-        if (current === cur && state is SessionState.Recording) mutableState.value = update(state)
+    // The state of [cur] as it is now; a no-op once it ended.
+    private fun publish(cur: Current) {
+        if (current !== cur) return
+        mutableState.value = if (!cur.stopped) {
+            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing)
+        } else {
+            val total = if (cur.wholeFile) 0 else cur.feed?.closed ?: 0
+            SessionState.Finishing(cur.engine, if (total == 0) 0 else cur.done, total)
+        }
+    }
+
+    // The server failed and the on-phone model takes over: shown for the rest of the session.
+    private fun onPhone(cur: Current) {
+        cur.engine = Engine.Local
+        publish(cur)
+    }
+
+    // An incognito field keeps nothing of what was typed into it: the draft
+    // (audio, text, segments) goes once delivered. Marked DELIVERED first, so
+    // a delete that fails leaves a draft pruned as usual.
+    private fun delivered(draft: Draft, target: EditorTarget) {
+        save(draft.copy(status = DraftStatus.DELIVERED))
+        if (target.incognito) drafts.delete(draft)
     }
 
     // text: the cleaned, non-empty transcript; otherwise reason says why not
@@ -310,8 +407,15 @@ class DictationSession(
     private class Outcome(val text: String?, val engine: String?, val reason: String?, val error: String? = null)
 
     // Remote first; if it fails mid-session (server busy, network gone, 500,
-    // timeout) the on-phone model takes over when it can.
-    private suspend fun transcribe(wav: File, language: String, p: Profile?, engine: Engine, prompt: String): Outcome {
+    // timeout) the on-phone model takes over when it can (onLocal first).
+    private suspend fun transcribe(
+        wav: File,
+        language: String,
+        p: Profile?,
+        engine: Engine,
+        prompt: String,
+        onLocal: () -> Unit = {},
+    ): Outcome {
         var error: String? = null
         if (engine is Engine.Remote) {
             try {
@@ -322,6 +426,7 @@ class DictationSession(
             }
         }
         if (engine == Engine.Unavailable || !localEligible(p, language)) return Outcome(null, null, NO_SERVER, error)
+        onLocal()
         return try {
             outcome(withContext(io) { local.transcribe(wav) }, LOCAL_ENGINE)
         } catch (e: Exception) {

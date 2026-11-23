@@ -53,6 +53,7 @@ import nixconf.phone.ModelStatus
 import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.Draft
 import nixconf.phone.ime.draftEngineLabel
+import nixconf.phone.model.NotOnWifi
 import nixconf.phone.profile.Profile
 import nixconf.phone.update.AppRelease
 
@@ -174,12 +175,15 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ModelSection(status: ModelStatus) = Section("On-phone model") {
         when (status) {
-            ModelStatus.NoProfile -> Text("Comes with the profile")
+            ModelStatus.NoProfile -> Text("Waiting for the profile")
             ModelStatus.Ready -> Text("Parakeet ready (English, offline)")
             is ModelStatus.Missing -> {
-                Text("Not downloaded" + (status.error?.let { ": $it" } ?: ""))
-                Text("Downloads by itself on Wi-Fi; about 650 MB.", style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { app.downloadModel(force = true) }) { Text("Download now") }
+                Text("Waiting for Wi-Fi · about 650 MB")
+                // Not on Wi-Fi is the wait itself, not an error.
+                status.error?.takeIf { it != NotOnWifi.MESSAGE }?.let {
+                    Text("Last try: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                Button(onClick = { app.downloadModel(force = true) }) { Text("Download on mobile data") }
             }
             is ModelStatus.Downloading -> {
                 val mb = { b: Long -> b / 1_000_000 }

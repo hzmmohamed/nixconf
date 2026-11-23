@@ -17,7 +17,11 @@ import okhttp3.Request
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
-class NotOnWifi : IOException("not on an unmetered network; download now to use mobile data")
+class NotOnWifi : IOException(MESSAGE) {
+    companion object {
+        const val MESSAGE = "not on an unmetered network; download now to use mobile data"
+    }
+}
 
 class UnsafeName(name: String) : IOException("unsafe file name in profile: \"$name\"")
 

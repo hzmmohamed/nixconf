@@ -3,6 +3,7 @@ package nixconf.phone.ime
 import java.net.URI
 import nixconf.phone.engine.Engine
 import nixconf.phone.session.DictationSession
+import nixconf.phone.session.Delivery
 import nixconf.phone.session.SessionState
 
 // The words on the keyboard panel and the drafts list, kept out of the
@@ -10,10 +11,10 @@ import nixconf.phone.session.SessionState
 
 /** Who transcribes: the server's host label ("butternut"), "on phone" or "no server"; null while probing. */
 fun engineLabel(engine: Engine?): String = when (engine) {
-    null -> "checking…"
+    null -> "finding server…"
     is Engine.Remote -> hostOf(engine.url)
     Engine.Local -> "on phone"
-    Engine.Unavailable -> "no server"
+    Engine.Unavailable -> "no server · will save as draft"
 }
 
 /** A draft's engine as stored ([nixconf.phone.drafts.Draft.engine]): server URL or "local". */
@@ -39,6 +40,74 @@ fun hostOf(url: String): String = try {
 fun recordingText(elapsedMs: Long, state: SessionState.Recording): String =
     "${elapsed(elapsedMs)} · ${engineLabel(state.engine)}" + if (state.transcribing) " · transcribing…" else ""
 
+/**
+ * After stop: "Stopped · finding server…" until the probe answers, then
+ * "Finishing 2 of 5 · butternut" while segments are queued, else "Transcribing… · butternut".
+ */
+fun finishingText(state: SessionState.Finishing): String = when {
+    state.engine == null -> "Stopped · finding server…"
+    state.total > state.done -> "Finishing ${state.done} of ${state.total} · ${engineLabel(state.engine)}"
+    else -> "Transcribing… · ${engineLabel(state.engine)}"
+}
+
+/** The status line when nothing is running, by field. */
+fun idleText(field: FieldKind, incognito: Boolean): String = when (field) {
+    FieldKind.PASSWORD -> "Password field: switch keyboard to type"
+    FieldKind.NUMERIC -> "Number field: dictated words may not fit"
+    FieldKind.TEXT -> if (incognito) "Tap to dictate · incognito, no draft kept" else "Tap to dictate"
+}
+
+/** What TalkBack announces (liveRegion) for a state: short, no timer. */
+fun announcement(state: SessionState, field: FieldKind, incognito: Boolean): String = when (state) {
+    SessionState.Idle -> idleText(field, incognito)
+    is SessionState.Recording -> "Recording"
+    is SessionState.Finishing -> when {
+        state.engine == null -> "Stopped, finding server"
+        state.total > state.done -> "Finishing ${state.done} of ${state.total}"
+        else -> "Transcribing"
+    }
+    is SessionState.Done -> "Typed"
+    is SessionState.Kept -> keptText(state.reason)
+}
+
+/** The mic button for TalkBack: what a tap does. */
+fun micDescription(state: SessionState): String = when (state) {
+    is SessionState.Recording -> "Stop recording"
+    is SessionState.Finishing -> "Transcribing"
+    else -> "Start dictation"
+}
+
+/** "3 drafts", "1 draft". */
+fun draftsLabel(n: Int): String = if (n == 1) "1 draft" else "$n drafts"
+
+/** A draft's age: "just now", "5 min ago", "3 h ago", "2 d ago". */
+fun ageText(ms: Long): String {
+    val min = ms / 60_000
+    return when {
+        min < 1 -> "just now"
+        min < 60 -> "$min min ago"
+        min < 24 * 60 -> "${min / 60} h ago"
+        else -> "${min / (24 * 60)} d ago"
+    }
+}
+
+/** Why start() failed, in plain words: [storage] (the draft) or the microphone. */
+fun startError(storage: Boolean, message: String?): String = when {
+    storage -> "Can't save the recording: storage full?"
+    message != null && ("busy" in message || "unavailable" in message) -> "Microphone in use by another app"
+    message != null && "already recording" in message -> "Microphone still in use by the last recording"
+    else -> "Microphone failed" + (message?.let { ": $it" } ?: "")
+}
+
+/** Why a draft did not go in; null when it did. */
+fun deliveryText(result: Delivery): String? = when (result) {
+    Delivery.TYPED -> null
+    Delivery.NO_TEXT -> "Not transcribed yet"
+    Delivery.GONE -> "Already typed or discarded"
+    Delivery.NO_FIELD -> "No field to type into"
+    Delivery.BUSY -> "Finish the dictation first"
+}
+
 /** m:ss */
 fun elapsed(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -47,11 +116,11 @@ fun elapsed(ms: Long): String {
 
 /** Why the last recording is a draft instead of typed text. */
 fun keptText(reason: String): String = when (reason) {
-    DictationSession.FIELD_CHANGED -> "Field changed: kept as draft"
-    DictationSession.NO_SERVER -> "No server: kept as draft"
-    DictationSession.NOTHING_HEARD -> "Nothing heard"
-    DictationSession.LOCAL_FAILED -> "On-phone transcription failed: kept as draft"
-    else -> "Kept as draft: $reason"
+    DictationSession.FIELD_CHANGED -> "Saved as draft (field changed)"
+    DictationSession.NO_SERVER -> "Saved as draft: no server. Transcribes when one is back"
+    DictationSession.NOTHING_HEARD -> "Nothing heard: check the level bar"
+    DictationSession.LOCAL_FAILED -> "On-phone transcription failed: saved as draft"
+    else -> "Saved as draft: $reason"
 }
 
 /** The language after [current] in [languages], wrapping around. */

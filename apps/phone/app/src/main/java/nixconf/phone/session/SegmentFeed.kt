@@ -16,6 +16,7 @@ import nixconf.phone.segment.SpeechProbability
  * samples into a queue; VAD and segmenter run on [io], and the segments they
  * close come out in order on [segments], which closes after [end] (with the
  * open segment flushed). If the VAD fails, [segments] closes with its error.
+ * [closed] counts the segments cut so far (read from any thread).
  */
 class SegmentFeed(
     vad: () -> SpeechProbability,
@@ -25,8 +26,12 @@ class SegmentFeed(
     io: CoroutineDispatcher,
 ) {
     private val reads = Channel<ShortArray>(Channel.UNLIMITED)
-    private val closed = Channel<Segment>(Channel.UNLIMITED)
-    val segments: ReceiveChannel<Segment> get() = closed
+    private val out = Channel<Segment>(Channel.UNLIMITED)
+    val segments: ReceiveChannel<Segment> get() = out
+
+    // Written on the VAD's thread only.
+    @Volatile var closed = 0
+        private set
 
     private val job = scope.launch(io) {
         try {
@@ -34,17 +39,22 @@ class SegmentFeed(
                 val segmenter = Segmenter(v, pauseMs, maxSegmentSec)
                 val framer = Framer()
                 for (chunk in reads) {
-                    framer.push(chunk) { frame -> segmenter.feed(frame).forEach { closed.trySend(it) } }
+                    framer.push(chunk) { frame -> segmenter.feed(frame).forEach(::emit) }
                 }
-                segmenter.flush().forEach { closed.trySend(it) }
+                segmenter.flush().forEach(::emit)
             }
-            closed.close()
+            out.close()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             reads.cancel() // later reads are dropped, not queued
-            closed.close(e)
+            out.close(e)
         }
+    }
+
+    private fun emit(segment: Segment) {
+        closed++
+        out.trySend(segment)
     }
 
     fun tap(samples: ShortArray, n: Int) {
@@ -59,6 +69,6 @@ class SegmentFeed(
     fun cancel() {
         job.cancel()
         reads.close()
-        closed.cancel()
+        out.cancel()
     }
 }

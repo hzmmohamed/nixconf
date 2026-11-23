@@ -83,6 +83,11 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
         if (!tmp.renameTo(File(draft.dir, "meta.json"))) throw IOException("cannot write ${draft.dir}/meta.json")
     }
 
+    /** Deletes the draft (audio, meta, segments) at once: delivered into an incognito field. */
+    fun delete(draft: Draft) {
+        draft.dir.deleteRecursively()
+    }
+
     /** Appends [segment] to the draft's segments.jsonl and fsyncs it. */
     fun addSegment(draft: Draft, segment: SegmentText) {
         FileOutputStream(File(draft.dir, SEGMENTS), true).use {

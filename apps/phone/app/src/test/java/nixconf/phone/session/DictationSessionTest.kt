@@ -51,8 +51,10 @@ class DictationSessionTest {
 
     private class FakeLocal(override var ready: Boolean = true, var text: String = "local text") : LocalTranscriber {
         var calls = 0
+        var onCall: () -> Unit = {}
         override fun transcribe(wav: File): String {
             calls++
+            onCall()
             return text
         }
     }
@@ -62,7 +64,9 @@ class DictationSessionTest {
     private class FakeAudio(var samples: ShortArray = ShortArray(1600) { 100 }) : AudioSource {
         override val level = MutableStateFlow(0f)
         var recording = false
+        var failure: Exception? = null
         override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
+            failure?.let { throw it }
             recording = true
             out.write(samples, samples.size)
             tap?.invoke(samples, samples.size)
@@ -74,6 +78,8 @@ class DictationSessionTest {
     private val audio = FakeAudio()
 
     private class FakeEditor(override var token: String?) : EditorTarget {
+        override var incognito = false
+        override var composable = true
         val commits = mutableListOf<String>()
         val composed = mutableListOf<String>()
         var composing = ""
@@ -199,7 +205,7 @@ class DictationSessionTest {
         advanceUntilIdle()
         s.stop()
         advanceTimeBy(1000)
-        assertEquals(SessionState.Transcribing(Engine.Remote(server)), s.state.value)
+        assertEquals(SessionState.Finishing(Engine.Remote(server)), s.state.value)
         editor.token = "org.browser/7" // user switched app while transcribing
         advanceUntilIdle()
 
@@ -288,7 +294,7 @@ class DictationSessionTest {
         assertTrue(editor.commits.isEmpty())
         assertEquals("hello world", drafts.pending().single().text)
 
-        assertTrue(s.deliver(retried, editor))
+        assertEquals(Delivery.TYPED, s.deliver(retried, editor))
         assertEquals(listOf("hello world "), editor.commits)
         assertTrue(drafts.pending().isEmpty())
         assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
@@ -304,7 +310,7 @@ class DictationSessionTest {
         assertNull(retried.text)
         assertEquals(DictationSession.NO_SERVER, retried.error)
         assertEquals(DraftStatus.PENDING, onlyDraft().status)
-        assertFalse(s.deliver(retried, editor))
+        assertEquals(Delivery.NO_TEXT, s.deliver(retried, editor))
     }
 
     // A kept draft with text: the field changed while it was transcribing.
@@ -328,7 +334,7 @@ class DictationSessionTest {
         }
         launch { s.retry(kept) }
         advanceTimeBy(1000)
-        assertTrue(s.deliver(kept, editor))
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
         advanceUntilIdle()
         val d = onlyDraft()
         assertEquals(DraftStatus.DELIVERED, d.status)
@@ -379,8 +385,8 @@ class DictationSessionTest {
     fun deliver_twice_types_once() = runTest {
         val s = session()
         val kept = keptWithText(s)
-        assertTrue(s.deliver(kept, editor))
-        assertFalse(s.deliver(kept, editor))
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertEquals(Delivery.GONE, s.deliver(kept, editor))
         assertEquals(listOf("hello world "), editor.commits)
     }
 
@@ -569,5 +575,244 @@ class DictationSessionTest {
         advanceUntilIdle()
         assertEquals(SessionState.Done("whole ${threeSegments.size}"), s.state.value)
         assertEquals(listOf(listOf(server, "en", "NixOS, flake.")), remoteCalls)
+    }
+
+    // --- finishing, engine label, fields ---
+
+    @Test
+    fun stop_turns_finishing_at_once_while_the_probe_runs() = runTest {
+        probeDelayMs = 20_000 // a cold server
+        remote = {
+            delay(5000)
+            "hello world"
+        }
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(1000)
+        s.stop()
+        // No await in between: the recording UI goes away at the tap.
+        assertEquals(SessionState.Finishing(null), s.state.value)
+        assertFalse(audio.recording)
+        s.stop() // a second tap changes nothing
+        advanceTimeBy(18_000)
+        assertEquals(SessionState.Finishing(null), s.state.value)
+        advanceTimeBy(2_000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server)), s.state.value)
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+    }
+
+    @Test
+    fun finishing_counts_segments_still_queued_after_stop() = runTest {
+        segmented()
+        val texts = listOf("Hello there.", "how are you", "?")
+        var call = 0
+        remote = {
+            delay(5000)
+            texts[call++]
+        }
+        val s = session()
+        s.start("en", editor)
+        s.stop() // all three segments still to transcribe
+        assertEquals(SessionState.Finishing(null), s.state.value)
+        advanceTimeBy(1000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server), 0, 3), s.state.value)
+        advanceTimeBy(5000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server), 1, 3), s.state.value)
+        advanceTimeBy(5000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server), 2, 3), s.state.value)
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("Hello there. how are you?"), s.state.value)
+    }
+
+    @Test
+    fun vad_failure_finishes_without_segment_counts() = runTest {
+        segmented()
+        vad = { throw IllegalStateException("model missing") }
+        remote = {
+            delay(5000)
+            "whole"
+        }
+        val s = session()
+        s.start("en", editor)
+        s.stop()
+        advanceTimeBy(1000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server)), s.state.value)
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("whole"), s.state.value)
+    }
+
+    @Test
+    fun fallback_to_phone_shows_on_phone_while_it_runs() = runTest {
+        remote = {
+            delay(1000)
+            throw IOException("butternut: HTTP 500")
+        }
+        val s = session()
+        var seen: SessionState? = null
+        local.onCall = { seen = s.state.value }
+        dictate(s)
+        assertEquals(SessionState.Finishing(Engine.Local), seen)
+        assertEquals(SessionState.Done("local text"), s.state.value)
+    }
+
+    @Test
+    fun segment_fallback_to_phone_shows_on_phone_for_the_rest() = runTest {
+        segmented()
+        remote = { throw IOException("butternut: HTTP 500") }
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        assertEquals(SessionState.Recording(Engine.Local, 0), s.state.value)
+        var seen: SessionState? = null
+        local.onCall = { seen = s.state.value }
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Finishing(Engine.Local, 2, 3), seen)
+        assertEquals(SessionState.Done("local text local text local text"), s.state.value)
+    }
+
+    @Test
+    fun incognito_field_keeps_no_draft_once_typed() = runTest {
+        editor.incognito = true
+        val s = session()
+        dictate(s)
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+        assertEquals(listOf("hello world "), editor.commits)
+        assertTrue(tmp.root.listFiles()!!.isEmpty())
+    }
+
+    @Test
+    fun incognito_field_still_keeps_audio_it_could_not_type() = runTest {
+        editor.incognito = true
+        serverUp = false
+        val s = session()
+        dictate(s, "ar")
+        assertEquals(DictationSession.NO_SERVER, (s.state.value as SessionState.Kept).reason)
+        assertEquals(DraftStatus.PENDING, onlyDraft().status)
+        assertEquals(1600, WavFiles.readSamples(onlyDraft().audio).size)
+    }
+
+    @Test
+    fun incognito_delivery_from_drafts_deletes_it() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        editor.incognito = true
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertTrue(tmp.root.listFiles()!!.isEmpty())
+    }
+
+    @Test
+    fun stream_mode_off_where_composing_does_not_suit() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        editor.composable = false
+        segmented()
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        advanceUntilIdle()
+        assertTrue(editor.composed.isEmpty())
+        assertEquals(listOf("Hello there. how are you? "), editor.commits)
+    }
+
+    @Test
+    fun new_input_clears_done_and_stale_kept() = runTest {
+        val s = session()
+        dictate(s)
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+        s.newInput()
+        assertEquals(SessionState.Idle, s.state.value)
+
+        // A draft without text: nothing to offer in the new field.
+        serverUp = false
+        dictate(s, "ar")
+        assertTrue(s.state.value is SessionState.Kept)
+        s.newInput()
+        assertEquals(SessionState.Idle, s.state.value)
+    }
+
+    @Test
+    fun new_input_keeps_offering_a_pending_draft_with_text() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        s.newInput()
+        assertEquals(kept, (s.state.value as SessionState.Kept).draft)
+
+        drafts.update(kept.copy(status = DraftStatus.CANCELLED)) // discarded in the app
+        s.newInput()
+        assertEquals(SessionState.Idle, s.state.value)
+    }
+
+    @Test
+    fun new_input_leaves_a_running_session_alone() = runTest {
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.newInput()
+        assertEquals(SessionState.Recording(Engine.Remote(server), 0), s.state.value)
+        s.cancel()
+    }
+
+    @Test
+    fun deliver_waits_for_a_running_session() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        s.start("en", editor)
+        advanceUntilIdle()
+        assertEquals(Delivery.BUSY, s.deliver(kept, editor))
+        assertEquals(DraftStatus.PENDING, drafts.load(kept.id)!!.status)
+        s.cancel()
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+    }
+
+    @Test
+    fun retry_shows_the_text_on_the_kept_draft() = runTest {
+        serverUp = false
+        val s = session()
+        dictate(s, "ar")
+        val kept = (s.state.value as SessionState.Kept).draft
+        serverUp = true
+        s.retry(kept)
+        assertEquals("hello world", (s.state.value as SessionState.Kept).draft.text)
+    }
+
+    @Test
+    fun microphone_failure_is_a_start_exception_and_cancels_the_draft() = runTest {
+        audio.failure = IOException("microphone busy")
+        val s = session()
+        val e = try {
+            s.start("en", editor)
+            null
+        } catch (e: StartException) {
+            e
+        }
+        assertFalse(e!!.storage)
+        assertEquals("microphone busy", e.message)
+        assertEquals(SessionState.Idle, s.state.value)
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+    }
+
+    @Test
+    fun unwritable_drafts_are_a_storage_start_exception() = runTest {
+        val file = tmp.newFile("not-a-dir")
+        val s = DictationSession(
+            profile = { profile },
+            drafts = DraftStore(File(file, "drafts"), { 0L }),
+            audio = audio,
+            remote = RemoteTranscriber { _, _, _, _ -> "x" },
+            local = local,
+            probe = { true },
+            scope = this,
+        )
+        val e = try {
+            s.start("en", editor)
+            null
+        } catch (e: StartException) {
+            e
+        }
+        assertTrue(e!!.storage)
+        assertFalse(audio.recording)
     }
 }

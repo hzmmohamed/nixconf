@@ -8,6 +8,35 @@ matters. Paths below are relative to
 `apps/phone/app/src/main/java/nixconf/phone/` unless they start with `res/`
 or `AndroidManifest.xml` (both under `apps/phone/app/src/main/`).
 
+## Status
+
+Quick wins done on branch `phone-ux-quickwins` (on top of
+`phone-pause-segments`), 2026-11-23. Built and JVM-tested, **not yet run on
+a device**. Line numbers in the tables below refer to `5ec5acb` and no
+longer match.
+
+| # | Status | What changed |
+|---|---|---|
+| F1 | done | `SessionState.Transcribing` became `Finishing(engine?, done, total)`, set inside `stop()` before anything is awaited. Engine null shows "Stopped · finding server…", the timer stops and the mic turns into a spinner. With segments still queued it shows "Finishing 2 of 5 · butternut" and a determinate ring (`SegmentFeed.closed` counts the segments cut). A second tap does nothing. |
+| F2 | done (queue) | While finishing, *⌨ Keyboard* toggles to "⌨ After typing": the switch happens right after the commit (`Done`). A draft result cancels it, so the user sees what happened. Why queue rather than disable: the switch stays one tap, which suits one-handed bursts, and the switch can no longer cause FIELD_CHANGED. Disabling would make the user wait on the panel for up to 20 s. |
+| F3 | done (minimal) | Fixed panel height, 260 dp (at most 55 % of the screen height, for landscape). The mic sits in a fixed slot. The drafts list replaces the main view inside the same height, and messages are capped at 2 lines. The mic is not centred yet (F13). |
+| F4 | done | Password variations (text, visible, web, number): mic disabled, status "Password field: switch keyboard to type", no draft offered or listed. Number, phone and date fields: a warning in the status, and stream mode is off. Incognito (`IME_FLAG_NO_PERSONALIZED_LEARNING`) rule: **a draft typed into an incognito field is deleted (audio, text, segments) once delivered**, by the session or from the drafts list. A recording that could *not* be typed stays a PENDING draft as usual (never lose audio), and so does its text until it is delivered or discarded. Stream mode is off in incognito fields. |
+| F5 | done | A key row at the bottom: ⌫ (repeats while held) and the editor's enter key (Send/Search/Go/Next/Done/Previous through `performEditorAction`, or ↵ as a newline when the field asks for none). Both are off while a session runs. |
+| F6 | done | A Kept draft with text shows the text plus **Insert here** and **Copy**. Without text it shows **Retry**, which transcribes and types it. Draft rows have a visible Copy button (long-press still works). |
+| F7 | done | On a new input (`!restarting`), `Done` and a Kept draft without text go back to Idle. A Kept draft with text that is still pending on disk stays offered (Insert here). |
+| F9 | done | `transcribe` calls back before the on-phone model runs, so the label says "on phone" from then on, both for the whole file and per segment (for the rest of the session). |
+| F10 | done | The previous IME, else the next one, else the system picker (`switchAway`). No long-press yet. |
+| F11 | done | Tapping an untranscribed row transcribes it and types it if the user is still in the same field (same input token). The row shows a spinner, and a second tap is ignored. `deliver` refuses while a session runs (`BUSY`). |
+| F21 | done | `performHapticFeedback`: LONG_PRESS on start, CLOCK_TICK on stop, CONFIRM when typed, REJECT when saved as a draft. Nothing per segment. Follows the system setting. |
+| F22 | done | The status line is a polite live region with short phrases ("Recording", "Stopped, finding server", "Typed: …", "Saved as draft …"), without the timer. |
+| F23 | done | The mic has a content description and a state description, and its glyph is excluded from semantics. The level meter is a plain drawn bar, not a progress indicator. |
+| F25 | done | Draft rows are at least 48 dp tall. |
+| F26 | done | Newest first on the panel, with the age ("5 min ago"). |
+| F29 | done | `onEvaluateFullscreenMode() = false`. |
+| F33 | done | Start failures are mapped to plain messages ("Microphone in use by another app", "Can't save the recording: storage full?") via `StartException(storage)`. "Already typed or discarded" is separate from "No field to type into". Errors use the error colour. |
+| Copy | done | Panel copy as in the table below. In the app: "Waiting for the profile", "Waiting for Wi-Fi · about 650 MB", **Download on mobile data**. Not done: "Save & test" (that is the F16 rework). |
+| F8, F12–F20, F24, F27, F28, F30–F32, F34 | open | Out of scope for the quick wins (larger changes, or the app screen). |
+
 ## Summary
 
 The core design holds up. Tap to start and tap to stop on a big latch mic,
