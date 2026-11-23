@@ -20,6 +20,7 @@
     syncthingEnabled = config.services.syncthing.enable;
     swayosdEnabled = config.home-manager.users.${user}.services.swayosd.enable;
     removableMedia = config.home-manager.users.${user}.services.udiskie.enable;
+    kdeconnect = config.home-manager.users.${user}.services.kdeconnect.enable;
     swayosd-client = "${pkgs.swayosd}/bin/swayosd-client";
     networkManager = config.networking.networkmanager.enable;
     # network-ui feature (desktop): net-status / net-menu, when imported.
@@ -159,6 +160,7 @@
           else lib.optional networkManager "network"
         )
         ++ ["wireplumber" "bluetooth"]
+        ++ lib.optional kdeconnect "custom/kdeconnect"
         ++ lib.optional removableMedia "custom/removable"
         ++ ["group/tray" "battery"];
 
