@@ -201,8 +201,11 @@
 
       ${dconfBlock}
 
+      # Each hook is bounded: a client talking to a daemon that is restarting
+      # (swaync-client during a switch) can block forever, and theme-mode
+      # runs inside oneshots that home-manager's switch waits on.
       ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: script: ''
-        ${script} "$mode" || echo "theme-mode: reload hook '${name}' failed" >&2'')
+        ${pkgs.coreutils}/bin/timeout 5 ${script} "$mode" || echo "theme-mode: reload hook '${name}' failed or timed out" >&2'')
       hookScripts)}
       exit 0
     '';
