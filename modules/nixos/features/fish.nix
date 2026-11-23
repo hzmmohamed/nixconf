@@ -43,7 +43,9 @@
           # - running inside a non-interactive context (e.g. IDE terminal, scripts)
           # - stdin/stdout aren't a terminal: tools like T3 Code run `fish -ilc`
           #   through pipes to read PATH, and `exec zellij` hijacked that
-          if status is-interactive; and isatty stdin; and isatty stdout; and not set -q ZELLIJ; and not set -q INSIDE_EMACS; and not set -q VSCODE_PID
+          # - inside T3 Code's terminal (T3CODE_PROJECT_ROOT): "Run in terminal"
+          #   types the command into a fresh pty shell, which zellij swallowed
+          if status is-interactive; and isatty stdin; and isatty stdout; and not set -q ZELLIJ; and not set -q INSIDE_EMACS; and not set -q VSCODE_PID; and not set -q T3CODE_PROJECT_ROOT
               exec zellij
           end
         '';
