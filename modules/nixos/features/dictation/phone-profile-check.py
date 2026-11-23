@@ -6,9 +6,10 @@ Reads the `data class` declarations of Profile.kt and walks the JSON from
 `Profile`: every object must carry exactly the class's fields (the app
 ignores unknown keys, so a misspelt key in Nix would silently fall back to
 the app's default), with matching JSON types. Then the values the app
-relies on: version 1, servers, four model files with hex sha256, and
-fully qualified hosts in its own URLs (servers, model files, appUrl): the
-phone's resolver may not search the tailnet domain, so a short name fails.
+relies on: version 1, servers, four model files with hex sha256, a mode
+the app knows (MODE_* in Profile.kt), and fully qualified hosts in its own
+URLs (servers, model files, appUrl): the phone's resolver may not search
+the tailnet domain, so a short name fails.
 """
 
 import json
@@ -109,6 +110,9 @@ if not profile.get("servers"):
     errors.append("$.servers: empty")
 if profile.get("defaultLanguage") not in profile.get("languages", []):
     errors.append("$.defaultLanguage: not in languages")
+modes = set(re.findall(r'const val MODE_\w+ = "(\w+)"', source))
+if profile.get("mode") not in modes:
+    errors.append(f"$.mode: {profile.get('mode')!r} is not one of {sorted(modes)} (Profile.kt)")
 model = profile.get("localModel") or {}
 files = model.get("files", [])
 if len(files) != 4:

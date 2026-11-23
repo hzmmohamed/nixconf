@@ -36,11 +36,20 @@ in {
     sdk = "${android.androidsdk}/libexec/android-sdk";
 
     # On-phone Parakeet runtime (classes.jar + jni/arm64-v8a); handed to Gradle
-    # as -PsherpaAar.
+    # as -PsherpaAar. Also runs the segmenter's VAD.
     sherpaAar = pkgs.fetchurl {
       url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.38/sherpa-onnx-1.12.38.aar";
       hash = "sha256-elalyZxcHY7XeqdrrZ8PMGhSQS6xF9WP7+BEvYzbGKY=";
     };
+
+    # The segmenter's Silero VAD (the laptops' pin, 2.3 MB), bundled in the
+    # APK's assets (-PvadAssets): every session needs it, offline too.
+    vadAssets = pkgs.linkFarm "phone-app-assets" [
+      {
+        name = "silero_vad.onnx";
+        path = (self.dictationModels pkgs).sileroVadOnnx;
+      }
+    ];
 
     q = lib.escapeShellArg;
   in {
@@ -54,6 +63,7 @@ in {
           # Maven's aapt2 is linked for an FHS system; use the SDK's.
           aapt2=${q "${sdk}/build-tools/${buildToolsVersion}/aapt2"}
           sherpa_aar=${q sherpaAar}
+          vad_assets=${q vadAssets}
           adb=${q "${sdk}/platform-tools/adb"}
           profile_url=${q profileUrl}
         ''

@@ -150,6 +150,19 @@ class DraftStoreTest {
         Integer.reverseBytes(it.readInt())
     }
 
+    @Test
+    fun segments_appended_in_order_and_torn_line_skipped() {
+        val d = store.create("en")
+        assertTrue(store.segments(d).isEmpty())
+        store.addSegment(d, SegmentText(0, 0, 16000, "Hello there.", "http://butternut:8178"))
+        store.addSegment(d, SegmentText(1, 20000, 36000, "how are you", "local"))
+        File(d.dir, "segments.jsonl").appendText("{\"i\":2,\"start\":40") // killed mid-write
+        assertEquals(listOf("Hello there.", "how are you"), store.segments(d).map { it.text })
+        assertEquals("local", store.segments(d)[1].engine)
+        // The draft itself is unchanged: still pending, no text (a retry transcribes the WAV).
+        assertNull(store.load(d.id)!!.text)
+    }
+
     private companion object {
         const val DAY = 24 * 3_600_000L
     }

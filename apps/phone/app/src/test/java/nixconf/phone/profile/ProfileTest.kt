@@ -48,6 +48,18 @@ class ProfileTest {
         assertNull(p.appUrl)
     }
 
+    @Test
+    fun segmenting_fields_default_when_missing() {
+        val old = parseProfile(full)
+        assertEquals(550, old.pauseMs)
+        assertEquals(25, old.maxSegmentSec)
+        assertEquals(MODE_BATCH, old.mode)
+        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"pauseMs\":700,\"maxSegmentSec\":20,\"mode\":\"stream\","))
+        assertEquals(700, p.pauseMs)
+        assertEquals(20, p.maxSegmentSec)
+        assertEquals(MODE_STREAM, p.mode)
+    }
+
     @Test(expected = UnsupportedProfile::class)
     fun rejects_future_version() {
         parseProfile("""{"version":2,"servers":"a new shape"}""")

@@ -151,7 +151,7 @@ private fun Status(state: SessionState, level: Float) {
                     delay(250)
                 }
             }
-            Text("${elapsed(now - state.startedMs)} · ${engineLabel(state.engine)}")
+            Text(recordingText(now - state.startedMs, state))
             LinearProgressIndicator(progress = { level }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
         }
         is SessionState.Transcribing -> {

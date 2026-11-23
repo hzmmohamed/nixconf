@@ -20,6 +20,7 @@ import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStore
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.LocalEngine
+import nixconf.phone.engine.SileroVad
 import nixconf.phone.engine.WhisperClient
 import nixconf.phone.engine.chooseEngine
 import nixconf.phone.model.ModelDownloader
@@ -80,6 +81,8 @@ class AppServices private constructor(context: Context) {
         local = local,
         probe = { whisper.probe(it) },
         scope = scope,
+        // Segments need the VAD model (in the APK's assets); without it, whole recordings.
+        vad = context.assets.takeIf(SileroVad::bundled)?.let { assets -> { SileroVad(assets) } },
     )
 
     val updater = Updater(http, File(context.cacheDir, "updates")) { installApk(context, it) }

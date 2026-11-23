@@ -14,7 +14,8 @@ import nixconf.phone.session.AudioSource
 
 // The microphone: 16 kHz mono PCM16 from AudioRecord (VOICE_RECOGNITION, the
 // source tuned for speech), written to the draft's WAV on a thread of its own
-// and fsynced every 2 s, so a killed app loses at most that much.
+// and fsynced every 2 s, so a killed app loses at most that much. Each read
+// also goes to the tap (the segmenter's queue), after the WAV.
 // The caller holds RECORD_AUDIO (the keyboard checks before starting).
 class Recorder(private val sampleRate: Int = 16000) : AudioSource {
     private val mutableLevel = MutableStateFlow(0f)
@@ -26,7 +27,7 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
     @Volatile private var running = false
 
     @SuppressLint("MissingPermission")
-    override fun start(out: WavWriter) {
+    override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
         check(record == null) { "already recording" }
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) throw IOException("microphone does not support $sampleRate Hz mono")
@@ -48,7 +49,7 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
         }
         record = rec
         running = true
-        thread = Thread({ loop(rec, out) }, "recorder").apply { start() }
+        thread = Thread({ loop(rec, out, tap) }, "recorder").apply { start() }
     }
 
     override fun stop() {
@@ -62,7 +63,7 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
         mutableLevel.value = 0f
     }
 
-    private fun loop(rec: AudioRecord, out: WavWriter) {
+    private fun loop(rec: AudioRecord, out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
         val buf = ShortArray(sampleRate / 10)
         var lastFlush = SystemClock.elapsedRealtime()
         try {
@@ -71,6 +72,7 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
                 if (n < 0) break
                 if (n == 0) continue
                 out.write(buf, n)
+                tap?.invoke(buf, n)
                 mutableLevel.value = level(buf, n)
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastFlush >= FLUSH_MS) {

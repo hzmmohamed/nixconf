@@ -7,9 +7,18 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 // The phone profile served by dictation-server (`phone.profile`, profile.json):
-// which servers to try, languages, Whisper prompt, draft retention and the
-// on-phone model to download.
+// which servers to try, languages, Whisper prompt, draft retention, the
+// on-phone model to download, and how a recording is cut and delivered
+// (pauseMs, maxSegmentSec and mode, as on the laptops). Fields added later
+// have defaults: a profile without them still parses, and an older app
+// ignores them (ignoreUnknownKeys), so they need no version bump.
 const val PROFILE_VERSION = 1
+
+/** [Profile.mode]: each segment's text shows in the field as it lands (composing), committed at stop. */
+const val MODE_STREAM = "stream"
+
+/** [Profile.mode]: the whole text is typed at once, at stop. */
+const val MODE_BATCH = "batch"
 
 @Serializable
 data class Profile(
@@ -21,6 +30,9 @@ data class Profile(
     val keepDays: Int = 7,
     val localModel: LocalModel? = null,
     val appUrl: String? = null,
+    val pauseMs: Int = 550,
+    val maxSegmentSec: Int = 25,
+    val mode: String = MODE_BATCH,
 )
 
 @Serializable

@@ -121,7 +121,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `agent-common` (`agent-env.nix` part) | Network-aware agent tooling: `agent-net` (metered/unmetered/offline from NetworkManager, override via `agent-net set`; Claude SessionStart/UserPromptSubmit hooks), `nx` (store-first tool runner that refuses big downloads/builds on metered links), `agent-devshell` (starts T3's Claude/OpenCode inside the project's cached direnv dev shell, never fails closed), shared guidelines at `~/.config/agents/guidelines.md` (Claude `CLAUDE.md` import line, OpenCode `instructions`). Options: `preferences.agents.claudeHooks` (extra Claude Code hook commands per event, appended to the built-in ones), `preferences.agents.guidelinesFile` (read-only store path). Unit tests run as `checks.agent-env` | |
 | `cable-link` | Ethernet between the laptops: `lan` (DHCP) falls through to a static `cable` link; manual `<me>-shares`/`<peer>-shares` internet sharing. `preferences.cable.peerSharesMetered` marks `<peer>-shares` metered (NM `metered=1`) so `agent-net` sees a carried peer's hotspot | |
 | `dictation` | Push-to-talk dictation (`dictate`, Mod4+d): first reachable whisper server, else Parakeet/Whisper small on the CPU; drafts, overlay | |
-| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`; every URL uses the MagicDNS FQDN, `phone.url` = `http://<host>.<self.tailnet.domain>:8180`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
+| `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`, segmenting `pauseMs`/`maxSegmentSec` from the host's `dictation` settings and `mode`; every URL uses the MagicDNS FQDN, `phone.url` = `http://<host>.<self.tailnet.domain>:8180`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
 | `immich` | Immich 3.x photo/video library on `127.0.0.1:2283` with ML, local Postgres 17 (pinned) + Redis. Module and package from `nixpkgs-unstable` (26.05 has 2.7.5; `disabledModules` + unstable's module file; drop at 26.11). Declarative settings: storage template `{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}`, daily DB dump (02:00, keep 14), no version check, `server.externalDomain` = `https://<host>.<self.tailnet.domain>[:port]`. With Tailscale: `immich-tailscale-serve` oneshot (`tailscale serve --https=<port>`, no Funnel). `preferences.immich.{mediaLocation,tailscaleServePort,cuda}` (443 default; `cuda` is phase 3, asserts false) | |
 
 ### `modules/nixos/extra/` — integration layers
@@ -255,8 +255,12 @@ to crash-safe WAV drafts, sends them to the first reachable `servers` entry of
 the phone profile (butternut's whisper server over the tailnet), falls back to
 Parakeet int8 on the phone (sherpa-onnx; files and hashes from the profile),
 and only types into the field the dictation started in (else the draft stays
-pending on the panel). Single Gradle module, Kotlin + Compose; pure logic
-(profile, engine choice, WAV, drafts, session) is JVM-tested.
+pending on the panel). As on the laptops, Silero VAD (bundled in the APK,
+run through sherpa-onnx) cuts the recording at its pauses (profile
+`pauseMs`/`maxSegmentSec`) and each segment is transcribed while recording
+goes on; profile `mode` picks batch (typed at stop) or stream (composing text
+as it grows). Single Gradle module, Kotlin + Compose; pure logic (profile,
+engine choice, WAV, drafts, segmenter, session) is JVM-tested.
 
 Built on butternut with `nix run .#phone-app -- build [--release] | test |
 install | publish` (`modules/packages/phone-app.{nix,sh}`: nixpkgs Gradle +

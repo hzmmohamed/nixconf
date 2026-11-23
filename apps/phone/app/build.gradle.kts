@@ -66,6 +66,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // The segmenter's Silero VAD (silero_vad.onnx): `phone-app` passes a
+    // directory holding it; without it the app transcribes whole recordings.
+    providers.gradleProperty("vadAssets").orNull?.let { sourceSets.getByName("main").assets.srcDir(it) }
 }
 
 kotlin {

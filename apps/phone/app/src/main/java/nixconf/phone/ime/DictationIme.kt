@@ -36,7 +36,8 @@ import nixconf.phone.ui.NixconfTheme
  * The dictation keyboard: a Compose panel (Panel.kt) over the shared
  * dictation session. It is the session's [EditorTarget]: the token names the
  * focused input session ([InputTokens]) and changes when the user moves on,
- * so text transcribed after a switch is kept as a draft instead of typed.
+ * so text transcribed after a switch is kept as a draft instead of typed;
+ * composing text (stream mode) is removed from a field the user leaves.
  * Hiding or destroying the keyboard stops a recording (never records unseen).
  * Compose needs lifecycle/view-model/saved-state owners on the window, which
  * an InputMethodService does not provide: the service is all three.
@@ -60,6 +61,9 @@ class DictationIme :
 
     private val tokens = InputTokens()
     override val token: String? get() = tokens.token
+
+    // Composing text of ours is showing in the current field.
+    private var composing = false
 
     override fun onCreate() {
         super.onCreate()
@@ -113,6 +117,10 @@ class DictationIme :
     }
 
     override fun onFinishInput() {
+        // The default finishes (keeps) composing text: a session's unfinished
+        // text must not stay in a field the user left.
+        if (composing) currentInputConnection?.setComposingText("", 1)
+        composing = false
         super.onFinishInput()
         tokens.finish()
     }
@@ -137,7 +145,17 @@ class DictationIme :
         super.onDestroy()
     }
 
-    override fun commit(text: String): Boolean = currentInputConnection?.commitText(text, 1) ?: false
+    override fun commit(text: String): Boolean = (currentInputConnection?.commitText(text, 1) ?: false).also {
+        if (it) composing = false
+    }
+
+    override fun compose(text: String): Boolean {
+        val ic = currentInputConnection ?: return false
+        if (!ic.setComposingText(text, 1)) return false
+        if (text.isEmpty()) ic.finishComposingText()
+        composing = text.isNotEmpty()
+        return true
+    }
 
     // The panel's choice if the profile still offers it, else the profile's default.
     private fun currentLanguage(): String {

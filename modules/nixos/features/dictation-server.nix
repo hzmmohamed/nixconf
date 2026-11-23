@@ -22,9 +22,11 @@
 # darkhttpd on `phone.port`, same reach as the server (tailnet + trusted
 # networks, no authentication), serving /var/lib/phone-profile:
 #   profile.json      servers, languages, Whisper prompt (fleet vocabulary),
-#                     draft retention and the on-phone Parakeet model: file
-#                     names, sizes, sha256 and URLs (`phone.profile`; its
-#                     shape is checked against the app by checks.phone-profile)
+#                     draft retention, the on-phone Parakeet model (file
+#                     names, sizes, sha256 and URLs) and how recordings are
+#                     cut and delivered (pauseMs, maxSegmentSec: the laptops'
+#                     values; mode) (`phone.profile`; its shape is checked
+#                     against the app by checks.phone-profile)
 #   models/parakeet/  the Parakeet int8 files (self.dictationModels, the same
 #                     pins as the laptops)
 #   app.json, app/    the published release APK, written by
@@ -117,7 +119,7 @@
         modelUrl = "${phoneUrl}/models/parakeet";
         base = builtins.toJSON {
           version = 1;
-          inherit (phone) servers defaultLanguage languages prompt keepDays;
+          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode;
           localModel = {
             name = "parakeet-tdt-0.6b-v2-int8";
             language = "en";
@@ -242,6 +244,33 @@
           type = lib.types.ints.positive;
           default = 7;
           description = "Days the phone keeps delivered and cancelled drafts (pending ones are never pruned).";
+        };
+
+        # The segmenter's settings follow this host's dictation feature
+        # (the laptops' defaults when it is not imported here).
+        pauseMs = lib.mkOption {
+          type = lib.types.ints.between 250 2000;
+          default = config.preferences.dictation.pauseMs or 550;
+          defaultText = lib.literalExpression "config.preferences.dictation.pauseMs or 550";
+          description = "Silence that closes a segment on the phone (it is then transcribed while recording goes on).";
+        };
+
+        maxSegmentSec = lib.mkOption {
+          type = lib.types.ints.between 5 30;
+          default = config.preferences.dictation.maxSegmentSec or 25;
+          defaultText = lib.literalExpression "config.preferences.dictation.maxSegmentSec or 25";
+          description = "Continuous speech is split at its quietest point before this length (phone).";
+        };
+
+        mode = lib.mkOption {
+          type = lib.types.enum ["batch" "stream"];
+          default = "batch";
+          description = ''
+            `batch`: the phone types the whole text when you stop. `stream`:
+            the text shows in the field as composing text, segment by segment,
+            and is committed when you stop (some apps handle composing text
+            poorly, hence not the default).
+          '';
         };
 
         url = lib.mkOption {

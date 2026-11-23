@@ -5,6 +5,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 
 // 16-bit mono PCM WAV, written as it is recorded. The header's sizes stay 0
 // until close(); a file left behind by a killed app is fixed by
@@ -80,6 +81,12 @@ object WavFiles {
             it.fd.sync()
             true
         }
+    }
+
+    /** Writes a whole file at once: a segment, from the segmenter's samples in -1..1. */
+    fun write(file: File, samples: FloatArray, sampleRate: Int = 16000) {
+        val pcm = ShortArray(samples.size) { (samples[it] * 32768f).roundToInt().coerceIn(-32768, 32767).toShort() }
+        WavWriter(file, sampleRate).apply { write(pcm, pcm.size) }.close()
     }
 
     /** Samples of a file written by [WavWriter] (fixed 44-byte header), repaired or not. */

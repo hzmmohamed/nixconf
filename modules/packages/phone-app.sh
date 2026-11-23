@@ -1,5 +1,5 @@
 # phone-app — body of the `phone-app` package (modules/packages/phone-app.nix,
-# which prepends android_home, java_home, aapt2, sherpa_aar, adb). Not a
+# which prepends android_home, java_home, aapt2, sherpa_aar, vad_assets, adb). Not a
 # standalone script. Runs Gradle on apps/phone/ of the repo the current
 # directory is in.
 
@@ -76,6 +76,7 @@ run_gradle() {
   gradle --project-dir "$root/apps/phone" \
     "-Pandroid.aapt2FromMavenOverride=$aapt2" \
     "-PsherpaAar=$sherpa_aar" \
+    "-PvadAssets=$vad_assets" \
     "-PprofileUrl=$profile_url" \
     "$@" "${extra[@]}"
 }

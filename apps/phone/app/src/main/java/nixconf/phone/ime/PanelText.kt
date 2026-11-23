@@ -3,6 +3,7 @@ package nixconf.phone.ime
 import java.net.URI
 import nixconf.phone.engine.Engine
 import nixconf.phone.session.DictationSession
+import nixconf.phone.session.SessionState
 
 // The words on the keyboard panel and the drafts list, kept out of the
 // Compose code so they can be tested on the JVM.
@@ -33,6 +34,10 @@ fun hostOf(url: String): String = try {
 } catch (e: Exception) {
     url
 }
+
+/** "0:12 · butternut", plus " · transcribing…" while a segment is (recording goes on). */
+fun recordingText(elapsedMs: Long, state: SessionState.Recording): String =
+    "${elapsed(elapsedMs)} · ${engineLabel(state.engine)}" + if (state.transcribing) " · transcribing…" else ""
 
 /** m:ss */
 fun elapsed(ms: Long): String {
