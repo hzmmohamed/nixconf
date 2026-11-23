@@ -29,6 +29,7 @@
       self.nixosModules.swaync
       self.nixosModules.blueman
       self.nixosModules.vicinae
+      self.nixosModules.photos-client
       self.nixosModules.vicinae-wallpapers
       self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor

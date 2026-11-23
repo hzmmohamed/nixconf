@@ -27,6 +27,7 @@
         "number 2" = appIds [
           "thunar|org.xfce.thunar" # Thunar
           "libreoffice-.*|soffice" # LibreOffice (writer, calc, impress, startcenter…)
+          "chrome-.*.ts.net__photos-.*" # Immich app window (photos-open)
         ];
         "number 3" = appIds [
           "com.saivert.pwvucontrol" # pwvucontrol
@@ -40,7 +41,7 @@
         "number 5" = appIds [
           "codium|vscodium" # VSCodium
           "dev.zed.zed" # Zed
-          "chrome-.*.ts.net__.*" # T3 Code / OpenCode app windows (t3-open)
+          "chrome-.*.ts.net__-.*" # T3 Code / OpenCode app windows (t3-open; root URL only)
         ];
         "number 6" = appIds [
           "org.qgis.qgis|qgis.*" # QGIS (4.x: org.qgis.qgis)

@@ -28,7 +28,8 @@ in {
   #                programs.ssh.knownHosts + StrictHostKeyChecking for that host
   #   userKey      the user's ssh key living on that host (modules/ssh-keys.nix)
   #   syncthingId  Syncthing device ID
-  #   roles        free-form, documentation + future generators
+  #   roles        free-form, documentation + future generators; `photos` = the Immich
+  #                host the Photos launcher opens (features/photos-client.nix)
   #   tags         Tailscale ACL tags (docs/tailscale-policy.hujson). Only advertised
   #                when the host logs in with the OAuth client (tailscale.nix)
   #   buildOnTarget  `deploy` builds on the host itself instead of locally + nix copy
@@ -68,7 +69,7 @@ in {
       hostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPF8xUY7XvBEex4yjlcG51O8dhXiRFT+yp0LE393WD+J";
       userKey = userKeys.butternut or null;
       syncthingId = "MRJSBVI-MRVAT7V-WHLSZBC-5LX6KFD-VGCYP4E-W265N3K-B5URBIH-RPUTWQK";
-      roles = ["desktop" "agent-host" "cache" "builder"];
+      roles = ["desktop" "agent-host" "cache" "builder" "photos"]; # photos: Immich (features/immich.nix)
       tags = [];
       # Home build server: hazel offloads its builds here (nix.buildMachines),
       # and `deploy butternut` from hazel builds on butternut itself.

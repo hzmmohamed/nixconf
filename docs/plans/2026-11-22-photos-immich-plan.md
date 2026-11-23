@@ -231,6 +231,10 @@ module adds `database.package` and read-only `database.setupSQL`; it sets up
 
 ---
 
+## Done outside the phases
+
+- 2026-11-23: Photos launcher (`features/photos-client.nix`, workspace 2), see design.
+
 ## Phase 2: off-site backup (follow-up; detailed plan when started)
 
 - **Task 4: `infra/b2/`** OpenTofu stack per design §"B2 as code": `versions.tf`
@@ -253,6 +257,9 @@ module adds `database.package` and read-only `database.setupSQL`; it sets up
   `machine-learning` overridden to CUDA `onnxruntime` (ai-server.nix llama-cpp pattern;
   needs an unfree/CUDA-enabled unstable pkgs instance), `accelerationDevices` for
   `/dev/nvidia*`; peacelily imports `immich` + `immich-backup`, port 443 (default).
-  Eval check for peacelily. Build on peacelily/butternut only.
+  Eval check for peacelily. Build on peacelily/butternut only. Tailscale Service
+  `svc:photos` per design §"Stable name" (policy autoApprover + grant via `infra/tailscale`,
+  serve `--service`, externalDomain `https://photos.<tailnet>`), registry `photos` role →
+  peacelily.
 - **Task 8:** migration runbook in user-actions (design §"Migration"), plus a restore
   test from B2. Then the old-drive import with `immich-go` (steps in user-actions).

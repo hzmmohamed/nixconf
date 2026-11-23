@@ -29,7 +29,8 @@ must stay viewable with no server reachable.
 1. **Pilot:** `immich` feature on butternut, phone backup. Until phase 2 lands, the phone
    keeps every original (no "Free up space"), so there are two copies: phone + butternut.
 2. **Off-site backup:** `infra/b2` (OpenTofu) + `immich-backup` feature on butternut.
-3. **Move to peacelily** (runbook), CUDA ML, then the old-drive import.
+3. **Move to peacelily** (runbook), CUDA ML, the **Tailscale Service `svc:photos`**
+   (`https://photos.tail1a9f7c.ts.net`, permanent name), then the old-drive import.
 
 ## Non-goals (v1)
 
@@ -151,6 +152,35 @@ Separate from the service so the module can be enabled on its own.
 - `hosts/peacelily`: nothing in v1. The migration phase adds the imports, `cuda = true`,
   port 443. Peacelily's disk needs ≥ ~1.5 TB (check when plugged in).
 - Hazel, maple, fern: nothing.
+
+### Photos launcher (desktops; added 2026-11-23)
+
+Immich has no desktop app. `features/photos-client.nix` (`flake.nixosModules.photos-client`,
+hazel + butternut) adds a vicinae entry **Photos** → `photos-open`: Chromium `--app` on
+`<externalDomain>/photos` (default browser if Chromium isn't enabled). The URL is read from the
+server's own `services.immich.settings.server.externalDomain` on the registry host with role
+`photos` (butternut now), so the launcher follows the library. Window app_id
+`chrome-<host>__photos-Default` (verified: Chromium drops the port, keeps the path) → sway
+workspace **2**; the T3/OpenCode rule on 5 narrowed to root-URL app windows (`__-`). Icon:
+Immich's logo, vendored (`photos-client/immich.svg`, CC-BY-4.0).
+
+### Stable name: Tailscale Service `svc:photos` (phase 3; decided 2026-11-23)
+
+`.local` (mDNS: LAN only, no trusted TLS) and invented names like `immich.garden` (`.garden` is
+a real public TLD) are out; a bought domain + ACME is more machinery than one app needs.
+Tailscale Services (GA 2026-02) give `https://photos.tail1a9f7c.ts.net`: MagicDNS + automatic
+cert, and **the name survives moving hosts**. A Service host must be **tagged**: peacelily is
+(`tag:server`); butternut is deliberately user-owned (tagging it would cut the phone's
+`autogroup:self` access to T3 etc.), so the pilot keeps `butternut…:8444` and the phone switches
+once, at the migration, to the permanent name. Phase 3 work:
+- `docs/tailscale-policy.hujson`: `autoApprovers.services."svc:photos" = ["tag:server"]` and a
+  grant `autogroup:member` (+ `tag:phone`, `tag:client`) → `svc:photos` `tcp:443`; applied with
+  `infra/tailscale` (user runs plan/apply). The service definition itself via the provider if it
+  has a resource for it, else the admin console (user step).
+- `features/immich.nix`: an option (e.g. `preferences.immich.tailscaleService = "photos"`, null
+  on butternut) switching the serve unit to `tailscale serve --service=svc:photos --https=443 …`
+  and `externalDomain` to `https://photos.${tailnet.domain}`.
+- Registry: move the `photos` role from butternut to peacelily (the launcher follows).
 
 ### Phone (user steps, written as a checklist in the plan)
 
