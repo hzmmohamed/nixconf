@@ -5,7 +5,7 @@
 # are counted once per process). window-switch focuses the selection,
 # window-kill closes it.
 #   WINDOW_SWITCH_LAUNCHER  dmenu command (stdin options → selection on stdout)
-#                           default: vicinae dmenu -p <prompt> --no-quick-look
+#                           default: vicinae dmenu -p <prompt>
 {...}: {
   perSystem = {pkgs, ...}: let
     mkPicker = name: prompt: command:
@@ -17,7 +17,9 @@
           if [ -n "''${WINDOW_SWITCH_LAUNCHER:-}" ]; then
             read -ra launcher <<<"$WINDOW_SWITCH_LAUNCHER"
           else
-            launcher=(vicinae dmenu -p "${prompt}" --no-quick-look)
+            # No --no-quick-look: with it vicinae 0.23 makes every row a file drag
+            # source that swallows mouse clicks (only the keyboard works).
+            launcher=(vicinae dmenu -p "${prompt}")
           fi
 
           # con_id, pid, app, title, workspace — one line per window.

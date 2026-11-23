@@ -13,7 +13,7 @@
 #                bar's network glyphs): Wi-Fi connect (saved + scanned) and
 #                radio toggle, reconnect wired, cable modes, captive portal,
 #                Tailscale up/down + exit nodes, copy an IP, status, nmtui.
-#     NET_MENU_LAUNCHER  dmenu command (default: vicinae dmenu -p Network --no-quick-look)
+#     NET_MENU_LAUNCHER  dmenu command (default: vicinae dmenu -p Network)
 #
 # Wired kinds: `lan` (DHCP behind a router), `cable` / `<host>-shares` (the
 # direct link to the cable-link peer), connecting, no carrier. Profile names
@@ -263,7 +263,9 @@
         [nm pkgs.jq pkgs.iproute2 pkgs.coreutils pkgs.gawk pkgs.util-linux pkgs.libnotify pkgs.wl-clipboard netStatus]
         ++ lib.optional ts.enable ts.package;
       text = ''
-        read -ra launcher <<<"''${NET_MENU_LAUNCHER:-vicinae dmenu -p Network --no-quick-look}"
+        # No --no-quick-look: with it vicinae 0.23 makes every row a file drag
+        # source that swallows mouse clicks (only the keyboard works).
+        read -ra launcher <<<"''${NET_MENU_LAUNCHER:-vicinae dmenu -p Network}"
         notify() { notify-send -a Network -i network-workgroup "$@"; }
 
         # --run TITLE CMD...: runs detached from the picker, reports the result.

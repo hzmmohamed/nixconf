@@ -300,12 +300,14 @@
     # mail-menu — the bar widget's left click: Thunderbird, each account's
     # webmail (with its unread count), refresh.
     #   MAIL_MENU_LAUNCHER  dmenu command (stdin options → selection on stdout)
-    #                       default: vicinae dmenu -p Mail --no-quick-look
+    #                       default: vicinae dmenu -p Mail
     mailMenu = pkgs.writeShellApplication {
       name = "mail-menu";
       runtimeInputs = [pkgs.coreutils pkgs.xdg-utils pkgs.util-linux];
       text = ''
-        read -ra launcher <<<"''${MAIL_MENU_LAUNCHER:-vicinae dmenu -p Mail --no-quick-look}"
+        # No --no-quick-look: with it vicinae 0.23 makes every row a file drag
+        # source that swallows mouse clicks (only the keyboard works).
+        read -ra launcher <<<"''${MAIL_MENU_LAUNCHER:-vicinae dmenu -p Mail}"
         dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mail-unread"
         count() {
           local n

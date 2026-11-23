@@ -7,7 +7,7 @@
 #                           "Eject <drive>" (unmount every partition, lock
 #                           LUKS, power the drive off), plus "Eject all".
 #     REMOVABLE_MEDIA_LAUNCHER  dmenu command (stdin options → selection on stdout)
-#                               default: vicinae dmenu -p Drives --no-quick-look
+#                               default: vicinae dmenu -p Drives
 #     REMOVABLE_MEDIA_OPEN      command to open a directory (default: thunar)
 #
 # Only udisks mounts of the calling user are listed (/run/media/$USER/*), so
@@ -60,7 +60,9 @@
       name = "removable-media-menu";
       runtimeInputs = [pkgs.util-linux pkgs.jq pkgs.coreutils pkgs.gawk pkgs.udiskie pkgs.libnotify pkgs.systemd];
       text = ''
-        read -ra launcher <<<"''${REMOVABLE_MEDIA_LAUNCHER:-vicinae dmenu -p Drives --no-quick-look}"
+        # No --no-quick-look: with it vicinae 0.23 makes every row a file drag
+        # source that swallows mouse clicks (only the keyboard works).
+        read -ra launcher <<<"''${REMOVABLE_MEDIA_LAUNCHER:-vicinae dmenu -p Drives}"
         read -ra opener <<<"''${REMOVABLE_MEDIA_OPEN:-thunar}"
 
         drives=$(${listDrives}) || drives='[]'

@@ -240,7 +240,9 @@
           local opts=() choice
           if is_on; then opts+=("Turn off ($(describe))"); fi
           opts+=("Keep awake until turned off" "30 minutes" "1 hour" "2 hours" "4 hours")
-          read -ra launcher <<<"''${CAFFEINE_MENU_LAUNCHER:-vicinae dmenu -p Caffeine --no-quick-look}"
+          # No --no-quick-look: with it vicinae 0.23 makes every row a file drag
+          # source that swallows mouse clicks (only the keyboard works).
+          read -ra launcher <<<"''${CAFFEINE_MENU_LAUNCHER:-vicinae dmenu -p Caffeine}"
           choice="$(printf '%s\n' "''${opts[@]}" | "''${launcher[@]}")" || exit 0
           case "$choice" in
             "Turn off"*) cmd_off ;;
