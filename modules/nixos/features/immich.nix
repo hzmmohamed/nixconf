@@ -96,6 +96,17 @@
           server = {inherit externalDomain;};
           # The ML unit binds `localhost` (module default), so not 127.0.0.1.
           machineLearning.urls = ["http://localhost:3003"];
+          # Map tiles load in the *browser*. Immich's default
+          # (tiles.immich.cloud, Cloudflare 188.114.96.6/97.6) was unreachable
+          # from Cairo Wi-Fi (2026-11-23: TCP and ping dropped, other
+          # Cloudflare ranges fine), so the map stayed blank. OpenFreeMap:
+          # free, no key, MapLibre styles; style, tiles, fonts and sprites
+          # all on tiles.openfreemap.org. No CSP to widen (Immich only sends
+          # one with IMMICH_HELMET_FILE).
+          map = {
+            lightStyle = "https://tiles.openfreemap.org/styles/liberty";
+            darkStyle = "https://tiles.openfreemap.org/styles/dark";
+          };
         };
       };
 

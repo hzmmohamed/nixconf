@@ -68,6 +68,8 @@
         assert c["newVersionCheck"]["enabled"] is False, c["newVersionCheck"]
         assert c["server"]["externalDomain"] == "https://machine.${self.tailnet.domain}", c["server"]
         assert c["machineLearning"]["urls"] == ["http://localhost:3003"], c["machineLearning"]["urls"]
+        assert c["map"]["lightStyle"] == "https://tiles.openfreemap.org/styles/liberty", c["map"]
+        assert c["map"]["darkStyle"] == "https://tiles.openfreemap.org/styles/dark", c["map"]
 
         # No Tailscale on this node: no serve unit.
         machine.fail("systemctl cat immich-tailscale-serve.service")
