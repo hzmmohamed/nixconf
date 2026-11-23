@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon colours, dark: Catppuccin Mocha roles from
+     palettes.catppuccin.dark in modules/theme.nix (static: an APK can't read
+     the palette; keep in sync by hand). One ink on paper. -->
+<resources>
+    <color name="icon_paper">#1e1e2e</color> <!-- surface -->
+    <color name="icon_ink">#b4befe</color> <!-- accent -->
+    <color name="icon_line">#cdd6f4</color> <!-- fg -->
+</resources>

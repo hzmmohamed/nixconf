@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import java.text.DateFormat
@@ -50,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nixconf.phone.AppServices
 import nixconf.phone.ModelStatus
+import nixconf.phone.R
 import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.Draft
 import nixconf.phone.ime.draftEngineLabel
@@ -89,7 +91,7 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { Text("Nixconf", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 24.dp)) }
+                item { Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 24.dp)) }
                 item { KeyboardSection() }
                 item { ProfileSection(profile) }
                 item { ModelSection(model) }

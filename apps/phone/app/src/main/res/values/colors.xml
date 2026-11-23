@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon colours, light: Catppuccin Latte roles from
+     palettes.catppuccin.light (accent stepped to 3:1) in modules/theme.nix (static: an APK can't read
+     the palette; keep in sync by hand). One ink on paper. -->
+<resources>
+    <color name="icon_paper">#eff1f5</color> <!-- surface -->
+    <color name="icon_ink">#5768da</color> <!-- accent -->
+    <color name="icon_line">#4c4f69</color> <!-- fg -->
+</resources>
