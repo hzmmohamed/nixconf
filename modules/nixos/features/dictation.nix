@@ -7,13 +7,16 @@
 #                flight is discarded
 #
 #   Mod4+Alt+d   switch the mode of the next sessions (also in the picker)
+#   `dictate input`  list the mics / choose one (also in the picker)
 #
 # Modes (`mode`, dictation/dictate-stream.py): one recording runs
 # continuously; Silero VAD cuts it at natural pauses (`pauseMs`) or, in
 # continuous speech, at the quietest point before `maxSegmentSec`, and each
 # segment is transcribed as soon as it closes, while recording goes on.
-#   batch   the whole text is typed once you stop (default: record, watch the
-#           timer, stop around `overlay.longSessionMinutes`, continue)
+#   batch   the whole text is pasted at once when you stop (clipboard +
+#           Ctrl+V, Ctrl+Shift+V in terminals; the clipboard is restored);
+#           default: record, watch the timer, stop around
+#           `overlay.longSessionMinutes`, continue
 #   stream  each segment is typed with wtype at its pause, in order
 # (a space between segments, none before punctuation). The engine, chosen
 # once per session:
@@ -25,6 +28,14 @@
 #      on the CPU for English, a session-only whisper-server with Whisper
 #      small (Vulkan iGPU or CPU) for other languages.
 # The language follows the active keyboard layout (`layoutLanguages`).
+#
+# Mic: the one chosen with `dictate input` (or "Dictation drafts" →
+# Microphone; kept in ~/<journalDir>/input) when it is connected, else the
+# most recently connected Bluetooth headset, else the default source. A
+# headset is recorded through WirePlumber's `bluez_input.<MAC>` source, which
+# switches it to its headset profile for the session. The panel, the bar
+# tooltip and the draft name the mic; a headset sending only silence for 3 s
+# (busy with another device, e.g. the phone) raises a notice.
 #
 # Drafts: every recording is written to ~/<journalDir>/drafts/<date_time-id>/
 # on persistent disk as it happens (raw PCM, fsynced every 2 s and after
@@ -233,6 +244,9 @@
       };
       bin = {
         pw-record = lib.getExe' pkgs.pipewire "pw-record";
+        pw-dump = lib.getExe' pkgs.pipewire "pw-dump";
+        swaymsg = lib.getExe' pkgs.sway "swaymsg";
+        wl-paste = lib.getExe' pkgs.wl-clipboard "wl-paste";
         wtype = lib.getExe pkgs.wtype;
         wl-copy = lib.getExe' pkgs.wl-clipboard "wl-copy";
         notify-send = lib.getExe' pkgs.libnotify "notify-send";
@@ -317,7 +331,7 @@
         type = lib.types.enum ["batch" "stream"];
         default = "batch";
         description = ''
-          `batch`: the text is typed once, when you stop (segments are still
+          `batch`: the text is pasted at once, when you stop (segments are still
           transcribed while you speak, so it is quick). `stream`: each
           segment is typed at its pause. `dictate mode toggle` (or
           `modeKey`) switches the next sessions at runtime.

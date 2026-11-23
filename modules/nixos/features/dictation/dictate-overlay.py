@@ -2,14 +2,15 @@
 
 A small opaque panel at the top right, next to the vertical bar: a dot and a
 running timer (mm:ss; warning colour past --long-session-sec, with a note
-that it is a good moment to stop), the input level, language and backend,
+that it is a good moment to stop), the input level and the mic it records
+from (with a warning when that mic sends only silence), language and backend,
 the last committed text (stream mode) or the draft's progress (batch mode),
 and the transcription progress after stop. It never takes keyboard focus and
 lets pointer input through, so wtype keeps typing into the focused window.
 
 Input: one JSON object per line on stdin, sent by dictate-stream ~15 times a
-second ({t, level, speech, lang, mode, backend, lines, done, total, failed,
-state}); EOF
+second ({t, level, speech, lang, mode, backend, input, warning, lines, done,
+total, failed, state}); EOF
 closes it. Look: the palette CSS rendered per mode by the dictation feature
 (--css, from the theme state dir); every colour and size lives there.
 
@@ -36,7 +37,8 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 DEMO = {
     "t": 754.0, "level": 0.62, "speech": True, "lang": "EN",
-    "backend": "butternut GPU", "mode": "batch", "done": 3, "total": 4,
+    "backend": "butternut GPU", "input": "soundcore P40i", "warning": "",
+    "mode": "batch", "done": 3, "total": 4,
     "failed": 0, "state": "recording",
     "lines": ["Ask not what your country can do for you.",
               "Ask what you can do for your country.",
@@ -113,6 +115,9 @@ class Overlay:
         root.append(self.meter)
 
         width_chars = max(20, args.width // 7)
+        self.mic = self.label("meta", lines=1, chars=width_chars)
+        self.mic.set_ellipsize(3)  # Pango.EllipsizeMode.END
+        root.append(self.mic)
         self.older = self.label("older", lines=1, chars=width_chars)
         self.latest = self.label("latest", lines=3, chars=width_chars)
         self.status = self.label("status", lines=1, chars=width_chars)
@@ -154,6 +159,8 @@ class Overlay:
         self.level = lv if lv > self.level else self.level * 0.7 + lv * 0.3
         self.meter.set_value(self.level)
         self.meta.set_text(f"{msg.get('lang', '')} · {msg.get('backend', '')}")
+        self.mic.set_text(f"Mic: {msg.get('input', '')}")
+        self.mic.set_visible(bool(msg.get("input")))
         lines = msg.get("lines") or []
         self.older.set_text(joined(lines[:-1]))
         self.older.set_visible(len(lines) > 1)
@@ -164,13 +171,15 @@ class Overlay:
         finishing = self.state in ("finishing", "typing")
         batch = msg.get("mode") == "batch"
         if self.state == "typing":
-            status = "Typing…"
+            status = "Pasting…" if batch else "Typing…"
+        elif msg.get("warning") and self.state == "recording":
+            status = msg["warning"]
         elif finishing and done < total:
             status = f"Transcribing {done + 1}/{total} segments…"
         elif finishing:
             status = "Finishing…"
         elif batch:
-            status = ("Recording to a draft; the text is typed when you stop."
+            status = ("Recording to a draft; the text is pasted when you stop."
                       if not total else
                       f"Draft saved · {done} of {total} segments transcribed")
         elif done < total:

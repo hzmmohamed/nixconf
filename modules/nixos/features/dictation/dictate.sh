@@ -15,8 +15,11 @@
 #                      transcribe what a draft has not delivered; print it,
 #                      type it or copy it (no ID: every pending draft)
 #   dictate discard ID delete a draft
+#   dictate input [auto|NODE]
+#                      list the mics and which one the next session uses, or
+#                      choose one (auto: newest headset, else the default)
 #   dictate menu       launcher picker: drafts (copy / type / retranscribe /
-#                      discard) and the mode switch
+#                      discard), the mic and the mode switch
 #   dictate file WAV [--stream] [--mode M] [--realtime] [--overlay]
 #                      run the pipeline on a 16-bit WAV and print the text
 #                      (--stream: each segment as it commits, with times)
@@ -95,7 +98,7 @@ current_mode() {
 mode_label() {
   case "$1" in
   stream) echo "live typing at each pause" ;;
-  *) echo "typed at the end" ;;
+  *) echo "pasted at the end" ;;
   esac
 }
 
@@ -155,15 +158,34 @@ status() {
     sec=$((($(now_ms) - ${t0:-0}) / 1000))
     class='"recording"'
     ((sec >= cfg_long_sec)) && class='"recording","long"'
-    printf '{"text":"󰍬\\n<span size='"'"'%spx'"'"'>%02d:%02d</span>","class":[%s],"tooltip":"Dictating (%s, %s) for %02d:%02d: release, or press again, to stop"}\n' \
-      "$cfg_caption_px" $((sec / 60)) $((sec % 60)) "$class" "$(lang_label "$(get lang)")" \
-      "$(mode_label "$(get mode)")" $((sec / 60)) $((sec % 60))
+    printf '{"text":"󰍬\\n<span size='"'"'%spx'"'"'>%02d:%02d</span>","class":[%s],"tooltip":%s}\n' \
+      "$cfg_caption_px" $((sec / 60)) $((sec % 60)) "$class" \
+      "$(printf 'Dictating (%s, %s) from %s for %02d:%02d: release, or press again, to stop' \
+        "$(lang_label "$(get lang)")" "$(mode_label "$(get mode)")" "$(get input)" \
+        $((sec / 60)) $((sec % 60)) | jq -Rs .)"
     ;;
   transcribing)
     printf '{"text":"󰔟","class":"transcribing","tooltip":"Transcribing the draft"}\n'
     ;;
   *) printf '{"text":""}\n' ;;
   esac
+}
+
+# Mic picker: automatic, then every source ("<label> · <kind>\t<node>").
+input_menu() {
+  local launcher entries choice node label
+  read -ra launcher <<<"${DICTATE_LAUNCHER:-vicinae dmenu -p Microphone --no-quick-look}"
+  entries=$("$cfg_stream" input --json | jq -r '
+    .preferred as $p
+    | "Automatic: the newest headset, else the default input\(if $p == null then "  (chosen)" else "" end)\tauto",
+      (.inputs[] | "\(.label)  ·  \(if .kind == "headset" then "Bluetooth headset" else "microphone" end)\(if .name == $p then "  (chosen)" else "" end)\t\(.name)")
+  ')
+  choice=$(cut -f1 <<<"$entries" | "${launcher[@]}") || exit 0
+  [[ -n $choice ]] || exit 0
+  node=$(awk -F'\t' -v c="$choice" '$1 == c { print $2; exit }' <<<"$entries")
+  [[ -n $node ]] || exit 1
+  label=$("$cfg_stream" input --set "$node")
+  notify low 3000 "Next dictation records from $label"
 }
 
 # Launcher picker (vicinae dmenu, same pattern as Drives / Network): drafts,
@@ -179,6 +201,7 @@ menu() {
     def mmss: (. | floor) as $s | "\($s / 60 | floor | tostring | if length < 2 then "0" + . else . end):\($s % 60 | tostring | if length < 2 then "0" + . else . end)";
     .[] | "\(.status | st)  ·  \(.duration | mmss)  ·  \(.id[5:10]) \(.id[11:13]):\(.id[13:15])  ·  \(if .words == "" then "(not transcribed yet)" else .words end)  #\(.id[-4:])\t\(.id)"
   ' <<<"$drafts")
+  entries+=$'\n'"Microphone: $("$cfg_stream" input --json | jq -r '.current.label + (if .preferred then "" else " (automatic)" end)'): change"$'\t'"@input"
   entries+=$'\n'"Mode: $(mode_label "$(current_mode)") ($(current_mode)): switch"$'\t'"@mode"
   choice=$(cut -f1 <<<"${entries#$'\n'}" | "${launcher[@]}") || exit 0
   [[ -n $choice ]] || exit 0
@@ -187,6 +210,10 @@ menu() {
   [[ -n $id ]] || exit 1
   if [[ $id == @mode ]]; then
     set_mode toggle
+    return
+  fi
+  if [[ $id == @input ]]; then
+    input_menu
     return
   fi
   action=$(printf '%s\n' "Copy text" "Type text into the focused window" \
@@ -254,6 +281,14 @@ file)
   DICTATE_LANG=$(current_lang) exec "$cfg_stream" "$@"
   ;;
 recover | drafts | discard) exec "$cfg_stream" "$@" ;;
+input)
+  if [[ -n ${2:-} ]]; then
+    label=$("$cfg_stream" input --set "$2")
+    echo "next session: $label"
+  else
+    exec "$cfg_stream" input
+  fi
+  ;;
 mode)
   case "${2:-}" in
   "") echo "$(current_mode) ($(mode_label "$(current_mode)"))" ;;
@@ -284,7 +319,7 @@ backends)
   "$cfg_stream" drafts
   ;;
 *)
-  echo "usage: dictate press|release|toggle|cancel|mode|status|drafts|recover|discard|menu|file WAV|backends" >&2
+  echo "usage: dictate press|release|toggle|cancel|mode|input|status|drafts|recover|discard|menu|file WAV|backends" >&2
   exit 2
   ;;
 esac
