@@ -43,7 +43,7 @@ in {
   perSystem = {pkgs, ...}: {
     packages.deploy = pkgs.writeShellApplication {
       name = "deploy";
-      runtimeInputs = with pkgs; [openssh coreutils nix];
+      runtimeInputs = with pkgs; [openssh coreutils git gnused nix];
       text =
         ''
           registry_hosts=${q (words registryHosts)}

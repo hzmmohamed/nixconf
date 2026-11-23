@@ -4,11 +4,13 @@
 
 usage() {
   cat >&2 <<EOF
-usage: deploy [--plan] [--dry-run] <host> [switch|boot|test|dry-activate]
-       deploy [--plan] [--dry-run] all [--skip h1,h2] [switch|boot|test|dry-activate]
+usage: deploy [--plan] [--dry-run] [--force] <host> [switch|boot|test|dry-activate]
+       deploy [--plan] [--dry-run] [--force] all [--skip h1,h2] [switch|boot|test|dry-activate]
 
   --dry-run   build and copy, then 'switch-to-configuration dry-activate'
               (shows what would change; nothing is activated)
+  --force     deploy even if the target runs a commit this checkout lacks
+              (it would roll the target back)
   --plan      print where it would build / copy / activate, run nothing
               (no ssh, no build; reachability is assumed)
   all         every registry host in turn (this machine last), then a table
@@ -31,12 +33,14 @@ in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
 
 plan_only=0
 dry_run=0
+force=0
 skip=""
 positional=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan) plan_only=1 ;;
     --dry-run | -n) dry_run=1 ;;
+    --force) force=1 ;;
     --skip) [ $# -ge 2 ] || usage; skip=$2; shift ;;
     --skip=*) skip=${1#--skip=} ;;
     -h | --help) usage ;;
@@ -74,6 +78,7 @@ if [ "$host" = all ]; then
 
   flags=()
   [ "$plan_only" = 1 ] && flags+=(--plan)
+  [ "$force" = 1 ] && flags+=(--force)
   logdir=$(mktemp -d "${TMPDIR:-/tmp}/deploy-all.XXXXXX")
   declare -A outcome
   failed=0
@@ -226,7 +231,29 @@ remote() {
   fi
 }
 
-# 3. Build (and copy).
+# 3. Is this checkout at least as new as what the target runs? Deploying an
+#    older checkout (a machine that wasn't synced) silently rolls the target
+#    back. The target's commit comes from system.configurationRevision
+#    (base/revision.nix); systems built before it have none: no check.
+running=$(remote nixos-version --configuration-revision 2>/dev/null || true)
+running_rev=${running%-dirty}
+if [ -n "$running_rev" ] && [ "$force" = 0 ]; then
+  head_rev=$(git -C "$flake" rev-parse HEAD 2>/dev/null || true)
+  if ! git -C "$flake" cat-file -e "$running_rev^{commit}" 2>/dev/null; then
+    die "$host runs commit ${running_rev:0:12}, which this checkout ($flake) does not have.
+  Deploying would roll $host back. Bring this checkout up to date (fetch the
+  machine that deployed $host last), or deploy from that machine; --force to
+  deploy anyway."
+  elif [ -n "$head_rev" ] && ! git -C "$flake" merge-base --is-ancestor "$running_rev" "$head_rev"; then
+    die "$host runs ${running_rev:0:12} ($(git -C "$flake" log -1 --format=%s "$running_rev")),
+  which is not in this checkout's history (HEAD ${head_rev:0:12}). Deploying would
+  drop those commits from $host: merge or rebase first; --force to deploy anyway."
+  fi
+  [ "$running" = "$running_rev" ] ||
+    echo ">> note: $host runs ${running_rev:0:12} with uncommitted changes; they are replaced" >&2
+fi
+
+# 4. Build (and copy).
 case "$build_on" in
   local)
     system=$(nix build --no-link --print-out-paths "$installable") || die "build failed"
@@ -270,10 +297,10 @@ case "$build_on" in
     ;;
 esac
 
-# 4. Show what changes, on the target, against its running system.
+# 5. Show what changes, on the target, against its running system.
 remote nix store diff-closures /run/current-system "$system" || true
 
-# 5. Activate.
+# 6. Activate.
 if [ "$action" = switch ] || [ "$action" = boot ]; then
   remote doas nix-env -p /nix/var/nix/profiles/system --set "$system" ||
     die "setting the system profile failed (passwordless doas on $host?)"
@@ -284,6 +311,47 @@ fi
 # 255), reconnect and wait for the unit's result instead of failing. On this
 # machine it also survives the terminal going away.
 unit=deploy-switch-to-configuration
+
+# A switch waits on every unit it starts (home-manager's sd-switch on user
+# oneshots too); one that never finishes hangs the deploy with no output.
+# After 90 s, say every minute which systemd jobs are still pending on the
+# target and what processes the running ones are stuck in.
+show_pending() {
+  local scope jobs line u
+  for scope in system user; do
+    local sc=()
+    [ "$scope" = user ] && sc=(--user)
+    jobs=$(remote systemctl "${sc[@]}" list-jobs --no-legend --no-pager 2>/dev/null) || continue
+    [ -n "$jobs" ] || continue
+    echo "   $scope jobs:"
+    while read -r line; do
+      [ -n "$line" ] || continue
+      echo "     $line"
+      # "<job> <unit> <type> <state>": show where a running job is stuck.
+      local f=()
+      read -ra f <<<"$line"
+      [ "${f[3]:-}" = running ] || continue
+      u=${f[1]}
+      remote systemctl "${sc[@]}" status --no-pager --lines=0 "$u" 2>/dev/null |
+        sed -n '/CGroup:/,$p' | sed 's/^/       /' | head -n 8
+    done <<<"$jobs"
+  done
+}
+watchdog() {
+  sleep 90
+  while :; do
+    {
+      echo ">> $host: still activating; pending systemd jobs:"
+      show_pending
+      echo "   (inspect: systemctl [--user] status <unit>; killing the stuck process lets the switch go on)"
+    } >&2
+    sleep 60
+  done
+}
+watchdog &
+watchdog_pid=$!
+trap 'kill "$watchdog_pid" 2>/dev/null || true' EXIT
+
 rc=0
 remote doas systemd-run --unit="$unit" --collect --no-ask-password \
   --pipe --wait --quiet --service-type=exec \
@@ -309,5 +377,6 @@ if [ "$rc" = 255 ] && [ "$target" != local ]; then
     die "switch-to-configuration $action on $host did not finish (state=$state result=$result)"
   fi
 fi
+kill "$watchdog_pid" 2>/dev/null || true
 [ "$rc" = 0 ] || die "switch-to-configuration $action failed on $host"
 echo ">> $host: $action done"
