@@ -825,3 +825,58 @@ phone uses the services over the tailnet). The phone's tailnet name becomes
   nmcli -f GENERAL.CONNECTION,GENERAL.METERED device show (nmcli -g DEVICE,TYPE device | string replace -rf ':wifi$' '')
   ls /run/trusted-networks                              # expect: the Wi-Fi interface NOT listed
   ```
+
+## Immich pilot (butternut)
+
+Immich 3.x on butternut for phone backup until peacelily takes over (design:
+`docs/plans/2026-11-22-photos-immich-design.md`). Tailnet only, HTTPS on **8444**
+(443 is T3 Code, 8443 OpenCode). Until the B2 backup (phase 2) runs, the only copies are
+the phone and butternut. Commands are fish.
+
+- [ ] **butternut**: free disk space first (§6 above, Docker build cache), then check:
+
+  ```fish
+  df -h /var/lib
+  ```
+
+- [ ] **hazel or butternut**: deploy butternut (adds Postgres 17, Redis, `immich-server`,
+      `immich-machine-learning`, `immich-tailscale-serve`):
+
+  ```fish
+  cd ~/nixconf; just deploy butternut
+  ```
+
+- [ ] **butternut**: everything is up and published on 8444 (expect three `active`, a
+      `https://butternut.tail1a9f7c.ts.net:8444` → `http://127.0.0.1:2283` entry, `pong`):
+
+  ```fish
+  systemctl is-active immich-server immich-machine-learning immich-tailscale-serve
+  tailscale serve status
+  curl -s https://butternut.tail1a9f7c.ts.net:8444/api/server/ping
+  ```
+
+- [ ] **any tailnet browser**: open `https://butternut.tail1a9f7c.ts.net:8444`, create the
+      admin account (first-run screen). Put the password in the vault. The settings page is
+      read-only on purpose (settings are in `features/immich.nix`). The first ML jobs
+      download their models (a few hundred MB) on butternut.
+
+- [ ] **phone**:
+  - [ ] Install **Immich** (Play Store or F-Droid). Server URL
+        `https://butternut.tail1a9f7c.ts.net:8444`, log in with the admin account.
+  - [ ] Backup → select **Camera** + the albums you want (Screenshots, WhatsApp, …); turn
+        **background backup** on.
+  - [ ] HyperOS: Settings → Apps → Immich → Battery saver **No restrictions**, **Autostart**
+        on.
+  - [ ] Keep **"Prefer remote images"** off (recent photos stay viewable offline).
+  - [ ] **Do NOT use "Free up space"** until phase 2's first B2 backup has run and been
+        checked. Until then the phone holds the only other copy.
+
+- [ ] **phone**: large video check (`tailscale serve` must not cap the upload size): record or
+      pick a video **over 1 GB**, let it back up, and watch it on butternut:
+
+  ```fish
+  journalctl -fu immich-server
+  ```
+
+  It shows up in the web UI with the right length and plays. If the upload fails or
+  restarts forever, report the app's error and the journal lines.

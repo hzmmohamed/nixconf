@@ -40,6 +40,7 @@ config. Hosts compose both.
 | `flake-parts.nix` | systems (x86_64-linux), options | Declares mergeable flake options (`wrapperModules`, `diskoConfigurations`). |
 | `devshell.nix` | `perSystem.devShells.default`, treefmt | devenv shell (`nix develop --impure`) with nix tooling, sops, age, just, claude-code; alejandra + deadnix git hooks. |
 | `checks.nix` | `perSystem.checks.<host>-eval`, `design-contrast`, `phone-profile` | Eval-only check per nixosConfiguration (`just eval-all` is the fast equivalent); palette contrast contract; butternut's phone profile against the app's `Profile.kt`. |
+| `checks/immich-vm.nix` | `perSystem.checks.immich-vm`, `immich-butternut-config` | NixOS VM test of the `immich` feature (Immich 3.x up on 26.05's Postgres/VectorChord, loopback only, settings read back over the API, no serve unit without Tailscale, survives a restart; builds Immich, run on butternut); eval check of butternut's pilot wiring. |
 | `dictation-models.nix` | `flake.dictationModels` | `pkgs -> { parakeet; parakeetArchive; whisperSmall; sileroVadOnnx; }`: dictation model pins shared by the laptops and the phone profile (`dictation.nix` still carries identical copies until it is rewired). |
 | `dictation-vocabulary.nix` | `flake.dictationVocabulary` | Fleet vocabulary for the Whisper prompt (phone profile; desktop clients later). |
 
@@ -121,6 +122,7 @@ Each file exports one `flake.nixosModules.<name>`. Hosts pick which ones to impo
 | `cable-link` | Ethernet between the laptops: `lan` (DHCP) falls through to a static `cable` link; manual `<me>-shares`/`<peer>-shares` internet sharing. `preferences.cable.peerSharesMetered` marks `<peer>-shares` metered (NM `metered=1`) so `agent-net` sees a carried peer's hotspot | |
 | `dictation` | Push-to-talk dictation (`dictate`, Mod4+d): first reachable whisper server, else Parakeet/Whisper small on the CPU; drafts, overlay | |
 | `dictation-server` | whisper.cpp server (Whisper large-v3-turbo, Vulkan, socket-activated with idle unload) on 8178. `phone.enable`: darkhttpd on 8180 serving the phone profile (`profile.json`: servers, languages, vocabulary prompt, hashed Parakeet files, `appUrl`; every URL uses the MagicDNS FQDN, `phone.url` = `http://<host>.<self.tailnet.domain>:8180`), the Parakeet files and the APKs from `phone-app publish` (`/var/lib/phone-profile`, owned by the user) | |
+| `immich` | Immich 3.x photo/video library on `127.0.0.1:2283` with ML, local Postgres 17 (pinned) + Redis. Module and package from `nixpkgs-unstable` (26.05 has 2.7.5; `disabledModules` + unstable's module file; drop at 26.11). Declarative settings: storage template `{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}`, daily DB dump (02:00, keep 14), no version check, `server.externalDomain` = `https://<host>.<self.tailnet.domain>[:port]`. With Tailscale: `immich-tailscale-serve` oneshot (`tailscale serve --https=<port>`, no Funnel). `preferences.immich.{mediaLocation,tailscaleServePort,cuda}` (443 default; `cuda` is phase 3, asserts false) | |
 
 ### `modules/nixos/extra/` — integration layers
 
@@ -138,7 +140,7 @@ Each host directory has `configuration.nix` (imports + host-specific config),
 
 | Host | WM | Hardware | Notable features |
 |------|----|----------|------------------|
-| **butternut** | Sway | ASUS TUF (Intel Alder Lake + RTX 3050), LUKS ext4 | Laptop used as a desktop (broken panel, external monitor, always on AC). NVIDIA PRIME offload with the dGPU kept awake for CUDA, LTS kernel. Split files: `gpu.nix`, `power.nix`, `audio.nix`, `games.nix`, `network.nix`. Home build server for hazel (`nix-builder`: `nix-ssh` via nix.sshServe) and binary cache (nix-serve/harmonia). greetd, email, reticulum, openrgb, gaming |
+| **butternut** | Sway | ASUS TUF (Intel Alder Lake + RTX 3050), LUKS ext4 | Laptop used as a desktop (broken panel, external monitor, always on AC). NVIDIA PRIME offload with the dGPU kept awake for CUDA, LTS kernel. Split files: `gpu.nix`, `power.nix`, `audio.nix`, `games.nix`, `network.nix`. Home build server for hazel (`nix-builder`: `nix-ssh` via nix.sshServe) and binary cache (nix-serve/harmonia). Immich pilot on tailnet HTTPS `:8444`. greetd, email, reticulum, openrgb, gaming |
 | **hazel** | Sway | ThinkPad E14 Gen 2 (i5-1135G7), LUKS NVMe | **Primary device**, carried; 256 GB disk, so builds go to butternut (`nix-builder` client, `deploy` plans the build location). greetd, battery notifications, lan-cache client, remote-deploy |
 | **maple** | None (headless) | Intel laptop, dead screen, LUKS ext4 | Always-on node: SSH, Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid switch ignored, sleep targets disabled, user lingering, journald capped |
 | **peacelily** | None (headless) | Intel, NVIDIA GPU | AI server: llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. Not yet redeployed with the current config. Deployed via nixos-anywhere (`scripts/install-host.sh peacelily <ip>`) |
@@ -275,6 +277,7 @@ the app's in-app update reads. The release key lives in
 
 | Input | Purpose | Used by |
 |-------|---------|---------|
+| `nixpkgs-unstable` | Single modules/packages newer than 26.05 (no `follows`) | `immich` (Immich 3.x module + package) |
 | `llama-cpp` (`ggml-org/llama.cpp`) | Upstream llama.cpp with CUDA package | `ai-server` (`.packages.${system}.cuda`) |
 | `reticulum-flake` | Reticulum mesh networking overlays and modules | `reticulum` |
 | `catppuccin` | Catppuccin theming for NixOS/home-manager | `extra_hjem` |

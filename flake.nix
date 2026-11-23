@@ -1,6 +1,9 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
+    # Single packages/modules newer than 26.05 ships (features/immich.nix: Immich
+    # 3.x). Not followed by anything; drop when no feature needs it.
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
 
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";

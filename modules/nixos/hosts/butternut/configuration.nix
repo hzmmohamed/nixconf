@@ -80,6 +80,7 @@
       self.nixosModules.remote-deploy
       self.nixosModules.wifi-home
       self.nixosModules.syncthing
+      self.nixosModules.immich
 
       self.nixosModules.powersave
 
@@ -144,6 +145,10 @@
     # Mark hazel-shares as metered: hazel is on a phone hotspot.
     preferences.cable.peerSharesMetered = true;
     preferences.nix-serve.firewallInterfaces = ["eno2"];
+
+    # Immich pilot (phone backup) until peacelily takes over: tailnet HTTPS on
+    # 8444, as 443 is T3 Code and 8443 OpenCode (features/immich.nix).
+    preferences.immich.tailscaleServePort = 8444;
 
     networking = {
       hostName = "butternut";
