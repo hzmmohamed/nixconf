@@ -21,6 +21,13 @@
         total=0
         entries=()
         tooltip=""
+        # Compact counts so a big inbox doesn't widen the bar: 999, 1k, 36k,
+        # 1M (rounded down). The tooltip keeps the exact numbers.
+        short() {
+          if [ "$1" -lt 1000 ]; then echo "$1"
+          elif [ "$1" -lt 1000000 ]; then echo "$(($1 / 1000))k"
+          else echo "$(($1 / 1000000))M"; fi
+        }
         shopt -s nullglob
         for f in "$dir"/*.count; do
           name=$(basename "$f" .count)
@@ -30,11 +37,11 @@
           entry="''${name:0:1}"
           entry="''${entry^}"
           if ! $markup; then
-            entry+="$n"
+            entry+=$(short "$n")
           elif [ "$n" -eq 0 ]; then
             entry="<span alpha='45%'>$entry $n</span>"
           else
-            entry+=" $n"
+            entry+=" $(short "$n")"
           fi
           entries+=("$entry")
           tooltip+="$name: $n"$'\n'
