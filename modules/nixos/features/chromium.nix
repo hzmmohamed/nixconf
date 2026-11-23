@@ -13,15 +13,14 @@
       # password store; pin it to the gnome-keyring Secret Service, where the
       # existing "Chromium Safe Storage" key (login collection) lives.
       #
-      # WebGPU: Chromium keeps it off on Linux unless its Vulkan backend is
-      # on; the chrome://flags "Unsafe WebGPU" switch only gave SwiftShader
-      # (CPU) plus an unsupported-flag warning on every start. `Vulkan` is a
-      # plain feature (no warning): real GPU adapter, checked on butternut
-      # (NVIDIA Ampere). Chromium honours only the last --enable-features, so
-      # this repeats the NixOS wrapper's WaylandWindowDecorations.
+      # No WebGPU: on Linux Chromium only gives it a GPU adapter with the
+      # `Vulkan` feature, and under Wayland that breaks <video> (white frames,
+      # audio plays; GPU log "ProduceSkia ... incompatible backing:
+      # CompoundImageBacking"; checked on butternut, 2026-11-23). The
+      # chrome://flags "Unsafe WebGPU" switch is no alternative: SwiftShader
+      # (CPU) plus an unsupported-flag banner on every start.
       commandLineArgs = [
         "--password-store=gnome-libsecret"
-        "--enable-features=WaylandWindowDecorations,Vulkan"
       ];
       extensions = [
         {id = "chphlpgkkbolifaimnlloiipkdnihall";} # OneTab
