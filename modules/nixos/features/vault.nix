@@ -12,7 +12,7 @@
 # sops secret holding the folder's encryption password.
 #
 # Requires: syncthing (and sops, for an untrusted peer) imported on the host.
-{...}: {
+{self, ...}: {
   flake.nixosModules.vault = {
     config,
     lib,
@@ -285,7 +285,8 @@
             {id = "oboonakemofpalcgghocfoadofidjkkk";} # KeePassXC-Browser
           ];
 
-          home.packages = [vaultOpen];
+          # vault-tidy: model-assisted sorting and audit (packages/vault-tidy.nix).
+          home.packages = [vaultOpen self.packages.${pkgs.stdenv.hostPlatform.system}.vault-tidy];
 
           wayland.windowManager.sway.config = {
             keybindings = lib.mkOptionDefault {
