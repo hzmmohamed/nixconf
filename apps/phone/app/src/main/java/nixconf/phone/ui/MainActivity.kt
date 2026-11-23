@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
                     app.onOpen(force = true).join()
                     val p = app.profile.value
                     val lines = p?.servers.orEmpty().map { s ->
-                        async { "$s: " + if (app.whisper.probe(s, 3000)) "answers" else "no answer" }
+                        async { "$s: " + if (app.whisper.probe(s)) "answers" else "no answer" }
                     }.awaitAll()
                     val head = if (app.profileFetchedMs() > before) "Profile: fetched" else "Profile: not reachable (using cached)"
                     results = listOf(head) + lines

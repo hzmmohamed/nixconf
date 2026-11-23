@@ -47,6 +47,13 @@ class WhisperClientTest {
         assertFalse(client.probe(url))
     }
 
+    // A socket-activated server answers once the model is loaded (1-3 s).
+    @Test
+    fun probe_waits_for_a_cold_server() = runBlocking {
+        server.enqueue(MockResponse().setBody("warm").setHeadersDelay(2, TimeUnit.SECONDS))
+        assertTrue(client.probe(url))
+    }
+
     @Test
     fun probe_false_when_nothing_listens() = runBlocking {
         server.shutdown()

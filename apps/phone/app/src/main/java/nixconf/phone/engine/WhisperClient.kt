@@ -27,8 +27,18 @@ fun interface RemoteTranscriber {
 // probe (and starts the socket-activated server), `POST /inference` takes a
 // 16 kHz mono WAV and answers {"text": …}.
 class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
-    suspend fun probe(url: String, timeoutMs: Long = 1500): Boolean {
-        val client = http.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
+    /**
+     * As the desktop `dictate`: a host that is not there fails at connect
+     * ([connectMs]); one that accepts gets [timeoutMs] to answer, as a cold
+     * server answers only once the model is loaded and warm (1-3 s on
+     * butternut). The session records meanwhile, so the wait costs nothing.
+     */
+    suspend fun probe(url: String, connectMs: Long = 1500, timeoutMs: Long = 20_000): Boolean {
+        val client = http.newBuilder()
+            .connectTimeout(connectMs, TimeUnit.MILLISECONDS)
+            .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .build()
         val request = Request.Builder().url(endpoint(url, "")).build()
         return try {
             client.newCall(request).await { it.isSuccessful }
