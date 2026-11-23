@@ -141,6 +141,9 @@
         settings = {
           telemetry.system_info = false;
           pop_to_root_on_close = true;
+          # Default: a click only selects a list/grid item and a double-click
+          # opens it (SelectableDelegate.qml), so a single click looked broken.
+          activate_on_single_click = true;
           favicon_service = "none";
 
           # Palette themes (above). vicinae follows the portal's
