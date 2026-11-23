@@ -12,9 +12,18 @@
       # Under Sway (XDG_CURRENT_DESKTOP=sway) Chromium has to guess the
       # password store; pin it to the gnome-keyring Secret Service, where the
       # existing "Chromium Safe Storage" key (login collection) lives.
-      commandLineArgs = ["--password-store=gnome-libsecret"];
+      #
+      # WebGPU: Chromium keeps it off on Linux unless its Vulkan backend is
+      # on; the chrome://flags "Unsafe WebGPU" switch only gave SwiftShader
+      # (CPU) plus an unsupported-flag warning on every start. `Vulkan` is a
+      # plain feature (no warning): real GPU adapter, checked on butternut
+      # (NVIDIA Ampere). Chromium honours only the last --enable-features, so
+      # this repeats the NixOS wrapper's WaylandWindowDecorations.
+      commandLineArgs = [
+        "--password-store=gnome-libsecret"
+        "--enable-features=WaylandWindowDecorations,Vulkan"
+      ];
       extensions = [
-        {id = "nngceckbapebfimnlniiiahkandclblb";} # Bitwarden
         {id = "chphlpgkkbolifaimnlloiipkdnihall";} # OneTab
         {id = "ekhagklcjbdpajgpjgmbionohlpdbjgc";} # Zotero Connector
         {id = "ghbmnnjooekpmoecnnnilnnbdlolhkhi";} # Google Docs Offline

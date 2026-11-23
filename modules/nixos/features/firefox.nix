@@ -14,7 +14,7 @@
       configPath = ".mozilla/firefox";
       profiles.${user} = {
         extensions.packages = with inputs.firefox-addons.packages.${pkgs.stdenv.hostPlatform.system}; [
-          bitwarden
+          keepassxc-browser # vault (features/vault.nix); HM installs the native host
           tree-style-tab
           zotero-connector
         ];

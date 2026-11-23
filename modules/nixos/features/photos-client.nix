@@ -32,7 +32,7 @@
       runtimeInputs = [pkgs.xdg-utils];
       text =
         if hmChromium.enable
-        then ''exec ${lib.getExe hmChromium.package} --app=${lib.escapeShellArg url}''
+        then ''exec ${lib.getExe hmChromium.finalPackage} --app=${lib.escapeShellArg url}''
         else ''exec xdg-open ${lib.escapeShellArg url}'';
     };
   in {

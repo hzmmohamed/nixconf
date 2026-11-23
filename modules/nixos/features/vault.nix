@@ -279,7 +279,8 @@
             };
           };
 
-          # Alongside the Bitwarden extension during the migration period.
+          # The only password extension (Bitwarden removed 2026-11-23); Firefox
+          # gets it in features/firefox.nix.
           programs.chromium.extensions = [
             {id = "oboonakemofpalcgghocfoadofidjkkk";} # KeePassXC-Browser
           ];

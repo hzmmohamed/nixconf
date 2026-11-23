@@ -197,7 +197,7 @@
         esac
         ${
           if hmChromium.enable
-          then ''exec ${lib.getExe hmChromium.package} --app="$url"''
+          then ''exec ${lib.getExe hmChromium.finalPackage} --app="$url"''
           else ''exec xdg-open "$url"''
         }
       '';
