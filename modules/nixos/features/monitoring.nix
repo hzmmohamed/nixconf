@@ -1,7 +1,6 @@
 {...}: {
-  # Prometheus + Grafana for the host it runs on (ported from the April
-  # `feature/monitoring-stack` branch; plan docs/plans/2026-04-01-monitoring-stack.md
-  # on that branch).
+  # Prometheus + Grafana for the host it runs on (first written for peacelily
+  # in 2026-04, ported 2026-11: docs/plans/2026-11-24-peacelily-bring-up.md).
   #
   #   Prometheus  127.0.0.1:9090, 30 days, scrapes node / systemd / NVIDIA GPU
   #               exporters (all on 127.0.0.1) and, when llama-swap runs here,
