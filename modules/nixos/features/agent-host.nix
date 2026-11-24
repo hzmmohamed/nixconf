@@ -55,6 +55,10 @@
           MemoryMax = "75%";
           CPUWeight = 50;
           IOWeight = 50;
+          # Stalled on memory for 30 s: systemd-oomd kills the worst agent
+          # (a leaf scope) instead of the whole slice thrashing on.
+          ManagedOOMMemoryPressure = "kill";
+          ManagedOOMMemoryPressureLimit = "50%";
         };
       };
 

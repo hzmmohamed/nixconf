@@ -77,6 +77,7 @@
 
       self.nixosModules.powersave
       self.nixosModules.battery-notify
+      self.nixosModules.memory-guard
 
       # disko
       inputs.disko.nixosModules.disko
@@ -100,6 +101,9 @@
     time.timeZone = "Africa/Cairo";
 
     preferences.bibata-cursor.enable = true;
+
+    # Swap behind zram; small, the disk is 256 GB.
+    preferences.memoryGuard.swapfileSize = 8 * 1024;
 
     # Watch butternut's battery (café: it runs headless, hazel is the screen).
     preferences.batteryAlert.remotes = ["butternut"];

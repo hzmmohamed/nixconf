@@ -228,22 +228,6 @@
         Install.WantedBy = ["sway-session.target"];
       };
 
-      # Split direction by shape: a new window splits a wide container side
-      # by side and a tall one top/bottom (Mod+e still toggles by hand).
-      systemd.user.services.autotiling = {
-        Unit = {
-          Description = "Sway autotiling (split along the longer side)";
-          After = ["sway-session.target"];
-          Requisite = ["sway-session.target"];
-          PartOf = ["sway-session.target"];
-        };
-        Service = {
-          ExecStart = lib.getExe pkgs.autotiling-rs;
-          Restart = "on-failure";
-        };
-        Install.WantedBy = ["sway-session.target"];
-      };
-
       home.activation.flameshotNoTray = {
         after = ["writeBoundary"];
         before = [];
@@ -372,10 +356,8 @@
             # No exit shortcut (home-manager's swaynag prompt): the session
             # is ended from the launcher's power menu.
             "${mod}+Shift+e" = null;
-            # home-manager defaults already bound elsewhere: reload is
-            # Mod+Shift+d, stacking Mod+i, splits Mod+e (and autotiling).
+            # home-manager default already bound elsewhere: reload is Mod+Shift+d.
             "${mod}+Shift+c" = null;
-            "${mod}+s" = null;
             "${mod}+b" = null;
 
             "${mod}+u" = "[urgent=latest] focus";
@@ -388,7 +370,7 @@
             "${mod}+Shift+Escape" = "mode passthrough";
 
             # Layout
-            "${mod}+i" = "layout stacking";
+            "${mod}+s" = "layout stacking";
             "${mod}+w" = "layout tabbed";
             "${mod}+e" = "layout toggle split";
 
