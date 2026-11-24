@@ -7,6 +7,14 @@
     user = config.preferences.user.name;
   in {
     programs.firefox.enable = true;
+    # Microsoft 365 web apps (Teams, Outlook) renew tokens in a hidden
+    # login.microsoftonline.com iframe. Total Cookie Protection gives that
+    # iframe an empty partitioned jar, so once the 24 h SPA refresh token
+    # expires Teams shows "We need you to sign in again". Allowing the login
+    # origin's cookies lets the iframe see the real session.
+    programs.firefox.policies.Cookies.Allow = [
+      "https://login.microsoftonline.com"
+    ];
 
     home-manager.users.${user}.programs.firefox = {
       enable = true;
