@@ -100,6 +100,112 @@
       hover = { outline = "${p.outline}" }
       selection = { outline = "${p.focus}" }
     '';
+
+    # Root list curation. The root search has no categories: favorites sit on
+    # top while the query is empty, everything else is frecency-ranked, and an
+    # alias that prefix-matches the query always ranks first. Entrypoint IDs
+    # are "<provider>:<entrypoint>"; desktop entries are
+    # "applications:<desktop file id minus .desktop>", built-ins are listed in
+    # vicinae's src/server/src/extensions/*/ (e.g. "core:about"). IDs a host
+    # doesn't have are ignored, so one list serves every host.
+    favorites = [
+      "applications:kitty"
+      "applications:firefox"
+      "applications:thunar"
+      "applications:codium"
+      "clipboard:history"
+      "wm:switch-windows"
+      "applications:network-menu"
+      "applications:removable-media"
+      "applications:sway-shortcuts"
+      "system:browse-apps"
+    ];
+
+    aliases = {
+      "applications:network-menu" = "net";
+      "applications:removable-media" = "drives";
+      "applications:caffeine" = "cf";
+      "applications:sway-shortcuts" = "keys";
+      "applications:firefox" = "ff";
+      "applications:codium" = "code";
+      "applications:thunar" = "fm";
+      "applications:org.keepassxc.KeePassXC" = "kp";
+      "clipboard:history" = "cb";
+      "core:search-emojis" = "emoji";
+      "wm:switch-windows" = "win";
+      "system:browse-apps" = "apps";
+    };
+
+    # Off by default upstream: the full app list, A–Z, as its own view.
+    shown = ["system:browse-apps"];
+
+    hidden =
+      map (id: "applications:${id}") [
+        # toolkit demos and dev tools pulled in as dependencies
+        "org.gtk.Demo4"
+        "org.gtk.gtk4.NodeEditor"
+        "org.gtk.PrintEditor4"
+        "org.gtk.Shaper"
+        "org.gtk.WidgetFactory4"
+        "evtest-qt"
+        "lsp-plugins"
+        "qt5ct"
+        "qt6ct"
+        "nixos-manual"
+        # helpers and secondary windows of apps that have a main entry
+        "foot-server"
+        "footclient"
+        "thunar-settings"
+        "blueman-adapters"
+        "cups"
+        "carla-control"
+        "meshchat-launcher"
+        "protontricks"
+        "gammastep-indicator"
+        "org.kde.kdeconnect.nonplasma"
+        "startcenter" # LibreOffice start centre; Writer/Calc/… are listed
+        "vicinae" # the launcher itself
+        # fixed caffeine durations: the "Caffeine: keep awake" toggle stays,
+        # the duration picker is `caffeine menu`
+        "caffeine-30m"
+        "caffeine-1h"
+        "caffeine-2h"
+        "caffeine-off"
+      ]
+      ++ [
+        # vicinae housekeeping, links and stores (extensions aren't declarative)
+        "core:about"
+        "core:report-bug"
+        "core:documentation"
+        "core:join-discord-server"
+        "core:sponsor"
+        "core:open-default-config"
+        "core:prune-memory"
+        "core:forget-telemetry"
+        "core:oauth-token-store"
+        "core:search-builtin-icons"
+        "core:inspect-local-storage"
+        "core:list-extensions"
+        "core:reload-scripts"
+        "core:store"
+        "raycast-compat:store"
+        "developer:create"
+        "browser-extension:browse-tabs" # need vicinae's browser extension
+        "browser-extension:shortcut-active-tab"
+        "theme:set" # the theme follows the palette (theme-mode)
+        "power:soft-reboot"
+      ];
+
+    at = id: value: let
+      parts = lib.splitString ":" id;
+    in {
+      ${lib.head parts}.entrypoints.${lib.concatStringsSep ":" (lib.tail parts)} = value;
+    };
+    entrypointSettings = lib.foldl' lib.recursiveUpdate {} (
+      map (id: at id {enabled = false;}) hidden
+      ++ map (id: at id {enabled = true;}) shown
+      ++ lib.mapAttrsToList (id: alias: at id {inherit alias;}) aliases
+    );
   in {
     preferences.theme = {
       files."vicinae.toml" = mkVicinaeTheme;
@@ -167,10 +273,10 @@
             };
           };
 
-          favorites = [];
+          inherit favorites;
           fallbacks = ["files:search"];
 
-          providers = {
+          providers = lib.recursiveUpdate entrypointSettings {
             # Clipboard history (text + images); replaces clipse. Hosts bind
             # a key to `vicinae deeplink vicinae://launch/clipboard/history`.
             # ignorePasswords drops selections offered with the
