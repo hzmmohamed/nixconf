@@ -88,6 +88,8 @@ data class Notice(val text: String, val error: Boolean = false)
 class PanelActions(
     val mic: () -> Unit,
     val cancel: () -> Unit,
+    // Recording goes on with the keyboard closed (toggles).
+    val keepOn: () -> Unit,
     val language: () -> Unit,
     val switchKeyboard: () -> Unit,
     val insert: (Draft) -> Unit,
@@ -121,11 +123,12 @@ fun Panel(model: PanelModel, actions: PanelActions) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().height(height).padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row(Modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Not while recording: the mic would keep going behind another keyboard.
+                // Not while recording: the mic would keep going behind another keyboard
+                // (unless kept on: that is what it is for).
                 // While finishing: queued until the text is typed (switching now would end the input).
                 TextButton(
                     onClick = actions.switchKeyboard,
-                    enabled = state !is SessionState.Recording,
+                    enabled = state !is SessionState.Recording || state.background,
                     modifier = Modifier.semantics {
                         if (model.switchQueued) stateDescription = "Switches once the text is typed"
                     },
@@ -253,7 +256,10 @@ private fun Status(model: PanelModel, password: Boolean, elapsedMs: Long, action
         },
     )
     when (state) {
-        is SessionState.Recording -> LevelMeter(model.level)
+        is SessionState.Recording -> {
+            LevelMeter(model.level)
+            KeepOnToggle(state.background, actions.keepOn)
+        }
         is SessionState.Kept -> KeptActions(state.draft, state.draft.id in model.retrying, actions)
         else -> Unit
     }
@@ -268,6 +274,20 @@ private fun LevelMeter(level: Float) {
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(level.coerceIn(0f, 1f)).background(MaterialTheme.colorScheme.primary))
+    }
+}
+
+// Keep on: the recording goes on when the keyboard closes (another app, the
+// browser), with a notification to stop it.
+@Composable
+private fun KeepOnToggle(on: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.semantics {
+            stateDescription = if (on) "On: recording goes on when the keyboard closes" else "Off"
+        },
+    ) {
+        Text(keepOnLabel(on))
     }
 }
 

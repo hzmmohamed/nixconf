@@ -78,6 +78,7 @@ class DictationSessionTest {
     private val audio = FakeAudio()
 
     private class FakeEditor(override var token: String?) : EditorTarget {
+        override var field: String? = token
         override var incognito = false
         override var composable = true
         val commits = mutableListOf<String>()
@@ -216,6 +217,76 @@ class DictationSessionTest {
         val d = onlyDraft()
         assertEquals(DraftStatus.PENDING, d.status)
         assertEquals("hello world", d.text)
+    }
+
+    @Test
+    fun keep_on_shows_while_recording_and_ends_with_the_session() = runTest {
+        val s = session()
+        s.keepOn(true) // nothing running: a no-op
+        assertFalse(s.background)
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.keepOn(true)
+        assertTrue(s.background)
+        assertEquals(SessionState.Recording(Engine.Remote(server), 0, background = true), s.state.value)
+        s.keepOn(false)
+        assertEquals(SessionState.Recording(Engine.Remote(server), 0), s.state.value)
+        s.keepOn(true)
+        s.stop()
+        assertTrue(s.background) // still transcribing
+        advanceUntilIdle()
+        assertFalse(s.background)
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+    }
+
+    @Test
+    fun kept_on_back_in_the_same_field_types_there() = runTest {
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.keepOn(true)
+        editor.token = "org.browser/7" // a look at the browser
+        editor.field = "org.browser/7"
+        s.returned(editor)
+        editor.token = "org.notes/42#9" // back in the notes field: a new input of the same field
+        editor.field = "org.notes/42"
+        s.returned(editor)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+        assertEquals(listOf("hello world "), editor.commits)
+        assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
+    }
+
+    @Test
+    fun kept_on_stopped_elsewhere_keeps_pending() = runTest {
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.keepOn(true)
+        editor.token = "org.browser/7"
+        editor.field = "org.browser/7"
+        s.returned(editor)
+        s.stop() // from the notification, in the browser
+        advanceUntilIdle()
+        assertEquals(DictationSession.FIELD_CHANGED, (s.state.value as SessionState.Kept).reason)
+        assertTrue(editor.commits.isEmpty())
+        assertEquals("hello world", onlyDraft().text)
+    }
+
+    @Test
+    fun same_field_again_without_keep_on_keeps_pending() = runTest {
+        // A reused field id (chats, WebViews) may be another conversation: only kept on follows it.
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        editor.token = "org.notes/42#9"
+        editor.field = "org.notes/42"
+        s.returned(editor)
+        advanceUntilIdle()
+        assertEquals(DictationSession.FIELD_CHANGED, (s.state.value as SessionState.Kept).reason)
+        assertTrue(editor.commits.isEmpty())
     }
 
     @Test
@@ -483,6 +554,27 @@ class DictationSessionTest {
         advanceUntilIdle()
         assertEquals(listOf("Hello there. how are you? "), editor.commits) // replaces the composing text
         assertEquals("", editor.composing)
+        assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
+    }
+
+    @Test
+    fun stream_mode_kept_on_shows_the_text_again_back_in_the_field() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        segmented()
+        val s = session()
+        s.start("en", editor)
+        s.keepOn(true)
+        editor.token = "org.browser/7" // left before the first segment: nothing composed there
+        editor.field = "org.browser/7"
+        advanceUntilIdle()
+        assertTrue(editor.composed.isEmpty())
+        editor.token = "org.notes/42#9"
+        editor.field = "org.notes/42"
+        s.returned(editor)
+        assertEquals(listOf("Hello there. how are you"), editor.composed)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(listOf("Hello there. how are you? "), editor.commits)
         assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
     }
 

@@ -60,7 +60,7 @@ import nixconf.phone.profile.Profile
 import nixconf.phone.update.AppRelease
 
 /**
- * The app screen: microphone permission (the keyboard cannot ask), enabling
+ * The app screen: microphone and notification permissions (the keyboard cannot ask), enabling
  * the keyboard, the profile URL and a server test, the on-phone model, and
  * the pending drafts (retry, copy, share the audio, discard), and app updates.
  */
@@ -68,6 +68,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var app: AppServices
     private var micGranted by mutableStateOf(false)
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
+    private var notifyGranted by mutableStateOf(false)
+    private val askNotify = registerForActivityResult(ActivityResultContracts.RequestPermission()) { notifyGranted = it }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +80,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        notifyGranted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         app.onOpen()
     }
 
@@ -117,6 +120,13 @@ class MainActivity : ComponentActivity() {
         if (!micGranted) {
             Text("The keyboard needs the microphone.")
             Button(onClick = { askMic.launch(Manifest.permission.RECORD_AUDIO) }) { Text("Allow microphone") }
+        }
+        // Keep on still records without it, but its Stop notification stays hidden.
+        if (!notifyGranted) {
+            Text("Recording in the background shows a notification to stop it.")
+            OutlinedButton(onClick = { askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                Text("Allow notifications")
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }) {
