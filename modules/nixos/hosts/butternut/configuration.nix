@@ -65,6 +65,7 @@
       self.nixosModules.kdeconnect
       # On AC always, but a laptop: alerts during a power cut.
       self.nixosModules.battery-notify
+      self.nixosModules.memory-guard
       self.nixosModules.dictation
       self.nixosModules.dictation-server
       self.nixosModules.openrgb
@@ -109,6 +110,9 @@
     time.timeZone = "Africa/Cairo";
 
     preferences.bibata-cursor.enable = true;
+
+    # Swap behind zram, for big builds on top of agents.
+    preferences.memoryGuard.swapfileSize = 16 * 1024;
 
     # Music production stack (Ardour, plugins, yabridge, plugin paths).
     preferences.music.enable = true;

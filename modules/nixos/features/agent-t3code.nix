@@ -572,6 +572,8 @@
               MemoryMax = "75%";
               CPUWeight = 50;
               IOWeight = 50;
+              ManagedOOMMemoryPressure = "kill";
+              ManagedOOMMemoryPressureLimit = "50%";
             };
           };
 
