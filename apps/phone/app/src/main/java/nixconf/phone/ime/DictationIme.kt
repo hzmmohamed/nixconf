@@ -108,6 +108,7 @@ class DictationIme :
                 val level by app.recorder.level.collectAsState()
                 val profile by app.profile.collectAsState()
                 val pending by app.pending.collectAsState()
+                val where by app.where.collectAsState()
                 val languages = profile?.languages.orEmpty()
                 NixconfTheme {
                     Panel(
@@ -124,12 +125,15 @@ class DictationIme :
                             enterLabel = enterLabel(enter),
                             switchQueued = switchQueued,
                             retrying = retrying,
+                            where = where,
+                            phoneModel = profile?.localModel != null,
                         ),
                         PanelActions(
                             mic = ::onMic,
                             cancel = { app.session.cancel() },
                             keepOn = ::onKeepOn,
                             language = { language = nextLanguage(languages, currentLanguage()) },
+                            where = { app.setWhere(app.where.value.next()) },
                             switchKeyboard = ::onSwitchKeyboard,
                             insert = ::insert,
                             copy = ::copy,

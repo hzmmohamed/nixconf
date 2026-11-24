@@ -20,7 +20,9 @@ import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStore
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.LocalEngine
+import nixconf.phone.engine.PowerClient
 import nixconf.phone.engine.SileroVad
+import nixconf.phone.engine.Where
 import nixconf.phone.engine.WhisperClient
 import nixconf.phone.engine.chooseEngine
 import nixconf.phone.model.ModelDownloader
@@ -58,6 +60,16 @@ class AppServices private constructor(context: Context) {
         get() = prefs.getString(KEY_PROFILE_URL, null) ?: ProfileStore.DEFAULT_URL
         set(value) = prefs.edit().putString(KEY_PROFILE_URL, value.trim()).apply()
 
+    private val mutableWhere = MutableStateFlow(Where.of(prefs.getString(KEY_WHERE, null)))
+
+    /** The keyboard's Auto / Phone toggle (kept until changed). */
+    val where: StateFlow<Where> = mutableWhere.asStateFlow()
+
+    fun setWhere(value: Where) {
+        prefs.edit().putString(KEY_WHERE, value.name).apply()
+        mutableWhere.value = value
+    }
+
     private val profileDir = File(context.filesDir, "profile")
     private val profiles = ProfileStore(profileDir, ::fetchText, System::currentTimeMillis)
     private val mutableProfile = MutableStateFlow(profiles.cached())
@@ -68,6 +80,7 @@ class AppServices private constructor(context: Context) {
 
     val drafts = DraftStore(File(context.filesDir, "drafts"), System::currentTimeMillis)
     val whisper = WhisperClient(http)
+    private val power = PowerClient(http)
     val models = ModelDownloader(http, File(context.filesDir, "models"), ::isUnmetered)
     val recorder = Recorder()
     val local = LocalEngine(
@@ -82,6 +95,8 @@ class AppServices private constructor(context: Context) {
         local = local,
         probe = { whisper.probe(it) },
         scope = scope,
+        onBattery = { power.onBattery(it) },
+        where = { where.value },
         // Segments need the VAD model (in the APK's assets); without it, whole recordings.
         vad = context.assets.takeIf(SileroVad::bundled)?.let { assets -> { SileroVad(assets) } },
     )
@@ -200,6 +215,7 @@ class AppServices private constructor(context: Context) {
 
     companion object {
         private const val KEY_PROFILE_URL = "profileUrl"
+        private const val KEY_WHERE = "transcribeOn"
         private const val PROFILE_MAX_AGE_MS = 3_600_000L
 
         @Volatile private var instance: AppServices? = null

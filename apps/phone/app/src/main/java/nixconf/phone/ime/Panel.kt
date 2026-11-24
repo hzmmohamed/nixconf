@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import nixconf.phone.drafts.Draft
+import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
 import nixconf.phone.session.SessionState
 
@@ -80,6 +81,9 @@ data class PanelModel(
     val switchQueued: Boolean = false,
     // Drafts a tap is transcribing (to insert them).
     val retrying: Set<String> = emptySet(),
+    // The Auto / Phone toggle; shown when the profile has an on-phone model.
+    val where: Where = Where.AUTO,
+    val phoneModel: Boolean = false,
 )
 
 /** A one-line message under the status: info ("Copied") or an error. */
@@ -91,6 +95,7 @@ class PanelActions(
     // Recording goes on with the keyboard closed (toggles).
     val keepOn: () -> Unit,
     val language: () -> Unit,
+    val where: () -> Unit,
     val switchKeyboard: () -> Unit,
     val insert: (Draft) -> Unit,
     val copy: (Draft) -> Unit,
@@ -137,6 +142,15 @@ fun Panel(model: PanelModel, actions: PanelActions) {
                 }
                 if (model.languages.size > 1) {
                     TextButton(onClick = actions.language, enabled = !active) { Text(model.language.uppercase()) }
+                }
+                if (model.phoneModel) {
+                    TextButton(
+                        onClick = actions.where,
+                        enabled = !active,
+                        modifier = Modifier.semantics { stateDescription = whereDescription(model.where) },
+                    ) {
+                        Text(whereLabel(model.where))
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 when {

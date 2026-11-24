@@ -62,6 +62,13 @@ class ProfileTest {
         assertEquals(0, p.noSpeechSec)
     }
 
+    @Test
+    fun power_status_parses_and_defaults_to_none() {
+        assertEquals(emptyList<PowerStatus>(), parseProfile(full).power)
+        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"power\":[{\"server\":\"http://b:8178\",\"url\":\"http://b:8180/power.json\"}],"))
+        assertEquals(listOf(PowerStatus("http://b:8178", "http://b:8180/power.json")), p.power)
+    }
+
     @Test(expected = UnsupportedProfile::class)
     fun rejects_future_version() {
         parseProfile("""{"version":2,"servers":"a new shape"}""")
