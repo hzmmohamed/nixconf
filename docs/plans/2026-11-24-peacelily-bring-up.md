@@ -73,7 +73,36 @@ Commits on `peacelily-prep`:
 
 ## 3. Decisions for you
 
-### 3.1 CUDA package set (backlog: `nixpkgs-cuda` pin)
+### 3.1 CUDA package set (backlog: `nixpkgs-cuda` pin): decided, A
+
+**Done** ("ai-server: CUDA builds for STT/TTS …"). Whisper, Piper and Kokoro now
+use CUDA builds; Whisper switched to `turbo` (large-v3-turbo) at `int8_float16`.
+What changed, beyond the sketch below:
+
+- llama.cpp now comes from `pkgsCuda` too. Same store path as the old override.
+- Piper's upstream unit hides the GPU even with `useCUDA` (`PrivateDevices`,
+  empty `DeviceAllow`), so ai-server opens the NVIDIA devices for it.
+- `sttLibrary = "faster-whisper"`: `auto` with `en` adds the unused sherpa deps.
+- Kokoro's `--app-dir` pointed at `/nix/store` (the script was a bare file), so
+  uvicorn could not import it. Fixed (`writeTextDir`).
+- The CPU-fallback warning is gone.
+
+Dry run (2026-11-24, `nix build --dry-run`): torch, CTranslate2, onnxruntime,
+piper-tts and llama.cpp all substitute from cache.nixos-cuda.org; the local
+builds are config files, the Whisper Python wrapper and Kokoro's Python env.
+The closure is a ~12.7 GiB download (CUDA libraries included).
+
+**Before each `nix flake update`**, check the new rev is on the CUDA cache, or
+deploying peacelily compiles torch & co. (hours). The check, with the new lock:
+
+```sh
+for a in python313Packages.torch python313Packages.ctranslate2 onnxruntime wyoming-piper llama-cpp; do
+  p=$(nix eval --raw --impure --expr "(import (builtins.getFlake (toString ./.)).inputs.nixpkgs { system = \"x86_64-linux\"; config = { allowUnfree = true; cudaSupport = true; }; }).$a.outPath")
+  echo "$a $(curl -s -o /dev/null -w '%{http_code}' https://cache.nixos-cuda.org/$(basename $p | cut -d- -f1).narinfo)"
+done   # all 200, or wait / consider option B
+```
+
+The original analysis:
 
 On the current nixpkgs rev (`b349185`), **cache.nixos-cuda.org already has the
 `cudaSupport = true` builds** of everything ai-server needs. Checked 2026-11-24
@@ -110,8 +139,7 @@ Pick one:
   socket-activated with idle unload). This is the better fit for the
   `dictate` clients/phone anyway.
 
-Recommendation: A, with Whisper `large-v3-turbo`. Say the word and Claude
-implements it.
+Recommendation: A, with Whisper `large-v3-turbo`. (Chosen.)
 
 ### 3.2 Per-host age key (security audit)
 
@@ -310,5 +338,11 @@ existing account(s). After a reinstall (fresh DB) registration is closed: set
 `ALLOW_REGISTRATION = true` in `ai-server.nix`, deploy, register, set it back,
 and deploy again.
 
-Expected warning on every eval/deploy until §3.1 is decided:
-`ai-server: nixpkgs is not built with cudaSupport …`.
+GPU use by the voice services (§3.1). Speak to a Wyoming satellite or Home
+Assistant (or ask LibreChat to read a message aloud) first, so the models load:
+
+```sh
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+# expect wyoming-faster-whisper (~1.5 GB), python (kokoro), wyoming-piper, llama-server
+journalctl -u wyoming-faster-whisper-english -u wyoming-piper-english -u kokoro-tts -b --no-pager | grep -iE 'cuda|error' | tail
+```

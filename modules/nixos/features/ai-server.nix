@@ -1,4 +1,4 @@
-{...}: {
+{inputs, ...}: {
   flake.nixosModules.ai-server = {
     pkgs,
     lib,
@@ -9,16 +9,23 @@
     tailscaleIf = config.services.tailscale.interfaceName;
     librechatSecrets = ../../.. + "/secrets/${config.networking.hostName}/librechat.yaml";
 
-    llama-cpp-cuda = pkgs.llama-cpp.override {cudaSupport = true;};
-    llama-server = lib.getExe' llama-cpp-cuda "llama-server";
+    # CUDA builds of the AI packages only (docs/plans/2026-11-24-peacelily-bring-up.md,
+    # "CUDA package set"): the same nixpkgs rev with cudaSupport, so nothing
+    # else in the system changes. Default config on purpose (no
+    # cudaCapabilities etc.): any deviation changes the store paths and
+    # misses cache.nixos-cuda.org, which builds exactly this. That cache only
+    # substitutes once its hydra has built our rev: check before a flake
+    # update, or torch/CTranslate2/onnxruntime build from source (hours).
+    pkgsCuda = import inputs.nixpkgs {
+      inherit (pkgs.stdenv.hostPlatform) system;
+      config = {
+        allowUnfree = true;
+        cudaSupport = true;
+      };
+    };
 
-    # The STT/TTS stacks (CTranslate2, onnxruntime, torch) only use the GPU
-    # when the package set is built with CUDA (nixpkgs.config.cudaSupport;
-    # docs/plans/2026-11-24-peacelily-bring-up.md, "CUDA package set"). Until
-    # then they run on the CPU: asking a CPU-only CTranslate2 for `cuda`
-    # makes faster-whisper exit at startup. llama.cpp has its own CUDA
-    # override (above) and uses the GPU either way.
-    cudaPkgs = pkgs.config.cudaSupport or false;
+    llama-cpp-cuda = pkgsCuda.llama-cpp;
+    llama-server = lib.getExe' llama-cpp-cuda "llama-server";
 
     # One flag per list element, joined with spaces: rules out the
     # `--no-mmproj--ctx-size` class of bug. Fixed ports instead of llama-swap's
@@ -43,7 +50,7 @@
       "--spec-type ngram-simple"
     ];
 
-    kokoroPython = pkgs.python313.withPackages (ps: [
+    kokoroPython = pkgsCuda.python313.withPackages (ps: [
       ps.kokoro
       ps.fastapi
       ps.uvicorn
@@ -51,56 +58,54 @@
       ps.numpy
     ]);
 
-    kokoroServer = pkgs.writeTextFile {
-      name = "kokoro_server.py";
-      text = ''
-        import io
-        import numpy as np
-        import soundfile as sf
-        from fastapi import FastAPI, HTTPException
-        from fastapi.responses import StreamingResponse
-        from pydantic import BaseModel
-        from kokoro import KPipeline
+    # A directory holding kokoro_server.py, for uvicorn's --app-dir.
+    kokoroServer = pkgs.writeTextDir "kokoro_server.py" ''
+      import io
+      import numpy as np
+      import soundfile as sf
+      from fastapi import FastAPI, HTTPException
+      from fastapi.responses import StreamingResponse
+      from pydantic import BaseModel
+      from kokoro import KPipeline
 
-        app = FastAPI()
+      app = FastAPI()
 
-        # Load pipeline once at startup — uses CUDA if available
-        pipeline = KPipeline(lang_code="a")  # "a" = American English
+      # Load pipeline once at startup (on the GPU: torch is the CUDA build)
+      pipeline = KPipeline(lang_code="a")  # "a" = American English
 
-        VOICES = [
-          "af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky",
-          "am_adam", "am_michael", "am_echo",
-          "bf_emma", "bf_isabella", "bm_george", "bm_daniel",
-        ]
+      VOICES = [
+        "af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky",
+        "am_adam", "am_michael", "am_echo",
+        "bf_emma", "bf_isabella", "bm_george", "bm_daniel",
+      ]
 
-        class SpeechRequest(BaseModel):
-          model: str = "kokoro"
-          input: str
-          voice: str = "af_heart"
-          response_format: str = "wav"
-          speed: float = 1.0
+      class SpeechRequest(BaseModel):
+        model: str = "kokoro"
+        input: str
+        voice: str = "af_heart"
+        response_format: str = "wav"
+        speed: float = 1.0
 
-        @app.get("/v1/models")
-        def list_models():
-          return {"object": "list", "data": [{"id": "kokoro", "object": "model"}]}
+      @app.get("/v1/models")
+      def list_models():
+        return {"object": "list", "data": [{"id": "kokoro", "object": "model"}]}
 
-        @app.post("/v1/audio/speech")
-        def synthesize(req: SpeechRequest):
-          if not req.input.strip():
-            raise HTTPException(status_code=400, detail="input is empty")
-          voice = req.voice if req.voice in VOICES else "af_heart"
-          audio_chunks = []
-          for _, _, audio in pipeline(req.input, voice=voice, speed=req.speed):
-            audio_chunks.append(audio)
-          if not audio_chunks:
-            raise HTTPException(status_code=500, detail="synthesis produced no audio")
-          samples = np.concatenate(audio_chunks)
-          buf = io.BytesIO()
-          sf.write(buf, samples, 24000, format="WAV")
-          buf.seek(0)
-          return StreamingResponse(buf, media_type="audio/wav")
-      '';
-    };
+      @app.post("/v1/audio/speech")
+      def synthesize(req: SpeechRequest):
+        if not req.input.strip():
+          raise HTTPException(status_code=400, detail="input is empty")
+        voice = req.voice if req.voice in VOICES else "af_heart"
+        audio_chunks = []
+        for _, _, audio in pipeline(req.input, voice=voice, speed=req.speed):
+          audio_chunks.append(audio)
+        if not audio_chunks:
+          raise HTTPException(status_code=500, detail="synthesis produced no audio")
+        samples = np.concatenate(audio_chunks)
+        buf = io.BytesIO()
+        sf.write(buf, samples, 24000, format="WAV")
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="audio/wav")
+    '';
   in {
     options.preferences.ai-server.qdrantApiKey.enable = lib.mkEnableOption ''
       a Qdrant API key from sops (secrets/<hostname>/qdrant.yaml, key
@@ -108,11 +113,6 @@
       Clients then send it in the `api-key` header; the dashboard prompts for it'';
 
     config = {
-      warnings = lib.optional (!cudaPkgs) ''
-        ai-server: nixpkgs is not built with cudaSupport, so Whisper STT,
-        Piper and Kokoro TTS run on the CPU (llama.cpp still uses the GPU).
-        See docs/plans/2026-11-24-peacelily-bring-up.md, "CUDA package set".'';
-
       # Use prebuilt mongodb-ce instead of building mongodb from source
       nixpkgs.overlays = [
         (_final: prev: {
@@ -228,14 +228,18 @@
       # tailnet; the firewall admits their ports on tailscale0 only.
 
       # --- Wyoming Faster Whisper (STT) ---
+      # turbo (large-v3-turbo) at int8_float16 holds ~1.5 GB of VRAM, so it
+      # fits beside the largest llama-swap model; large-v3 (~3-4 GB) doesn't.
+      services.wyoming.faster-whisper.package = pkgsCuda.wyoming-faster-whisper;
       services.wyoming.faster-whisper.servers.english = {
         enable = true;
-        model = "large-v3";
+        model = "turbo";
         language = "en";
-        device =
-          if cudaPkgs
-          then "cuda"
-          else "cpu";
+        device = "cuda";
+        # "auto" + en adds the sherpa (Parakeet) deps to the package, unused
+        # once a Whisper model is named.
+        sttLibrary = "faster-whisper";
+        extraArgs = ["--compute-type" "int8_float16"];
         uri = "tcp://0.0.0.0:10300";
       };
 
@@ -254,12 +258,11 @@
         environment = {
           # HF model cache
           XDG_CACHE_HOME = "/var/cache/kokoro-tts";
-          # Use CUDA if available
           PYTORCH_CUDA_ALLOC_CONF = "max_split_size_mb:512";
         };
         serviceConfig = {
           Type = "simple";
-          ExecStart = "${kokoroPython}/bin/uvicorn --app-dir ${builtins.dirOf kokoroServer} kokoro_server:app --host 127.0.0.1 --port 8880";
+          ExecStart = "${kokoroPython}/bin/uvicorn --app-dir ${kokoroServer} kokoro_server:app --host 127.0.0.1 --port 8880";
           Restart = "on-failure";
           RestartSec = 10;
           CacheDirectory = "kokoro-tts";
@@ -269,11 +272,24 @@
       };
 
       # --- Wyoming Piper (TTS) — kept for Home Assistant / Wyoming satellites ---
+      services.wyoming.piper.package = pkgsCuda.wyoming-piper;
       services.wyoming.piper.servers.english = {
         enable = true;
         voice = "en-us-ryan-high";
         uri = "tcp://0.0.0.0:10200";
-        useCUDA = cudaPkgs;
+        useCUDA = true;
+      };
+      # The upstream unit keeps PrivateDevices and an empty DeviceAllow even
+      # with useCUDA, which hides the GPU; admit the NVIDIA devices the way
+      # the faster-whisper module does for device = "cuda".
+      systemd.services.wyoming-piper-english.serviceConfig = {
+        PrivateDevices = lib.mkForce false;
+        DeviceAllow = lib.mkForce [
+          "char-nvidia-uvm"
+          "char-nvidia-frontend"
+          "char-nvidia-caps"
+          "char-nvidiactl"
+        ];
       };
 
       # --- Wyoming OpenWakeWord ---
