@@ -130,6 +130,8 @@
       "applications:codium" = "code";
       "applications:thunar" = "fm";
       "applications:org.keepassxc.KeePassXC" = "kp";
+      "applications:send-clipboard-to-phone" = "ph";
+      "applications:send-history-to-phone" = "phh";
       "clipboard:history" = "cb";
       "core:search-emojis" = "emoji";
       "wm:switch-windows" = "win";
