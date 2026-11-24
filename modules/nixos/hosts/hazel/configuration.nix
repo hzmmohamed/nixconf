@@ -30,6 +30,7 @@
       self.nixosModules.blueman
       self.nixosModules.vicinae
       self.nixosModules.photos-client
+      self.nixosModules.untrusted-browser
       self.nixosModules.vicinae-wallpapers
       self.nixosModules.mime-defaults
       self.nixosModules.bibata-cursor
