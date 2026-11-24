@@ -7,14 +7,29 @@
   }: let
     cfg = config.preferences.ai-server;
     tailscaleIf = config.services.tailscale.interfaceName;
+    librechatSecrets = ../../.. + "/secrets/${config.networking.hostName}/librechat.yaml";
 
     llama-cpp-cuda = pkgs.llama-cpp.override {cudaSupport = true;};
     llama-server = lib.getExe' llama-cpp-cuda "llama-server";
 
+    # The STT/TTS stacks (CTranslate2, onnxruntime, torch) only use the GPU
+    # when the package set is built with CUDA (nixpkgs.config.cudaSupport;
+    # docs/plans/2026-11-24-peacelily-bring-up.md, "CUDA package set"). Until
+    # then they run on the CPU: asking a CPU-only CTranslate2 for `cuda`
+    # makes faster-whisper exit at startup. llama.cpp has its own CUDA
+    # override (above) and uses the GPU either way.
+    cudaPkgs = pkgs.config.cudaSupport or false;
+
     # One flag per list element, joined with spaces: rules out the
-    # `--no-mmproj--ctx-size` class of bug. llama-swap substitutes ${PORT};
-    # llama-server itself binds 127.0.0.1 (its default host).
-    mkCmd = args: lib.concatStringsSep " " ([llama-server] ++ args ++ ["--port \${PORT}"]);
+    # `--no-mmproj--ctx-size` class of bug. Fixed ports instead of llama-swap's
+    # ${PORT} so Prometheus can scrape each llama-server's /metrics directly
+    # (monitoring.nix reads the `proxy` URLs): only a loaded model answers,
+    # and scraping never triggers a load. llama-server binds 127.0.0.1 (its
+    # default host).
+    mkModel = port: args: {
+      cmd = lib.concatStringsSep " " ([llama-server] ++ args ++ ["--port ${toString port}" "--metrics"]);
+      proxy = "http://127.0.0.1:${toString port}";
+    };
 
     # Shared by the chat/coding models: tool calling needs the Jinja chat
     # template (default on llama.cpp 9190; explicit so a version bump can't
@@ -93,6 +108,11 @@
       Clients then send it in the `api-key` header; the dashboard prompts for it'';
 
     config = {
+      warnings = lib.optional (!cudaPkgs) ''
+        ai-server: nixpkgs is not built with cudaSupport, so Whisper STT,
+        Piper and Kokoro TTS run on the CPU (llama.cpp still uses the GPU).
+        See docs/plans/2026-11-24-peacelily-bring-up.md, "CUDA package set".'';
+
       # Use prebuilt mongodb-ce instead of building mongodb from source
       nixpkgs.overlays = [
         (_final: prev: {
@@ -121,7 +141,7 @@
 
           models = {
             # OpenCode `qwen-coder`. 9B Q4 (~6.5 GB) + 64k q8_0 KV fits in 16 GB.
-            "qwen3.5:9b-coding".cmd = mkCmd ([
+            "qwen3.5:9b-coding" = mkModel 8010 ([
                 "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
                 "--alias qwen3.5:9b-coding"
                 "--no-mmproj"
@@ -134,7 +154,7 @@
                 "--reasoning on"
               ]
               ++ chatFlags);
-            "qwen3.5:9b".cmd = mkCmd ([
+            "qwen3.5:9b" = mkModel 8011 ([
                 "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
                 "--ctx-size 32768"
                 "--batch-size 2048"
@@ -144,7 +164,7 @@
                 "--chat-template-kwargs '{\"enable_thinking\":true}'"
               ]
               ++ chatFlags);
-            "qwen3.5:9b-nothinker".cmd = mkCmd ([
+            "qwen3.5:9b-nothinker" = mkModel 8012 ([
                 "-hf unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL"
                 "--ctx-size 32768"
                 "--batch-size 2048"
@@ -157,7 +177,7 @@
             # OpenCode `qwen-moe`. ~22 GB of weights can't fit in 16 GB VRAM, so
             # no --gpu-layers: llama.cpp's --fit (default on) places layers and
             # keeps MoE expert weights on the CPU around the fixed 64k context.
-            "qwen3.5:35b-a3b".cmd = mkCmd ([
+            "qwen3.5:35b-a3b" = mkModel 8013 ([
                 "-hf unsloth/Qwen3.5-35B-A3B-GGUF:UD-Q4_K_XL"
                 "--ctx-size 65536"
                 "--parallel 1"
@@ -167,7 +187,7 @@
               ]
               ++ chatFlags);
             # OpenCode `qwen-small` (titles, summaries) and LibreChat titles.
-            "qwen3.5:4b".cmd = mkCmd ([
+            "qwen3.5:4b" = mkModel 8014 ([
                 "-hf unsloth/Qwen3.5-4B-GGUF:Q8_0"
                 "--ctx-size 32768"
                 "--batch-size 2048"
@@ -176,7 +196,7 @@
                 "--gpu-layers 99"
               ]
               ++ chatFlags);
-            "embeddinggemma:300m".cmd = mkCmd [
+            "embeddinggemma:300m" = mkModel 8015 [
               "-hf ggml-org/embeddinggemma-300M-GGUF"
               "--embeddings"
               "--batch-size 2048"
@@ -212,7 +232,10 @@
         enable = true;
         model = "large-v3";
         language = "en";
-        device = "cuda";
+        device =
+          if cudaPkgs
+          then "cuda"
+          else "cpu";
         uri = "tcp://0.0.0.0:10300";
       };
 
@@ -250,7 +273,7 @@
         enable = true;
         voice = "en-us-ryan-high";
         uri = "tcp://0.0.0.0:10200";
-        useCUDA = true;
+        useCUDA = cudaPkgs;
       };
 
       # --- Wyoming OpenWakeWord ---
@@ -310,19 +333,11 @@
       #   owner = "searx";
       # };
 
-      # --- LibreChat secrets ---
-      sops.secrets."librechat_creds_key" = {
-        sopsFile = ../../../secrets/shared/librechat.yaml;
-      };
-      sops.secrets."librechat_creds_iv" = {
-        sopsFile = ../../../secrets/shared/librechat.yaml;
-      };
-      sops.secrets."librechat_jwt_secret" = {
-        sopsFile = ../../../secrets/shared/librechat.yaml;
-      };
-      sops.secrets."librechat_jwt_refresh_secret" = {
-        sopsFile = ../../../secrets/shared/librechat.yaml;
-      };
+      # --- LibreChat secrets (secrets/<hostname>/librechat.yaml) ---
+      sops.secrets."librechat_creds_key".sopsFile = librechatSecrets;
+      sops.secrets."librechat_creds_iv".sopsFile = librechatSecrets;
+      sops.secrets."librechat_jwt_secret".sopsFile = librechatSecrets;
+      sops.secrets."librechat_jwt_refresh_secret".sopsFile = librechatSecrets;
 
       # --- LibreChat ---
       services.librechat = {
@@ -341,8 +356,9 @@
           # true, register, then set it back to false and redeploy.
           ALLOW_REGISTRATION = false;
           ALLOW_SOCIAL_LOGIN = false;
-          SEARCH = "true";
-          SEARXNG_URL = "http://127.0.0.1:8080";
+          # Conversation search needs Meilisearch (services.librechat.meilisearch,
+          # plus a master key in sops); off until that exists.
+          SEARCH = false;
         };
         settings = {
           version = "1.2.1";
@@ -356,12 +372,10 @@
                 voices = ["af_heart" "af_bella" "af_nicole" "af_sarah" "am_adam" "am_michael" "bf_emma" "bm_george"];
               };
             };
-            stt = {
-              openai = {
-                url = "http://localhost:10300/v1/audio/transcriptions";
-                model = "whisper";
-              };
-            };
+            # No server-side STT: 10300 is the Wyoming protocol (Home
+            # Assistant), not an OpenAI /v1/audio/transcriptions endpoint.
+            # LibreChat falls back to the browser's speech recognition
+            # (docs/plans/2026-04-03-llama-server-features-guide.md, "STT").
           };
           endpoints = {
             custom = [

@@ -20,7 +20,7 @@ It is NOT stored in this repo.
 | `shared/tailscale-oauth.yaml` | `tailscale_oauth` | Tailscale OAuth client secret (Auth Keys write; tag tag:provisioner only, which owns every host tag) for tagged logins (`preferences.tailscale.oauth.enable`: maple, peacelily, fern). Written by `scripts/fern/tailscale.sh store`; also encrypted for fern. Its ID is imported into OpenTofu (`infra/tailscale/oauth.tf`); a tofu rotation rewrites it via `scripts/tailscale/apply.sh` |
 | `admin/tailscale-admin.yaml` | `tailscale_admin_oauth` | Tailnet **admin** OAuth client (Policy File, DNS, Feature/Networking Settings, Devices Core, Auth Keys, OAuth Keys; tag tag:provisioner): the OpenTofu provider credential for `infra/tailscale`. **Primary age key only** (`.sops.yaml` rule `secrets/admin/`), no host keys. Written by `scripts/tailscale/store-admin.sh` (docs/plans/2026-11-17-tailnet-as-code.md). Not created yet |
 | `shared/wifi.yaml` | `wifi_env` | Home Wi-Fi PSK for NetworkManager (`wifi-home` feature) |
-| `shared/librechat.yaml` | `librechat_creds_key`, `librechat_creds_iv`, `librechat_jwt_secret`, `librechat_jwt_refresh_secret` | LibreChat on peacelily (`ai-server`) |
+| `peacelily/librechat.yaml` | `librechat_creds_key`, `librechat_creds_iv`, `librechat_jwt_secret`, `librechat_jwt_refresh_secret` | LibreChat on peacelily (`ai-server`) |
 | `shared/ai-search.yaml` | `searx_secret_key` | SearXNG (`ai-server`). Referenced but not created yet |
 | `shared/user.yaml` | `user-hashed-password`, `syncthing-gui-password` | Opt-in (`preferences.user.passwordFromSops`, `preferences.syncthing.guiPasswordFromSops`). Not created yet |
 | `atuin.yaml` | `atuin_key` | Atuin shell history sync encryption key |
