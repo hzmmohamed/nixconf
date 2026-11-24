@@ -17,8 +17,8 @@
 #               pressure kills in agent-host / agent-t3code. Builds are capped
 #               in nix-daemon's own cgroup, where the kernel kills a compiler
 #               rather than the daemon (OOMPolicy=continue).
-#   rescue      (desktop) Ctrl+Shift+Escape (Mod+Escape locks) toggles a
-#               btop started by sway at login, so it lives in the protected
+#   rescue      (desktop) Ctrl+Shift+Escape (Mod+Escape locks) toggles an
+#               htop started by sway at login, so it lives in the protected
 #               session scope and is already resident when it is needed. `q`
 #               restarts it, closing the window ends it; the key starts a
 #               new one.
@@ -38,33 +38,29 @@
     user = config.preferences.user.name;
     font = "${self.fonts.monospace}:size=${toString self.fonts.size}";
 
-    # btop sorted by memory, memory + processes only. It writes its config
-    # back on exit, so it runs from a copy in the runtime dir.
-    btopConf = pkgs.writeText "rescue-btop.conf" ''
-      color_theme = "current"
-      theme_background = true
-      shown_boxes = "mem proc"
-      proc_sorting = "memory"
-      proc_tree = false
-      update_ms = 1000
-    '';
+    # htop sorted by memory: works at any window size (btop refuses below a
+    # minimum), header still shows memory/swap, F9 or k kills. Its own
+    # htoprc lives in the runtime dir, so ~/.config/htop is left alone.
     rescueRun = pkgs.writeShellApplication {
       name = "rescue-top-run";
-      runtimeInputs = [pkgs.btop pkgs.coreutils];
+      runtimeInputs = [pkgs.htop pkgs.coreutils];
       text = ''
-        conf="''${XDG_RUNTIME_DIR:-/tmp}/rescue-btop.conf"
+        export HTOPRC="''${XDG_RUNTIME_DIR:-/tmp}/rescue-htoprc"
         while true; do
-          install -m 600 ${btopConf} "$conf"
-          btop --config "$conf" --themes-dir "$HOME/.config/btop/themes" || sleep 1
+          htop --sort-key=PERCENT_MEM || sleep 1
         done
       '';
     };
+    # The window rule's resize does not survive the first scratchpad show
+    # (it comes up at foot's default 70x22), so size it on every show; when
+    # the toggle hid it instead, the workspace criterion matches nothing.
     rescueTop = pkgs.writeShellApplication {
       name = "rescue-top";
       runtimeInputs = [pkgs.sway pkgs.foot];
       text = ''
-        if [ "''${1:-}" != --start ] \
-          && swaymsg '[app_id="^rescue-top$"] scratchpad show' >/dev/null 2>&1; then
+        crit='[app_id="^rescue-top$"]'
+        if [ "''${1:-}" != --start ] && swaymsg "$crit scratchpad show" >/dev/null 2>&1; then
+          swaymsg "''${crit%]} workspace=__focused__] resize set width 80 ppt height 80 ppt, move position center" >/dev/null 2>&1 || true
           exit 0
         fi
         exec foot --app-id rescue-top --override 'font=${font}' ${lib.getExe rescueRun}
@@ -152,7 +148,7 @@
           window.commands = [
             {
               criteria.app_id = "^rescue-top$";
-              command = "floating enable, resize set width 80 ppt height 80 ppt, move position center, move scratchpad";
+              command = "floating enable, move scratchpad";
             }
           ];
           keybindings = lib.mkOptionDefault {
