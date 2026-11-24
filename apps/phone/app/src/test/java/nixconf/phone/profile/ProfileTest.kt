@@ -54,10 +54,12 @@ class ProfileTest {
         assertEquals(550, old.pauseMs)
         assertEquals(25, old.maxSegmentSec)
         assertEquals(MODE_BATCH, old.mode)
-        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"pauseMs\":700,\"maxSegmentSec\":20,\"mode\":\"stream\","))
+        assertEquals(10, old.noSpeechSec)
+        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"pauseMs\":700,\"maxSegmentSec\":20,\"mode\":\"stream\",\"noSpeechSec\":0,"))
         assertEquals(700, p.pauseMs)
         assertEquals(20, p.maxSegmentSec)
         assertEquals(MODE_STREAM, p.mode)
+        assertEquals(0, p.noSpeechSec)
     }
 
     @Test(expected = UnsupportedProfile::class)

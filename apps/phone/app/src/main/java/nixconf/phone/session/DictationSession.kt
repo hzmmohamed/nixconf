@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ import nixconf.phone.engine.RemoteTranscriber
 import nixconf.phone.engine.chooseEngine
 import nixconf.phone.profile.MODE_STREAM
 import nixconf.phone.profile.Profile
+import nixconf.phone.segment.RATE
 import nixconf.phone.segment.Segment
 import nixconf.phone.segment.SpeechProbability
 import nixconf.phone.segment.clean
@@ -113,6 +115,9 @@ sealed interface SessionState {
  * transcribed at stop. Mode (profile): batch types the text at stop; stream
  * shows it as composing text as it grows and commits it at stop. Anything
  * that goes wrong leaves the draft PENDING with its audio (and text, if any).
+ * With a VAD, a recording with no speech in its first noSpeechSec (profile)
+ * stops itself (Kept, [NO_SPEECH]): a muted or busy mic shows at once, not
+ * after minutes of talking into it.
  * Call from the main thread.
  */
 class DictationSession(
@@ -213,6 +218,38 @@ class DictationSession(
             }
         }
         if (feed != null) cur.segmented = scope.async { transcribeSegments(cur, feed) }
+        val quietSec = p?.noSpeechSec ?: NO_SPEECH_SEC
+        if (feed != null && quietSec > 0) scope.launch { watchForSpeech(cur, feed, quietSec) }
+    }
+
+    // No speech in the first [sec] seconds of audio (or no audio at all for
+    // twice that): the session stops itself. Ends with the session.
+    private suspend fun watchForSpeech(cur: Current, feed: SegmentFeed, sec: Int) {
+        val limitMs = sec * 1000L
+        delay(limitMs)
+        while (current === cur && !cur.stopped) {
+            if (feed.heard || feed.failed) return
+            if (feed.processed >= sec.toLong() * RATE || clock() - cur.startedMs >= 2 * limitMs) {
+                noSpeech(cur)
+                return
+            }
+            delay(WATCH_MS)
+        }
+    }
+
+    // Nothing to transcribe: the draft is CANCELLED (its audio kept for
+    // keepDays) and the panel says why until the next field or recording.
+    private fun noSpeech(cur: Current) {
+        cur.stopped = true
+        cur.chosen.cancel()
+        cur.segmented?.cancel()
+        cur.feed?.cancel()
+        audio.stop()
+        closeQuietly(cur.writer)
+        dropComposing(cur)
+        val draft = cur.draft.copy(status = DraftStatus.CANCELLED, error = NO_SPEECH)
+        save(draft)
+        end(SessionState.Kept(draft, NO_SPEECH))
     }
 
     /**
@@ -524,11 +561,16 @@ class DictationSession(
         const val FIELD_CHANGED = "field changed"
         const val NO_SERVER = "no server reachable"
         const val NOTHING_HEARD = "nothing heard"
+        const val NO_SPEECH = "no speech"
         const val LOCAL_FAILED = "on-phone transcription failed"
 
         // Defaults when there is no profile (as the profile's).
         private const val PAUSE_MS = 550
         private const val MAX_SEGMENT_SEC = 25
+        private const val NO_SPEECH_SEC = 10
+
+        // How often the no-speech watchdog looks again once its time is up.
+        private const val WATCH_MS = 250L
 
         // Characters of the text so far that go into a segment's prompt.
         private const val PROMPT_CONTEXT = 200

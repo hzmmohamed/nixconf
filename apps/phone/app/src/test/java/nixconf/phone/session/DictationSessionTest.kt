@@ -524,6 +524,60 @@ class DictationSessionTest {
         assertFalse(java.io.File(d.dir, "segment.wav").exists())
     }
 
+    // --- no speech ---
+
+    @Test
+    fun no_speech_in_ten_seconds_stops_the_session() = runTest {
+        segmented(samples = speech(12.0 to false))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(9_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        advanceUntilIdle()
+        val kept = s.state.value as SessionState.Kept
+        assertEquals(DictationSession.NO_SPEECH, kept.reason)
+        assertFalse(audio.recording)
+        assertTrue(remoteCalls.isEmpty())
+        assertTrue(editor.commits.isEmpty())
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+        s.stop() // nothing left to stop
+        assertEquals(kept, s.state.value)
+    }
+
+    @Test
+    fun no_audio_at_all_stops_the_session_after_twice_the_time() = runTest {
+        segmented(samples = ShortArray(0))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(19_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        advanceTimeBy(2_000)
+        assertEquals(DictationSession.NO_SPEECH, (s.state.value as SessionState.Kept).reason)
+    }
+
+    @Test
+    fun speech_keeps_the_session_going_past_ten_seconds() = runTest {
+        segmented(samples = speech(1.0 to true, 11.0 to false), texts = listOf("Hello."))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(30_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("Hello."), s.state.value)
+    }
+
+    @Test
+    fun no_speech_watchdog_off_with_zero() = runTest {
+        profile = profile!!.copy(noSpeechSec = 0)
+        segmented(samples = speech(12.0 to false))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(60_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        s.cancel()
+    }
+
     @Test
     fun recording_shows_a_segment_being_transcribed() = runTest {
         segmented()
