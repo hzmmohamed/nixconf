@@ -20,6 +20,7 @@
 
       self.nixosModules.nvidia
       self.nixosModules.ai-server
+      self.nixosModules.monitoring
 
       self.nixosModules.sops
       self.nixosModules.openssh
