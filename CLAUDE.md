@@ -30,6 +30,8 @@ just lint             # deadnix (fatal) + statix (advisory)
 just eval <host>      # eval one host, no build
 just eval-all         # eval every nixosConfiguration: OK / FAIL / SKIP per host
 just check            # fmt-check + lint + eval-all — run before handing work back
+just affects [base]   # hosts whose system this change touches (default base: merge-base with main)
+just status           # per host: deployed commit vs main; "current" if its system equals main's
 nix run .#phone-app -- test   # Android app JVM tests (butternut only; apps/phone/)
 ```
 
@@ -37,6 +39,7 @@ nix run .#phone-app -- test   # Android app JVM tests (butternut only; apps/phon
 raw command sits next to each recipe in `justfile`, e.g.
 
 ```bash
+nix run .#fleet -- affects [base]    # / status; read-only, eval only (fleet.sh)
 nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath
 nix build --no-link .#checks.x86_64-linux.<host>-eval   # same, as a flake check
 nix build --no-link .#checks.x86_64-linux.treefmt       # read-only format check
@@ -148,7 +151,10 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   of desktop changes.
 - **Git workflow** ("Git" in the global agent guidelines): a thread works on
   its own branch/worktree, commits as it goes, and finishes with
-  `agent-push` + `gh pr create` (the user merges). `git push` stays denied;
+  `agent-push` + `gh pr create` (the user merges). Before the PR, run
+  `nix run .#fleet -- affects` and put its `Affects:` line in the PR body.
+  A thread is settled once merged **and** `just status` shows those hosts
+  current (laptops are deployed by hand). `git push` stays denied;
   `agent-push` pushes only the current non-default branch. Direct commits
   to main are fine for small changes in the main checkout (stage your own
   files only). Don't touch `.claude/settings.json`.
