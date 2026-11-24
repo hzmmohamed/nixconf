@@ -16,7 +16,7 @@ automatically. Single user (name in `modules/user.nix`). Public repo.
 | hazel | **Primary device**, carried | ThinkPad E14 Gen 2 (i5-1135G7), **256 GB disk: no big builds** (nix daemon offloads to butternut, `deploy` builds elsewhere). Sway, greetd, battery-aware. Edits the config and deploys any host |
 | butternut | Home desk: build server, agent host, cache | ASUS TUF laptop used as a **desktop**: broken internal panel, 21" external monitor, always on AC. Remote builder for hazel (`builderFor`), harmonia cache, builds its own closure on deploy (`buildOnTarget`). Sway. NVIDIA RTX 3050 (PRIME offload, dGPU kept awake for CUDA), LTS kernel. Split files: `hosts/butternut/{gpu,power,audio,games,network}.nix` |
 | maple | Headless always-on node | Laptop with a dead screen, lid closed. No desktop: SSH/Tailscale, syncthing, nix-serve, docker/k8s CLI. Lid/suspend ignored, user lingering |
-| peacelily | Headless GPU AI server | NVIDIA, llama-swap, Wyoming STT/TTS, Qdrant, LibreChat. **Not yet redeployed** with the current config |
+| peacelily | Headless GPU AI server | NVIDIA, llama-swap, Wyoming STT/TTS, Qdrant, LibreChat, Prometheus/Grafana (`monitoring`). **Not yet redeployed** with the current config: `docs/plans/2026-11-24-peacelily-bring-up.md` |
 | fern | On-demand EC2 agent host (eu-central-1) | Headless agent-host + T3 next to the d_abm S3 data; `cloud-box up/down`, idle auto-stop; IaC in `infra/aws/` (never `tofu apply` from an agent). **Not created yet**: `docs/plans/2026-11-17-aws-agent-host.md` |
 
 Test VMs: `desktop-vm` (Sway), `niri-desktop-vm` (Niri; currently broken, see below).

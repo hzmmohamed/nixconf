@@ -826,6 +826,12 @@ phone uses the services over the tailnet). The phone's tailnet name becomes
   ls /run/trusted-networks                              # expect: the Wi-Fi interface NOT listed
   ```
 
+## peacelily bring-up
+
+Runbook, decisions and verification: `docs/plans/2026-11-24-peacelily-bring-up.md` (§4).
+First contact is at the console (no sshd on the April system, Tailscale key likely
+expired); deploy from **butternut** with `DEPLOY_SSH_PORT=22 just deploy peacelily boot`.
+
 ## Immich pilot (butternut)
 
 Immich 3.x on butternut for phone backup until peacelily takes over (design:
