@@ -1,5 +1,8 @@
 {
-  # Placeholder — replace with output of nixos-generate-config on actual hardware
+  # PLACEHOLDER: generic modules, never generated on the machine. Replace with
+  #   ssh -p 7654 peacelily nixos-generate-config --show-hardware-config --no-filesystems
+  # (filesystems come from disko.nix). Runbook:
+  # docs/plans/2026-11-24-peacelily-bring-up.md.
   flake.nixosModules.hostPeacelily = {
     config,
     lib,

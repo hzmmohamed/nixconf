@@ -9,6 +9,10 @@
     ];
   };
 
+  # peacelily: headless, always-on GPU AI server at home (RTX 5060 Ti 16 GB):
+  # llama-swap, Wyoming STT/TTS, Qdrant, LibreChat, Prometheus + Grafana.
+  # No desktop stack; reach it over SSH (port 7654) or Tailscale SSH.
+  # Bring-up: docs/plans/2026-11-24-peacelily-bring-up.md.
   flake.nixosModules.hostPeacelily = {...}: {
     imports = [
       self.nixosModules.base
@@ -22,8 +26,6 @@
       self.nixosModules.wifi-home
       self.nixosModules.tailscale
       self.nixosModules.doas
-
-      self.nixosModules.powersave
 
       # disko
       inputs.disko.nixosModules.disko
@@ -39,8 +41,6 @@
       kernelParams = ["quiet"];
     };
 
-    boot.plymouth.enable = true;
-
     networking = {
       hostName = "peacelily";
       networkmanager.enable = true;
@@ -55,6 +55,25 @@
     preferences.tailscale.oauth.enable = true;
 
     hardware.cpu.intel.updateMicrocode = true;
+
+    # Compute-only GPU: keep it initialized between jobs (no cold start for
+    # the first CUDA call, nvidia-smi answers instantly).
+    hardware.nvidia.nvidiaPersistenced = true;
+
+    services.journald.extraConfig = ''
+      SystemMaxUse=1G
+      MaxRetentionSec=1month
+    '';
+
+    # Never sleep, whatever asks for it.
+    systemd.targets = {
+      sleep.enable = false;
+      suspend.enable = false;
+      hibernate.enable = false;
+      hybrid-sleep.enable = false;
+    };
+
+    time.timeZone = "Africa/Cairo";
 
     programs.nix-ld.enable = true;
 
