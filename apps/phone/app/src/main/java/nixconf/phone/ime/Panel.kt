@@ -260,7 +260,10 @@ private fun Status(model: PanelModel, password: Boolean, elapsedMs: Long, action
             LevelMeter(model.level)
             KeepOnToggle(state.background, actions.keepOn)
         }
-        is SessionState.Kept -> KeptActions(state.draft, state.draft.id in model.retrying, actions)
+        // No speech: nothing to retry.
+        is SessionState.Kept -> if (state.reason != DictationSession.NO_SPEECH) {
+            KeptActions(state.draft, state.draft.id in model.retrying, actions)
+        }
         else -> Unit
     }
 }

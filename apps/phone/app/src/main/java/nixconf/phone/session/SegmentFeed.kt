@@ -16,7 +16,8 @@ import nixconf.phone.segment.SpeechProbability
  * samples into a queue; VAD and segmenter run on [io], and the segments they
  * close come out in order on [segments], which closes after [end] (with the
  * open segment flushed). If the VAD fails, [segments] closes with its error.
- * [closed] counts the segments cut so far (read from any thread).
+ * [closed] counts the segments cut so far; [processed], [heard] and [failed]
+ * are for the no-speech watchdog (all read from any thread).
  */
 class SegmentFeed(
     vad: () -> SpeechProbability,
@@ -33,13 +34,29 @@ class SegmentFeed(
     @Volatile var closed = 0
         private set
 
+    /** Samples the VAD has seen so far. */
+    @Volatile var processed = 0L
+        private set
+
+    /** The VAD heard speech at least once. */
+    @Volatile var heard = false
+        private set
+
+    /** The VAD failed: [heard] means nothing. */
+    @Volatile var failed = false
+        private set
+
     private val job = scope.launch(io) {
         try {
             vad().use { v ->
                 val segmenter = Segmenter(v, pauseMs, maxSegmentSec)
                 val framer = Framer()
                 for (chunk in reads) {
-                    framer.push(chunk) { frame -> segmenter.feed(frame).forEach(::emit) }
+                    framer.push(chunk) { frame ->
+                        segmenter.feed(frame).forEach(::emit)
+                        if (segmenter.speaking) heard = true
+                    }
+                    processed += chunk.size
                 }
                 segmenter.flush().forEach(::emit)
             }
@@ -47,12 +64,14 @@ class SegmentFeed(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            failed = true
             reads.cancel() // later reads are dropped, not queued
             out.close(e)
         }
     }
 
     private fun emit(segment: Segment) {
+        heard = true
         closed++
         out.trySend(segment)
     }

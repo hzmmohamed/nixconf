@@ -8,6 +8,11 @@
     denoise = config.preferences.audio.denoise;
   in {
     options.preferences.audio.denoise = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "The DeepFilter noise-cancelling virtual source. Off on a host without a usable mic: the virtual source would otherwise look like a mic that records silence.";
+      };
       source = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
@@ -47,7 +52,7 @@
           pipewire."10-no-x11-bell"."context.properties"."module.x11.bell" = false;
 
           # cooler denoising
-          pipewire."99-input-denoising" = {
+          pipewire."99-input-denoising" = lib.mkIf denoise.enable {
             "context.modules" = [
               {
                 "name" = "libpipewire-module-filter-chain";

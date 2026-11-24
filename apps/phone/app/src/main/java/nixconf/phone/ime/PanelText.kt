@@ -122,6 +122,7 @@ fun keptText(reason: String): String = when (reason) {
     DictationSession.FIELD_CHANGED -> "Saved as draft (field changed)"
     DictationSession.NO_SERVER -> "Saved as draft: no server. Transcribes when one is back"
     DictationSession.NOTHING_HEARD -> "Nothing heard: check the level bar"
+    DictationSession.NO_SPEECH -> "Stopped: no speech heard. Mic muted or in use by another app?"
     DictationSession.LOCAL_FAILED -> "On-phone transcription failed: saved as draft"
     else -> "Saved as draft: $reason"
 }

@@ -25,7 +25,8 @@
 #                     draft retention, the on-phone Parakeet model (file
 #                     names, sizes, sha256 and URLs) and how recordings are
 #                     cut and delivered (pauseMs, maxSegmentSec: the laptops'
-#                     values; mode) (`phone.profile`; its shape is checked
+#                     values; mode), when a recording without speech stops
+#                     itself (noSpeechSec) (`phone.profile`; its shape is checked
 #                     against the app by checks.phone-profile)
 #   models/parakeet/  the Parakeet int8 files (self.dictationModels, the same
 #                     pins as the laptops)
@@ -119,7 +120,7 @@
         modelUrl = "${phoneUrl}/models/parakeet";
         base = builtins.toJSON {
           version = 1;
-          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode;
+          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec;
           localModel = {
             name = "parakeet-tdt-0.6b-v2-int8";
             language = "en";
@@ -260,6 +261,13 @@
           default = config.preferences.dictation.maxSegmentSec or 25;
           defaultText = lib.literalExpression "config.preferences.dictation.maxSegmentSec or 25";
           description = "Continuous speech is split at its quietest point before this length (phone).";
+        };
+
+        noSpeechSec = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = config.preferences.dictation.noSpeechSec or 10;
+          defaultText = lib.literalExpression "config.preferences.dictation.noSpeechSec or 10";
+          description = "A phone recording with no speech in its first this-many seconds stops itself and says so (0: never).";
         };
 
         mode = lib.mkOption {
