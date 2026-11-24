@@ -35,7 +35,7 @@ a redeploy needs no sops work.
 
 Commits on `peacelily-prep`:
 
-1. **ai-server** (`a08d174`)
+1. **ai-server** ("ai-server: CPU fallback for STT/TTS, …")
    - **Whisper would crash-loop.** It asked for `device = "cuda"`, but nixpkgs is
      not built with `cudaSupport`: CTranslate2 links only OpenBLAS, onnxruntime
      (Piper) and torch (Kokoro) are CPU builds. faster-whisper exits at startup
@@ -51,10 +51,10 @@ Commits on `peacelily-prep`:
    - **LibreChat `SEARCH` off.** It needs Meilisearch, which isn't configured. The
      dead `SEARXNG_URL` (searx is commented out) is gone too.
    - LibreChat secrets moved to `secrets/peacelily/` (per-host convention).
-2. **Host** (`4a3ef0c`): dropped `powersave` and plymouth. Added server basics
+2. **Host** ("peacelily: server basics, …"): dropped `powersave` and plymouth. Added server basics
    (as on maple) and nvidia-persistenced. Marked `hardware-configuration.nix` as
    a placeholder: it was never generated on the machine.
-3. **Monitoring** (`d894835`): ported from `feature/monitoring-stack` (below).
+3. **Monitoring** ("monitoring: Prometheus + Grafana feature, …"): ported from `feature/monitoring-stack` (below).
 
 ### `feature/monitoring-stack`: what was ported
 
