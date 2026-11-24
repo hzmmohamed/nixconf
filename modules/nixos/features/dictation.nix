@@ -35,7 +35,10 @@
 # headset is recorded through WirePlumber's `bluez_input.<MAC>` source, which
 # switches it to its headset profile for the session. The panel, the bar
 # tooltip and the draft name the mic; a headset sending only silence for 3 s
-# (busy with another device, e.g. the phone) raises a notice.
+# (busy with another device, e.g. the phone) raises a notice. No mic at all:
+# the press says so (persistent) and records nothing. No speech in the first
+# `noSpeechSec` (10 s), or only silence / no audio for that long later: the
+# session stops itself with a persistent error.
 #
 # Drafts: every recording is written to ~/<journalDir>/drafts/<date_time-id>/
 # on persistent disk as it happens (raw PCM, fsynced every 2 s and after
@@ -231,6 +234,7 @@
       whisper_model = lib.optionalString cfg.localMultilingual "${whisperSmall}";
       append_space = cfg.appendSpace;
       max_sec = cfg.maxSeconds;
+      no_speech_sec = cfg.noSpeechSec;
       pause_ms = cfg.pauseMs;
       max_segment_sec = cfg.maxSegmentSec;
       workers = 2;
@@ -433,6 +437,17 @@
         description = ''
           Safety stop for a forgotten latch (segments are typed as you go,
           so long sessions are fine; this is not a dictation limit).
+        '';
+      };
+
+      noSpeechSec = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 10;
+        description = ''
+          A session that hears no speech in its first this-many seconds, or
+          later gets only digital silence (or no audio at all) for that long,
+          stops itself with a persistent error notification: a missing,
+          muted or wrong mic shows at once, not after minutes. 0 disables.
         '';
       };
 

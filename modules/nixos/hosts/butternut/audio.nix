@@ -13,8 +13,11 @@
 # off "Pro Audio" in the mixer.
 {
   flake.nixosModules.hostButternut = {
-    # DeepFilter denoises the built-in mic only (never a Bluetooth headset mic).
-    preferences.audio.denoise.source = "alsa_input.usb-ASUSTeK_COMPUTER_INC._C-Media_R__Audio-00.analog-stereo";
+    # No microphone on butternut except a Bluetooth headset's: the C-Media
+    # input is the empty headphone jack and recorded near-silence that looked
+    # like a working mic. So no DeepFilter source either (it would wrap that
+    # input, or nothing, and pass for a mic too).
+    preferences.audio.denoise.enable = false;
 
     services.pipewire.wireplumber = {
       extraConfig = {
@@ -39,11 +42,14 @@
               actions.update-props."priority.session" = 1500;
             }
             {
-              # Built-in audio is a USB chip; use the duplex profile so the
-              # laptop mic exists (it was saved as output-only).
+              # Built-in audio is a USB chip. Output only: its input is the
+              # headphone jack's mic pin, with nothing plugged in, so without
+              # a Bluetooth headset there is no mic at all and dictation says
+              # so instead of recording silence. (A wired headset mic would
+              # need "output:analog-stereo+input:analog-stereo" back.)
               matches = [{"device.name" = "alsa_card.usb-ASUSTeK_COMPUTER_INC._C-Media_R__Audio-00";}];
               actions.update-props = {
-                "device.profile" = "output:analog-stereo+input:analog-stereo";
+                "device.profile" = "output:analog-stereo";
                 "api.acp.auto-profile" = false;
               };
             }
@@ -114,7 +120,7 @@
             },
             -- The headset mic (A2DP exposes it as a virtual source; recording
             -- from it triggers the HSP/HFP autoswitch). The built-in C-Media
-            -- input is only the empty headphone jack, so never prefer it.
+            -- input is switched off (output-only profile above).
             EventInterest {
               Constraint { "event.type", "=", "node-added" },
               Constraint { "media.class", "=", "Audio/Source" },

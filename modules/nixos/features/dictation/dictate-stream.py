@@ -156,6 +156,8 @@ def resolve_input(objs=None, pref=None):
     for i in inputs:
         if i["kind"] == "headset":
             return dict(i, note=note)
+    if not inputs:
+        return {"name": None, "label": "no microphone", "kind": "none", "note": note}
     label = next((i["label"] for i in inputs if i["name"] == default), None)
     return {"name": None, "label": label or "default input", "kind": "mic", "note": note}
 
@@ -179,7 +181,7 @@ def start_recorder(target=None):
 
 if __name__ == "__main__" and sys.argv[1:2] == ["record"]:
     INPUT = resolve_input(pref=os.environ.get("DICTATE_INPUT") or preferred_input())
-    RECORDER = start_recorder(INPUT["name"])
+    RECORDER = None if INPUT["kind"] == "none" else start_recorder(INPUT["name"])
 else:
     INPUT = RECORDER = None
 
@@ -189,6 +191,7 @@ import io  # noqa: E402
 import queue  # noqa: E402
 import random  # noqa: E402
 import re  # noqa: E402
+import select  # noqa: E402
 import shlex  # noqa: E402
 import shutil  # noqa: E402
 import socket  # noqa: E402
@@ -1053,6 +1056,7 @@ class Session:
         self.texts = []  # every transcribed segment, in order
         self.lines = []  # last committed texts (overlay, stream mode)
         self.failures = 0
+        self.error = None  # why the session stopped itself (no sound, no audio)
         self.cancelled = False
         self.latencies = []
         self.work = queue.Queue()
@@ -1240,8 +1244,8 @@ class Session:
         if n == 0:
             self.close_overlay()
             d.discard()  # no speech: nothing worth keeping
-            if d.meta["source"] == "mic":
-                notify("Nothing heard", "low", 1500)
+            if d.meta["source"] == "mic" and not self.error:
+                notify(f"Nothing heard from {self.input or 'the mic'}", "normal", 4000)
             return "empty"
         reason = None
         if self.failures:
@@ -1302,6 +1306,12 @@ def segment_all(samples, offset=0):
 def cmd_record(args):
     rec = RECORDER
     stop = {"why": None}
+    if rec is None:
+        write_state("idle")
+        Bar().refresh()
+        notify("No microphone connected: connect the headset, then dictate again.",
+               "critical", 0)
+        return
 
     def on_signal(sig, _frame):
         stop["why"] = "cancel" if sig == signal.SIGUSR2 else "stop"
@@ -1338,28 +1348,61 @@ def cmd_record(args):
     # A headset playing for another device (multipoint) gives pure zeros.
     started = time.monotonic()
     heard = INPUT["kind"] != "headset"
+    # Watchdog: a mic that gives no speech in the first `no_speech_sec`, or
+    # only digital silence / no audio at all for that long later on (muted,
+    # gone, busy elsewhere), stops the session with a persistent error
+    # instead of recording nothing for minutes.
+    quiet_sec = CFG["no_speech_sec"]
+    speech_seen = False
+    last_sound = last_data = started
     max_sec = CFG["max_sec"]
     last_tick = last_push = last_sync = time.monotonic()
     last_keep = last_tick
     level_acc, level_n = 0.0, 0
     pending = b""
     fd = rec.stdout.fileno()
+
+    def give_up(why):
+        if stop["why"] is None:
+            stop["why"] = "error"
+            sess.error = (f"Stopped: {why}. Check the mic (connected, not muted, "
+                          "not busy with another device) or pick another in "
+                          "“Dictation drafts” → Microphone.")
+            try:
+                rec.terminate()
+            except OSError:
+                pass
+
     while True:
+        ready, _, _ = select.select([fd], [], [], 1.0)
+        now = time.monotonic()
+        if not ready:
+            if quiet_sec and now - last_data >= quiet_sec:
+                give_up(f"no audio from {mic} for {quiet_sec} s")
+            continue
         data = os.read(fd, 4096)
         if not data:
             break
+        last_data = now
         draft.write_audio(data)
         pending += data
+        if data.count(0) != len(data):
+            last_sound = now
         if not heard:
             if data.count(0) != len(data):
                 heard = True
                 if sess.warning:
                     sess.warning = ""
-            elif time.monotonic() - started >= 3 and not sess.warning:
+            elif now - started >= 3 and not sess.warning:
                 sess.warning = f"No sound from {mic}: is it busy with another device?"
                 notify(f"No sound from {mic}. If it is playing for another device "
                        "(your phone), pause it there, or pick another mic in "
                        "“Dictation drafts” → Microphone.", "normal", 8000)
+        # Audio time, not wall time: the pipe may still hold unread audio.
+        if quiet_sec and not speech_seen and seg.pos >= quiet_sec * RATE:
+            give_up(f"no speech heard from {mic} in {quiet_sec} s")
+        elif quiet_sec and now - last_sound >= quiet_sec:
+            give_up(f"{mic} sent only silence for {quiet_sec} s")
         n = len(pending) // BYTES_PER_FRAME * BYTES_PER_FRAME
         frames, pending = pending[:n], pending[n:]
         for k in range(0, n, BYTES_PER_FRAME):
@@ -1368,6 +1411,7 @@ def cmd_record(args):
             level_n += len(f)
             for s in seg.feed(f):
                 sess.submit(s, time.time())
+            speech_seen = speech_seen or seg.speaking
         now = time.monotonic()
         if now - last_sync >= 2:
             draft.sync()
@@ -1414,6 +1458,9 @@ def cmd_record(args):
     write_state("idle")
     bar.refresh()
     log(f"{status}: {stats(sess.latencies)}")
+    if sess.error:
+        log(sess.error)
+        notify(sess.error, "critical", 0)
     if status == "done":
         draft.compress()
 
