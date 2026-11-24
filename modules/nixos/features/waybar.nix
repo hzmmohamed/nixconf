@@ -2,7 +2,7 @@
 # swaync + separate tools). Gated on preferences.desktopShell == "waybar".
 #
 # Layout: vertical bar on the right edge, solid background, no blur/alpha.
-# Toggle visibility with Mod4+Shift+b (SIGUSR1). Status widgets that only matter
+# Hidden only by focus mode (Mod4+z, SIGUSR1). Status widgets that only matter
 # sometimes (CPU, memory, disk, temperature, sync) stay hidden until relevant.
 # No workspace indicator (navigation is by muscle memory); the middle is a quiet
 # activity column — agents, nix builds, privacy — empty while idle.
@@ -112,6 +112,8 @@
       @define-color error ${p.error};
       @define-color on-error ${p.onError};
       @define-color warning ${p.warning};
+      @define-color mode ${p.mode};
+      @define-color on-mode ${p.onMode};
       @define-color success ${p.success};
     '';
 
@@ -150,7 +152,7 @@
         ["clock" "custom/language" "custom/notification"]
         ++ lib.optional (idle != null) "custom/caffeine"
         ++ ["custom/mail" "mpris"];
-      modules-center = ["custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
+      modules-center = ["sway/mode" "custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
       modules-right =
         lib.optional syncthingEnabled "custom/sync"
         ++ ["cpu" "memory" "custom/disk" "temperature"]
@@ -163,6 +165,14 @@
         ++ lib.optional kdeconnect "custom/kdeconnect"
         ++ lib.optional removableMedia "custom/removable"
         ++ ["group/tray" "battery"];
+
+      # Binding modes (resize, …): a mode-coloured pill with the mode name
+      # running down the bar; hidden in the default mode.
+      "sway/mode" = {
+        format = "<span letter_spacing='${toString (d.space.xs * 768)}'>{}</span>";
+        rotate = 90;
+        tooltip = false;
+      };
 
       # Coding agents ($XDG_RUNTIME_DIR/agent-status, one file per session,
       # written by Claude Code hooks that send SIGRTMIN+10). Spinner + count
@@ -660,6 +670,17 @@
 
       #tray > .needs-attention { background: @tint; }
 
+      #mode {
+        background: @mode;
+        color: @on-mode;
+        font-family: "${d.type.family.ui}";
+        font-size: ${px d.type.size.caption};
+        font-weight: ${toString d.type.weight.bold};
+        padding: ${px d.space.md} ${px d.bar.itemPaddingY};
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
+      }
+
       /* Caffeine: same box as the other items; faint off, accent on. */
       #custom-caffeine {
         padding: ${px d.bar.itemPaddingY} 0;
@@ -677,6 +698,12 @@
         files."waybar-calendar.json" = mkCalendarColors;
         # SIGUSR2: reload config + style in place (no restart, no flicker).
         reloadHooks.waybar = "${pkgs.systemd}/bin/systemctl --user reload waybar.service 2>/dev/null || true";
+      };
+
+      # Focus mode hides the bar (SIGUSR1 toggles, so leaving shows it again).
+      preferences.focusMode = {
+        enter = "${waybarSignal "SIGUSR1"}";
+        leave = "${waybarSignal "SIGUSR1"}";
       };
 
       home-manager.users.${user} = {
@@ -699,11 +726,6 @@
             StartLimitBurst = 30;
           };
           Service.RestartSec = 1;
-        };
-
-        # Hide/show the bar for focus.
-        wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
-          "Mod4+Shift+b" = "exec ${waybarSignal "SIGUSR1"}";
         };
       };
     };

@@ -380,6 +380,17 @@
     config = {
       environment.systemPackages = [pkgs.swaylock-effects pkgs.swayidle lockScreen caffeine];
 
+      # Focus mode keeps the screen on; leaving it ends only a caffeine it
+      # started.
+      preferences.focusMode = {
+        enter = ''
+          ${caffeineExe} check || { touch "$FOCUS_STATE/caffeine"; ${caffeineExe} on; }
+        '';
+        leave = ''
+          [ -e "$FOCUS_STATE/caffeine" ] && ${caffeineExe} off
+        '';
+      };
+
       preferences.theme = {
         files."swaylock.conf" = mkSwaylockConfig;
         links.".config/swaylock/config" = "swaylock.conf";

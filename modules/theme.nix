@@ -159,6 +159,7 @@
   #       selection / onSelection (≥3 / ≥4.5)    selected rows, toggles, fills
   #       focus (= accent)                       the 2 px focus ring
   #       error/warning/success/info (≥4.5 on surface/Low) + onX (≥4.5)
+  #       mode / onMode (≥3 on surface/Low / ≥4.5)  a binding mode is active
   #       inverseSurface / onInverseSurface (≥7) emphasis by inversion
   #   - contrast-tiered text roles fg/fgDim/fgMuted/fgFaint
   #   - derived opaque mixes: hairline{Soft,,Strong}, tint{5,10,16}
@@ -212,6 +213,12 @@
         onSuccess = pole;
         onInfo = pole;
 
+        # A sway binding mode (resize, …) is active: the hue no other role
+        # claims (not the lavender accent, not a status), so pink only ever
+        # means "the keys do something else now".
+        mode = slots.pink;
+        onMode = pole;
+
         surface = slots.base;
         surfaceContainerLow = slots.mantle;
         surfaceContainer = slots.surface0;
@@ -262,6 +269,7 @@
         warning = "#af4816"; # peach, 2.6 → 4.5:1
         success = "#297816"; # green, 3.0 → 4.5:1
         info = "#135cea"; # blue, 4.3 → 4.5:1
+        mode = "#b04095"; # pink, 2.6 → 4.5:1 against base text
         ansiRed = "#ce0436";
         ansiGreen = "#297816";
         ansiYellow = "#925c13"; # yellow 2.3 → 4.9:1

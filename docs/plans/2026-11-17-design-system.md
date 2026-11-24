@@ -166,6 +166,7 @@ Catppuccin and wallpaper palettes). Minimums are WCAG 2.2 ratios, guaranteed:
 | `selection` / `onSelection` | the ink as a fill (GTK/Qt selection, toggles on, today, caret) | ≥ 3 on `surface`, Low; `onSelection` ≥ 4.5 on it |
 | `focus` | focus rings and the focused window border (= `accent`) | as `accent` |
 | `error`, `warning`, `success`, `info` + `onError`… | status glyphs *and* text, status fills | ≥ 4.5 on `surface`, Low; on-colour ≥ 4.5 |
+| `mode` / `onMode` | a binding mode is active: the sway resize ring, the bar's mode pill. Hue-fixed (pink), never a status | ≥ 3 on `surface`, Low; `onMode` ≥ 4.5 on it |
 | `inverseSurface` / `onInverseSurface` | emphasis by inversion | ≥ 7 |
 | `ansiRed/Green/Yellow/Blue/Magenta/Cyan` | terminal colours 1–6 (bright = same) | ≥ 4.5 on `surface`, Low |
 | `hairlineSoft/hairline/hairlineStrong`, `tint5/10/16` | opaque fg-over-surface mixes: separators; hover (10) and pressed (16) | derived |
@@ -179,6 +180,7 @@ How the guarantee is kept:
   `accent` lavender L 0.66 → 0.56 (`#5768da`), `accentText` `#4c5bcd`,
   `selection` `#5161d4`, `fgMuted` `#56586d`, `outline` = overlay2, `error`
   `#ce0436`, `warning` `#af4816`, `success` `#297816`, `info` `#135cea`,
+  `mode` `#b04095`,
   `ansiYellow` `#925c13`, `ansiMagenta` `#a93a8f`, `ansiCyan` `#097277`.
   Mocha passes untouched except `outline` = overlay1.
 - **Wallpaper** (`theme-palette.py`): Material roles → palette shape, then

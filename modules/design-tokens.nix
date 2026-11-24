@@ -85,6 +85,7 @@
   window = {
     gap = space.md; # sway inner gaps; the bar's outer margin matches
     border = border.focus;
+    resizeBorder = border.focus * 3; # the ring in sway's resize mode
   };
 
   panel = {

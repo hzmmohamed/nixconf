@@ -21,6 +21,22 @@
     d = self.design;
     px = n: "${toString n}px";
 
+    # Resize mode readout: the focused window's size, its width as a share
+    # of the workspace on the level bar (a tape measure, not a volume).
+    resizeHud = pkgs.writeShellApplication {
+      name = "sway-resize-hud";
+      runtimeInputs = [pkgs.sway pkgs.jq];
+      text = ''
+        read -r w h < <(swaymsg -t get_tree -r | jq -r 'first(.. | objects
+          | select(.focused == true) | "\(.rect.width) \(.rect.height)")')
+        ws=$(swaymsg -t get_workspaces -r | jq -r '.[] | select(.focused) | .rect.width')
+        share=$(jq -n --argjson w "$w" --argjson ws "$ws" '[$w / $ws, 1] | min')
+        exec ${client} --custom-icon transform-scale --custom-progress "$share" \
+          --custom-progress-text "$w × $h"
+      '';
+    };
+    hud = cmd: "${cmd}; exec ${lib.getExe resizeHud}";
+
     mkStyle = p: ''
       window#osd {
         background: ${p.surface};
@@ -90,7 +106,15 @@
           "XF86MonBrightnessDown" = "exec ${client} --brightness -5";
           "Shift+XF86MonBrightnessUp" = "exec ${client} --brightness +1";
           "Shift+XF86MonBrightnessDown" = "exec ${client} --brightness -1";
+          "Mod4+r" = hud "mode \"resize\"";
         });
+        # Same for the resize steps: each shows the new size.
+        wayland.windowManager.sway.config.modes.resize = lib.mapAttrs (_: lib.mkForce) {
+          "Left" = hud "resize shrink width 10px";
+          "Down" = hud "resize grow height 10px";
+          "Up" = hud "resize shrink height 10px";
+          "Right" = hud "resize grow width 10px";
+        };
       };
     };
   };

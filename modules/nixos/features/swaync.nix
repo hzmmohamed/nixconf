@@ -183,6 +183,17 @@
         reloadHooks.swaync = "${client} -rs >/dev/null 2>&1 || true";
       };
 
+      # Focus mode silences notifications, then restores the previous DND.
+      preferences.focusMode = {
+        enter = ''
+          ${dnd}/bin/dnd status >"$FOCUS_STATE/dnd"
+          ${dnd}/bin/dnd on
+        '';
+        leave = ''
+          [ "$(cat "$FOCUS_STATE/dnd" 2>/dev/null)" = off ] && ${dnd}/bin/dnd off
+        '';
+      };
+
       home-manager.users.${user} = {
         home.packages = [pkgs.libnotify dnd dndToggle];
 

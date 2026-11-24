@@ -31,18 +31,170 @@
       client.placeholder ${p.surfaceContainerLow} ${p.surfaceContainerLow} ${p.fg} ${p.surfaceContainerLow} ${p.surfaceContainerLow}
       client.background ${p.surface}
     '';
+
+    # Replay a sway-colors-style file (one command per line) over IPC.
+    replayColors = file: ''
+      while IFS= read -r line; do
+        [ -n "$line" ] && ${pkgs.sway}/bin/swaymsg -- "$line" >/dev/null
+      done < ${file}
+    '';
+
+    # Binding-mode look (resize, passthrough, mark, goto): the focus ring
+    # turns the mode colour and thickens (smart borders off, so a lone window
+    # shows it too), following focus (focus follows the mouse) until the mode
+    # is left. Driven by the mode event rather than the bindings, so every
+    # way out restores the look.
+    #
+    # Marked windows (Mod+m <letter>) wear a title bar — the only per-window
+    # decoration sway has (border colours are per focus state) — which shows
+    # the window title and, right-aligned, its mark. Kept in sync on every
+    # mark event; marks starting with "_" (internal, hidden) don't count.
+    smartBorders = "on";
+    modeLook = pkgs.writeShellApplication {
+      name = "sway-mode-look";
+      runtimeInputs = [pkgs.sway pkgs.jq];
+      text = ''
+        set +e
+        ringed=""
+        pixel="border pixel ${toString d.window.border}"
+        titled="border normal ${toString d.window.border}"
+        replay() {
+          ${replayColors ''"${theme.stateDir}/current/$1"''}
+        }
+        # The resting border of a window: titled while it carries a mark.
+        rest() {
+          if swaymsg -t get_tree -r | jq -e --argjson id "$1" 'first(.. | objects | select(.id == $id))
+            | any((.marks // [])[]; startswith("_") | not)' >/dev/null; then
+            echo "$titled"
+          else
+            echo "$pixel"
+          fi
+        }
+        unring() {
+          [ -n "$ringed" ] && swaymsg "[con_id=$ringed] $(rest "$ringed")" >/dev/null
+          ringed=""
+        }
+        ring() {
+          [ -z "$1" ] || [ "$1" = "$ringed" ] && return
+          unring
+          swaymsg "[con_id=$1] border pixel ${toString d.window.resizeBorder}" >/dev/null && ringed=$1
+        }
+        # Title bars on exactly the marked windows (the ringed one keeps its
+        # ring until the mode ends).
+        sync_marks() {
+          cmds=$(swaymsg -t get_tree -r | jq -r --arg ringed "$ringed" --arg pixel "$pixel" --arg titled "$titled" '
+            [.. | objects | select((.type == "con" or .type == "floating_con") and .pid != null)
+              | select((.id | tostring) != $ringed)
+              | (any((.marks // [])[]; startswith("_") | not)) as $m
+              | if $m and .border != "normal" then "[con_id=\(.id)] \($titled)"
+                elif ($m | not) and .border == "normal" then "[con_id=\(.id)] \($pixel)"
+                else empty end] | join("; ")')
+          [ -n "$cmds" ] && swaymsg -- "$cmds" >/dev/null
+        }
+        focused() {
+          swaymsg -t get_tree -r | jq -r 'first(.. | objects
+            | select(.focused == true and (.type == "con" or .type == "floating_con")) | .id) // empty'
+        }
+        # Re-subscribe if sway restarts or the socket is not up yet.
+        while true; do
+          mode=default
+          sync_marks
+          swaymsg -m -r -t subscribe '["mode", "window"]' 2>/dev/null \
+            | jq -r --unbuffered 'if has("container")
+                then (select(.change == "focus" or .change == "mark") | "\(.change) \(.container.id)")
+                else "mode \(.change)" end' \
+            | while read -r kind arg; do
+                case "$kind:$arg" in
+                  mode:default)
+                    [ "$mode" = default ] && continue
+                    mode=default
+                    unring
+                    swaymsg smart_borders ${smartBorders} >/dev/null
+                    replay sway-colors
+                    ;;
+                  mode:*)
+                    # Mode to mode (e.g. resize → passthrough): already lit.
+                    if [ "$mode" = default ]; then
+                      replay sway-colors-mode
+                      swaymsg smart_borders off >/dev/null
+                    fi
+                    mode=$arg
+                    ring "$(focused)"
+                    ;;
+                  focus:*)
+                    [ "$mode" = default ] || ring "$arg"
+                    ;;
+                  mark:*)
+                    sync_marks
+                    ;;
+                esac
+              done
+          sleep 1
+        done
+      '';
+    };
+
+    # Drop-down terminal (Mod+grave): one kitty with its own app id, kept in
+    # the scratchpad; started on first use, toggled after that.
+    dropdown = pkgs.writeShellApplication {
+      name = "sway-dropdown";
+      runtimeInputs = [pkgs.sway pkgs.jq];
+      text = ''
+        if swaymsg -t get_tree -r | jq -e 'any(.. | objects; .app_id? == "dropdown")' >/dev/null; then
+          exec swaymsg '[app_id="^dropdown$"] scratchpad show'
+        fi
+        exec ${terminal} --class dropdown
+      '';
+    };
+
+    # Focus mode (Mod+z): toggles the preferences.focusMode hooks.
+    focusMode = pkgs.writeShellApplication {
+      name = "focus-mode";
+      runtimeInputs = [pkgs.sway pkgs.coreutils];
+      text = ''
+        set +e
+        FOCUS_STATE="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/focus-mode"
+        export FOCUS_STATE
+        if [ -e "$FOCUS_STATE/on" ]; then
+          ${config.preferences.focusMode.leave}
+          rm -rf "$FOCUS_STATE"
+        else
+          mkdir -p "$FOCUS_STATE" && touch "$FOCUS_STATE/on"
+          ${config.preferences.focusMode.enter}
+        fi
+      '';
+    };
+
+    # Vim-style marks: Mod+m <letter> marks the focused window, Mod+'
+    # <letter> jumps to it (from any workspace); Backspace in the mark mode
+    # clears the focused window's marks. `mode default` first, so a letter
+    # with no mark still leaves the mode.
+    letters = lib.stringToCharacters "abcdefghijklmnopqrstuvwxyz";
+    letterMode = cmd:
+      lib.genAttrs letters (l: "mode default; ${cmd l}")
+      // {
+        "Escape" = "mode default";
+        "Return" = "mode default";
+      };
   in {
+    # Focus mode, sway's part: no gaps.
+    preferences.focusMode = {
+      enter = "swaymsg gaps inner all set 0 >/dev/null";
+      leave = "swaymsg gaps inner all set ${toString d.window.gap} >/dev/null";
+    };
+
     preferences.theme = {
       files."sway-colors" = mkSwayColors;
+      files."sway-colors-mode" = p: ''
+        client.focused ${p.mode} ${p.mode} ${p.onMode} ${p.mode} ${p.mode}
+      '';
       reloadHooks.sway = ''
         if [ -z "''${SWAYSOCK:-}" ]; then
           SWAYSOCK="$(${pkgs.coreutils}/bin/ls -t /run/user/"$(${pkgs.coreutils}/bin/id -u)"/sway-ipc.*.sock 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)"
           export SWAYSOCK
         fi
         [ -S "''${SWAYSOCK:-}" ] || exit 0
-        while IFS= read -r line; do
-          [ -n "$line" ] && ${pkgs.sway}/bin/swaymsg -- "$line" >/dev/null
-        done < ${theme.stateDir}/current/sway-colors
+        ${replayColors "${theme.stateDir}/current/sway-colors"}
       '';
     };
 
@@ -62,6 +214,36 @@
     # Flameshot is driven by Mod4+Shift+s; its tray icon only adds clutter.
     # flameshot.ini stays user-writable (savePath etc.), so set just the key.
     home-manager.users.${user} = {
+      systemd.user.services.sway-mode-look = {
+        Unit = {
+          Description = "Sway binding-mode focus ring and mark title bars";
+          After = ["sway-session.target"];
+          Requisite = ["sway-session.target"];
+          PartOf = ["sway-session.target"];
+        };
+        Service = {
+          ExecStart = lib.getExe modeLook;
+          Restart = "on-failure";
+        };
+        Install.WantedBy = ["sway-session.target"];
+      };
+
+      # Split direction by shape: a new window splits a wide container side
+      # by side and a tall one top/bottom (Mod+e still toggles by hand).
+      systemd.user.services.autotiling = {
+        Unit = {
+          Description = "Sway autotiling (split along the longer side)";
+          After = ["sway-session.target"];
+          Requisite = ["sway-session.target"];
+          PartOf = ["sway-session.target"];
+        };
+        Service = {
+          ExecStart = lib.getExe pkgs.autotiling-rs;
+          Restart = "on-failure";
+        };
+        Install.WantedBy = ["sway-session.target"];
+      };
+
       home.activation.flameshotNoTray = {
         after = ["writeBoundary"];
         before = [];
@@ -110,7 +292,7 @@
             inner = d.window.gap;
             outer = 0;
             smartGaps = true;
-            smartBorders = "on";
+            inherit smartBorders;
           };
 
           # Pixel borders only (the focus ring width), no title bars
@@ -122,7 +304,36 @@
 
           floating.border = d.window.border;
 
+          # Floating where tiling only gets in the way: picture-in-picture
+          # (Firefox/Chromium) sticky in the bottom-right, the portal file
+          # chooser and the settings applets centred, the drop-down terminal
+          # across the top and in the scratchpad.
+          window.commands = [
+            {
+              criteria.title = "^Picture[- ]in[- ][Pp]icture$";
+              command = "floating enable, sticky enable, resize set width 25 ppt height 25 ppt, move position 73 ppt 73 ppt";
+            }
+            {
+              criteria.app_id = "^xdg-desktop-portal-gtk$";
+              command = "floating enable, resize set width 60 ppt height 70 ppt, move position center";
+            }
+            {
+              criteria.app_id = "^(blueman-manager|nm-connection-editor|org\\.pulseaudio\\.pavucontrol)$";
+              command = "floating enable, resize set width 40 ppt height 60 ppt, move position center";
+            }
+            {
+              criteria.app_id = "^dropdown$";
+              command = "floating enable, resize set width 80 ppt height 45 ppt, move position 10 ppt 0 ppt, move scratchpad, scratchpad show";
+            }
+          ];
+
+          # Mod+<n> on the current workspace goes back to the previous one.
+          workspaceAutoBackAndForth = true;
+
           focus.followMouse = "yes";
+          # A window asking for focus (an agent opening a browser tab) is
+          # marked urgent instead of taking it; Mod+u jumps there.
+          focus.newWindow = "urgent";
 
           # mkOptionDefault merges with sway's built-in defaults rather than replacing.
           # Host configs can add more keybindings with mkOptionDefault too.
@@ -158,6 +369,23 @@
             "${mod}+Shift+f" = "floating toggle";
             "${mod}+a" = "focus parent";
             "${mod}+Shift+d" = "reload";
+            # No exit shortcut (home-manager's swaynag prompt): the session
+            # is ended from the launcher's power menu.
+            "${mod}+Shift+e" = null;
+            # home-manager defaults already bound elsewhere: reload is
+            # Mod+Shift+d, stacking Mod+i, splits Mod+e (and autotiling).
+            "${mod}+Shift+c" = null;
+            "${mod}+s" = null;
+            "${mod}+b" = null;
+
+            "${mod}+u" = "[urgent=latest] focus";
+            "${mod}+grave" = "exec ${lib.getExe dropdown}";
+            "${mod}+z" = "exec ${lib.getExe focusMode}";
+            "${mod}+m" = "mode mark";
+            "${mod}+apostrophe" = "mode goto";
+            # Every key to the focused app (VMs, remote desktops, games)
+            # until the same combo again.
+            "${mod}+Shift+Escape" = "mode passthrough";
 
             # Layout
             "${mod}+i" = "layout stacking";
@@ -211,6 +439,12 @@
             "${mod}+Shift+8" = "move container to workspace number 8";
             "${mod}+Shift+9" = "move container to workspace number 9";
           };
+
+          modes.mark =
+            letterMode (l: "mark --replace ${l}")
+            // {"BackSpace" = "mode default; [con_id=__focused__] unmark";};
+          modes.goto = letterMode (l: ''[con_mark="^${l}$"] focus'');
+          modes.passthrough."${mod}+Shift+Escape" = "mode default";
 
           modes.resize = {
             "Left" = "resize shrink width 10px";

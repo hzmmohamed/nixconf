@@ -59,6 +59,8 @@ CONTRACT = (
     + [("selection", "onSelection", TEXT)]
     + [(k, s, TEXT) for k in ["error", "warning", "success", "info"]
        for s in ["surface", "surfaceContainerLow", "on" + k.capitalize()]]
+    + [("mode", s, UI) for s in ["surface", "surfaceContainerLow"]]
+    + [("mode", "onMode", TEXT)]
     + [("inverseSurface", "onInverseSurface", STRONG)]
     + [(k, s, TEXT) for k in ANSI.values() for s in ["surface", "surfaceContainerLow"]]
 )
@@ -269,8 +271,10 @@ def wallpaper_palette(r, fallback):
     # Status colours are semantic, so their hues are fixed across palettes:
     # the Catppuccin peach/green/blue (not harmonised, which could pull a
     # warning towards the error hue), stepped to the contract below. error
-    # stays matugen's (Material keeps it fixed too).
-    for role, slot in (("warning", "peach"), ("success", "green"), ("info", "blue")):
+    # stays matugen's (Material keeps it fixed too). The binding-mode colour
+    # is fixed the same way, so it never drifts onto the accent.
+    for role, slot in (("warning", "peach"), ("success", "green"), ("info", "blue"),
+                       ("mode", "pink")):
         if HEX.match(str(fallback.get(slot, ""))):
             p[role] = fallback[slot]
     return {k: v for k, v in p.items() if v}
@@ -289,7 +293,8 @@ def seed_roles(p):
     p.setdefault("warning", p["peach"])
     p.setdefault("success", p["green"])
     p.setdefault("info", p["blue"])
-    for k in ["error", "warning", "success", "info"]:
+    p.setdefault("mode", p["pink"])
+    for k in ["error", "warning", "success", "info", "mode"]:
         p.setdefault("on" + k.capitalize(), pole)
     for slot, role in ANSI.items():
         p.setdefault(role, p[slot])
@@ -336,7 +341,8 @@ def build(matugen, mode, fallback, pinned):
         # the Catppuccin fallback.
         for k in ["fg", "fgMuted", "fgFaint", "accentText", "selection",
                   "onSelection", "warning", "success", "info", "onError",
-                  "onWarning", "onSuccess", "onInfo", "focus"] + list(ANSI.values()):
+                  "onWarning", "onSuccess", "onInfo", "mode", "onMode",
+                  "focus"] + list(ANSI.values()):
             p.pop(k, None)
         p.update(wall)
         seed_roles(p)

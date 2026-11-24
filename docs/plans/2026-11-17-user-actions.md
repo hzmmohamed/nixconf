@@ -40,7 +40,7 @@ xdg-mime query default image/png                             # org.gnome.Loupe.d
 On screen:
 
 - [ ] Waybar is on the right at login, without waiting for sunset
-- [ ] `Mod4+Shift+b` hides/shows the bar
+- [ ] `Mod4+z` (focus mode) hides the bar and silences notifications; again restores both
 - [ ] `Mod4+Space` opens vicinae; `Mod4+v` opens clipboard history; `Mod4+.` emoji picker types into the window
 - [ ] Lock screen (`swaylock`) is themed, not white
 - [ ] Chromium no longer asks for your password
