@@ -200,6 +200,15 @@
         "Bash(rm -rf:*)"
         "Bash(nix copy:*)"
       ];
+      # The thread-branch PR flow (agent-env's agent-git): pushing goes
+      # through agent-push, which refuses the default branch and plain force.
+      permissions.allow = [
+        "Bash(agent-git:*)"
+        "Bash(agent-push:*)"
+        "Bash(gh pr create:*)"
+        "Bash(gh pr view:*)"
+        "Bash(gh pr list:*)"
+      ];
       hooks = let
         group = commands: [
           {
@@ -259,16 +268,17 @@
           else
             cur='{}'
           fi
-          # deny lists are unioned; for each managed hook event, previous
+          # deny/allow lists are unioned; for each managed hook event, previous
           # agent-notify / agent-status entries are replaced and the user's own
           # hooks kept.
           new=$(jq -n --argjson cur "$cur" --slurpfile m ${claudeManagedSettingsFile} '
             $m[0] as $m
             | $cur
             | .permissions = ((.permissions // {})
-                | .deny = (((.deny // []) + $m.permissions.deny) | unique))
+                | .deny = (((.deny // []) + $m.permissions.deny) | unique)
+                | .allow = (((.allow // []) + $m.permissions.allow) | unique))
             | .hooks = (reduce ($m.hooks | keys[]) as $ev ((.hooks // {});
-                .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status") or contains("agent-slow-watch") or contains("agent-net")) | not)))
+                .[$ev] = (((.[$ev] // []) | map(select(tojson | (contains("agent-notify") or contains("agent-status") or contains("agent-slow-watch") or contains("agent-net") or contains("agent-git")) | not)))
                           + $m.hooks[$ev])))
           ')
           if [ "$new" = "$cur" ]; then return 0; fi

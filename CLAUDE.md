@@ -52,7 +52,7 @@ Building (only when asked; NVIDIA/CUDA builds are long):
 **Never run from an agent** (denied in `.claude/settings.json`; the user does
 these): `nixos-rebuild`, `deploy` / `just deploy`, `scripts/install-host.sh`,
 `nixos-anywhere`, `disko`, `sops`, `age`, `nix copy`, `doas`/`sudo`,
-`git push`, `rm -r`. Deploys: `just deploy <host> [switch|boot|test] [--dry-run]`,
+`git push` (thread branches: `agent-push`), `rm -r`. Deploys: `just deploy <host> [switch|boot|test] [--dry-run]`,
 `just deploy-all`, `just deploy-plan <host>` (prints where it builds, runs
 nothing; agents: `nix run .#deploy -- --plan <host>`, as `just deploy*` is
 denied), from hazel or butternut (`modules/packages/deploy.nix`);
@@ -146,7 +146,12 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   …): read-only, excluded from formatting.
 - **maple and peacelily are headless**: no GUI features there; keep them out
   of desktop changes.
-- Don't commit unless asked; don't touch `.claude/settings.json`.
+- **Git workflow** ("Git" in the global agent guidelines): a thread works on
+  its own branch/worktree, commits as it goes, and finishes with
+  `agent-push` + `gh pr create` (the user merges). `git push` stays denied;
+  `agent-push` pushes only the current non-default branch. Direct commits
+  to main are fine for small changes in the main checkout (stage your own
+  files only). Don't touch `.claude/settings.json`.
 
 ## Current state (2026-11)
 

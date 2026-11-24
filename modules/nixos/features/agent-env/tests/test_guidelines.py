@@ -23,6 +23,7 @@ REQUIRED_HEADINGS = [
     "Environment",
     "Tools (nx)",
     "Network",
+    "Git",
     "Editing",
 ]
 
@@ -31,12 +32,12 @@ class GuidelinesContentTests(unittest.TestCase):
     def test_sections_and_import_line(self):
         text = GUIDELINES.read_text()
         lines = text.splitlines()
-        self.assertLessEqual(len(lines), 60, "guidelines.md should stay short")
+        self.assertLessEqual(len(lines), 80, "guidelines.md should stay short")
 
         headings = re.findall(r"^##\s+(.+?)\s*$", text, re.MULTILINE)
         self.assertEqual(headings, REQUIRED_HEADINGS)
 
-        for token in ("AGENT_DEVSHELL", "direnv exec .", "nx", "agent-net"):
+        for token in ("AGENT_DEVSHELL", "direnv exec .", "nx", "agent-net", "agent-push", "gh pr create"):
             self.assertIn(token, text, f"guidelines.md should mention {token!r}")
 
         for value in ("loaded", "not-allowed", "not-built", "none", "error"):

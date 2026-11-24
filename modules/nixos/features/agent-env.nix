@@ -28,6 +28,13 @@
     mkTool = mkToolWith [];
 
     agentNet = mkTool "agent-net" ./agent-env/agent_net.py [pkgs.networkmanager pkgs.iproute2];
+    # agent-git: where an agent stands in git (worktree/branch/dirty) for the
+    # SessionStart hook, a Stop hook that catches uncommitted thread work,
+    # and `agent-push` (thread branch only) since `git push` stays denied.
+    agentGit = mkTool "agent-git" ./agent-env/agent_git.py [pkgs.git pkgs.gh];
+    agentPush = pkgs.writeShellScriptBin "agent-push" ''
+      exec ${lib.getExe agentGit} push "$@"
+    '';
     # nx: store-first tool runner. nix-index supplies nix-locate (attribute
     # lookup when a bare prog name doesn't match its own nixpkgs attribute);
     # agentNet is its own metered/unmetered/offline source.
@@ -84,7 +91,7 @@
 
     config = {
       home-manager.users.${user} = {
-        home.packages = [agentNet nx agentDevshell claudeDevshell opencodeDevshell];
+        home.packages = [agentNet agentGit agentPush nx agentDevshell claudeDevshell opencodeDevshell];
 
         xdg.configFile."agents/guidelines.md".source = guidelinesFile;
 
@@ -100,8 +107,12 @@
       };
 
       preferences.agents.claudeHooks = {
-        SessionStart = ["${lib.getExe agentNet} hook session-start"];
+        SessionStart = [
+          "${lib.getExe agentNet} hook session-start"
+          "${lib.getExe agentGit} hook session-start"
+        ];
         UserPromptSubmit = ["${lib.getExe agentNet} hook prompt"];
+        Stop = ["${lib.getExe agentGit} hook stop"];
       };
     };
   };

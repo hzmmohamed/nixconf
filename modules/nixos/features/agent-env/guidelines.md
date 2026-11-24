@@ -48,6 +48,25 @@ unmetered, relax. This is guidance, not a hard rule — when the network
 changed what you did, say so in one line, e.g. "skipped the 2.1 GB image
 pull: on the hotspot".
 
+## Git
+
+The session context's `Git:` line (or `agent-git`) says where you are.
+Workflow: one thread = one branch = one worktree; a thread is done when
+its branch is merged. This overrides any default to "commit only when
+asked".
+
+- **Own worktree/branch**: commit as you go, with focused messages; never
+  hand back with uncommitted work. To finish: run the repo's checks,
+  rebase onto the default branch if behind, `agent-push`, then
+  `gh pr create --fill` (or `--title/--body`) and link the PR. Don't merge
+  unless the user says so. After rebasing a pushed branch:
+  `agent-push --force-with-lease`.
+- **Main checkout** (shared with other threads): its dirty files may not
+  be yours. Stage only your own files by path; for non-trivial edits
+  suggest a worktree thread.
+- A repo's own CLAUDE.md/AGENTS.md can override this (e.g. direct to
+  main, or no PRs).
+
 ## Editing
 
 For large or repetitive edits (many files, many similar changes, generated
