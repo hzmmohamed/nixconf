@@ -44,7 +44,8 @@ sealed interface ModelStatus {
  * What the keyboard and the app screen share (one process, one instance): the
  * profile, drafts, the dictation session and the on-phone model. Everything
  * runs on [scope] (main thread, lives as long as the process): no background
- * jobs, the work happens while the keyboard or the app is open.
+ * jobs, the work happens while the keyboard or the app is open (or while a
+ * recording kept on runs, held by KeepOnService).
  */
 class AppServices private constructor(context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

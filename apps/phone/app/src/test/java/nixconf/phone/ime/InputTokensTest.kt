@@ -30,6 +30,17 @@ class InputTokensTest {
     }
 
     @Test
+    fun field_stays_the_same_across_inputs() {
+        tokens.start("org.notes", 42, restarting = false)
+        val first = tokens.field
+        tokens.finish()
+        assertNull(tokens.field)
+        tokens.start("org.notes", 42, restarting = false)
+        assertEquals("org.notes/42", tokens.field)
+        assertEquals(first, tokens.field)
+    }
+
+    @Test
     fun restarting_the_same_input_keeps_the_token() {
         tokens.start("org.notes", 42, restarting = false)
         val first = tokens.token

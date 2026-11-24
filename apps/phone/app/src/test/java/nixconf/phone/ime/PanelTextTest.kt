@@ -126,4 +126,10 @@ class PanelTextTest {
         assertEquals("en", nextLanguage(listOf("en", "ar"), "fr"))
         assertEquals("fr", nextLanguage(emptyList(), "fr"))
     }
+
+    @Test
+    fun keep_on_label() {
+        assertEquals("Keep recording in background", keepOnLabel(false))
+        assertEquals("✓ Keeps recording in background", keepOnLabel(true))
+    }
 }

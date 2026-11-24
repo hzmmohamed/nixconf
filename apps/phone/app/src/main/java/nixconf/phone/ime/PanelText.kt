@@ -40,6 +40,9 @@ fun hostOf(url: String): String = try {
 fun recordingText(elapsedMs: Long, state: SessionState.Recording): String =
     "${elapsed(elapsedMs)} · ${engineLabel(state.engine)}" + if (state.transcribing) " · transcribing…" else ""
 
+/** The Keep on toggle under the level meter, off and on. */
+fun keepOnLabel(on: Boolean): String = if (on) "✓ Keeps recording in background" else "Keep recording in background"
+
 /**
  * After stop: "Stopped · finding server…" until the probe answers, then
  * "Finishing 2 of 5 · butternut" while segments are queued, else "Transcribing… · butternut".

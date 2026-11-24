@@ -10,13 +10,19 @@ class InputTokens {
     var token: String? = null
         private set
 
+    /** The token without the generation: the same field, focused again later. */
+    var field: String? = null
+        private set
+
     fun start(packageName: String?, fieldId: Int, restarting: Boolean) {
         if (!restarting) generation++
-        token = "$packageName/$fieldId#$generation"
+        field = "$packageName/$fieldId"
+        token = "$field#$generation"
     }
 
     fun finish() {
         generation++
         token = null
+        field = null
     }
 }

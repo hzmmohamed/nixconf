@@ -63,6 +63,13 @@ interface EditorTarget {
 
     /** Composing text suits the field (stream mode): not number, date or incognito fields. */
     val composable: Boolean get() = true
+
+    /**
+     * The field without the input generation (package + field id): what a
+     * recording kept on in the background ([DictationSession.keepOn]) is
+     * typed into again when the user comes back to it. Null: never matches.
+     */
+    val field: String? get() = token
 }
 
 /** What [DictationSession.deliver] did; BUSY: a session is running (its text must not be mixed in). */
@@ -76,9 +83,15 @@ sealed interface SessionState {
 
     /**
      * engine is null while the servers are still being probed (Local once the
-     * phone took over); transcribing: a segment, while recording goes on.
+     * phone took over); transcribing: a segment, while recording goes on;
+     * background: it goes on when the keyboard closes ([DictationSession.keepOn]).
      */
-    data class Recording(val engine: Engine?, val startedMs: Long, val transcribing: Boolean = false) : SessionState
+    data class Recording(
+        val engine: Engine?,
+        val startedMs: Long,
+        val transcribing: Boolean = false,
+        val background: Boolean = false,
+    ) : SessionState
 
     /**
      * Stopped, the text not there yet: engine null while the probe still runs;
@@ -122,7 +135,8 @@ class DictationSession(
         val writer: WavWriter,
         val profile: Profile?,
         val target: EditorTarget,
-        val token: String?,
+        var token: String?,
+        val field: String?,
         val feed: SegmentFeed?,
         val startedMs: Long,
     ) {
@@ -132,8 +146,12 @@ class DictationSession(
         // The segments' outcome; null: the VAD failed, transcribe the whole file.
         var segmented: Deferred<Outcome?>? = null
 
-        // Composing text is showing in the field (stream mode).
+        // Composing text is showing in the field (stream mode); the text so far.
         var composed = false
+        var text = ""
+
+        // Recording goes on when the keyboard closes (keepOn).
+        var background = false
         val stream = profile?.mode == MODE_STREAM && target.composable
 
         // What the state shows: the engine (null while probing, Local once the
@@ -185,7 +203,7 @@ class DictationSession(
             save(draft.copy(status = DraftStatus.CANCELLED, error = e.message))
             throw StartException(storage = false, e)
         }
-        val cur = Current(draft, writer, p, target, target.token, feed, startedMs)
+        val cur = Current(draft, writer, p, target, target.token, target.field, feed, startedMs)
         current = cur
         publish(cur)
         cur.chosen = scope.async {
@@ -210,6 +228,36 @@ class DictationSession(
         closeQuietly(cur.writer)
         publish(cur)
         cur.job = scope.launch { finish(cur) }
+    }
+
+    /**
+     * Recording goes on when the keyboard closes ([on]), until stop() or
+     * cancel(); a no-op unless recording. The keyboard checks [background].
+     */
+    fun keepOn(on: Boolean) {
+        val cur = current ?: return
+        if (cur.stopped || cur.background == on) return
+        cur.background = on
+        publish(cur)
+    }
+
+    /** A recording (or its transcription) kept on with [keepOn] is running. */
+    val background: Boolean get() = current?.background == true
+
+    /**
+     * The keyboard is on a field again: if it is the one a background
+     * session started in, the text goes there again (stream mode: the text
+     * so far shows again). Field ids can be reused (chats, WebViews): only
+     * a session the user kept on in the background follows the field.
+     */
+    fun returned(target: EditorTarget) {
+        val cur = current ?: return
+        if (!cur.background || target !== cur.target) return
+        val token = target.token ?: return
+        if (cur.field == null || target.field != cur.field || token == cur.token) return
+        cur.token = token
+        cur.composed = false
+        if (cur.stream && cur.text.isNotEmpty()) cur.composed = target.compose(cur.text)
     }
 
     /** Discards the session: draft CANCELLED, nothing typed. */
@@ -349,7 +397,8 @@ class DictationSession(
                 val text = outcome.text ?: continue
                 texts += text
                 record(cur, index, segment, text, outcome.engine)
-                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(joinTexts(texts)) || cur.composed
+                cur.text = joinTexts(texts)
+                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(cur.text) || cur.composed
             }
         } catch (e: CancellationException) {
             throw e
@@ -381,7 +430,7 @@ class DictationSession(
     private fun publish(cur: Current) {
         if (current !== cur) return
         mutableState.value = if (!cur.stopped) {
-            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing)
+            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing, cur.background)
         } else {
             val total = if (cur.wholeFile) 0 else cur.feed?.closed ?: 0
             SessionState.Finishing(cur.engine, if (total == 0) 0 else cur.done, total)

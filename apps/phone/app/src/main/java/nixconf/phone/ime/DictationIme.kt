@@ -43,7 +43,10 @@ import nixconf.phone.ui.NixconfTheme
  * focused input session ([InputTokens]) and changes when the user moves on,
  * so text transcribed after a switch is kept as a draft instead of typed;
  * composing text (stream mode) is removed from a field the user leaves.
- * Hiding or destroying the keyboard stops a recording (never records unseen).
+ * Hiding or destroying the keyboard stops a recording, unless the user kept
+ * it on (Keep on, while recording): then [KeepOnService] holds the mic in
+ * the background with a notification to stop it, and the text goes into the
+ * field it started in if the user is back there, else into a draft.
  * Password fields get no dictation (nothing of them reaches a draft); number,
  * phone and date fields a warning; incognito fields keep no draft once typed.
  * Compose needs lifecycle/view-model/saved-state owners on the window, which
@@ -78,6 +81,7 @@ class DictationIme :
 
     private val tokens = InputTokens()
     override val token: String? get() = tokens.token
+    override val field: String? get() = tokens.field
     override val incognito: Boolean get() = incognitoField
     override val composable: Boolean get() = kind == FieldKind.TEXT && !incognitoField
 
@@ -124,6 +128,7 @@ class DictationIme :
                         PanelActions(
                             mic = ::onMic,
                             cancel = { app.session.cancel() },
+                            keepOn = ::onKeepOn,
                             language = { language = nextLanguage(languages, currentLanguage()) },
                             switchKeyboard = ::onSwitchKeyboard,
                             insert = ::insert,
@@ -144,6 +149,8 @@ class DictationIme :
         kind = attribute?.let { fieldKind(it.inputType) } ?: FieldKind.TEXT
         incognitoField = attribute?.let { incognito(it.imeOptions) } ?: false
         enter = attribute?.let { enterAction(it.imeOptions) }
+        // Back in the field a background recording started in: its text goes here again.
+        app.session.returned(this)
     }
 
     override fun onFinishInput() {
@@ -169,13 +176,13 @@ class DictationIme :
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        app.session.stop()
+        if (!app.session.background) app.session.stop()
         registry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
         stateJob?.cancel()
-        app.session.stop()
+        if (!app.session.background) app.session.stop()
         registry.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
         super.onDestroy()
@@ -218,6 +225,22 @@ class DictationIme :
                     Notice(startError(e.storage, e.message), error = true)
                 }
             }
+        }
+    }
+
+    // Keep on: the foreground service holds the mic while the keyboard is
+    // closed (started now, while the keyboard is visible: Android lets a
+    // visible app start a microphone service, not a hidden one).
+    private fun onKeepOn() {
+        if (app.session.background) {
+            app.session.keepOn(false)
+            return
+        }
+        notice = if (KeepOnService.start(this)) {
+            app.session.keepOn(true)
+            null
+        } else {
+            Notice("Android refused to keep the microphone on", error = true)
         }
     }
 
