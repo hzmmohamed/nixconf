@@ -20,6 +20,16 @@ deploy-all *args:
 deploy-plan host="all":
     DEPLOY_FLAKE={{justfile_directory()}} nix run {{justfile_directory()}}#deploy -- --plan {{host}}
 
+# --- deploy visibility (modules/packages/fleet.sh; read-only, eval only) ---
+
+# Hosts whose system changes between base (default: merge-base with main) and the working tree (raw: nix run .#fleet -- affects [base])
+affects base="":
+    FLEET_REPO={{justfile_directory()}} nix run {{justfile_directory()}}#fleet -- affects {{base}}
+
+# Per host: deployed commit vs main, and whether its running system differs from main's (raw: nix run .#fleet -- status)
+status:
+    FLEET_REPO={{justfile_directory()}} nix run {{justfile_directory()}}#fleet -- status
+
 # Fetch the other desktop's repo, fast-forward main, push this branch to its side ref (raw: nix run .#nixconf-sync -- [--dry-run])
 sync *args:
     NIXCONF_SYNC_REPO={{justfile_directory()}} nix run {{justfile_directory()}}#nixconf-sync -- {{args}}

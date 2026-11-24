@@ -32,6 +32,8 @@ in {
   #                host the Photos launcher opens (features/photos-client.nix)
   #   tags         Tailscale ACL tags (docs/tailscale-policy.hujson). Only advertised
   #                when the host logs in with the OAuth client (tailscale.nix)
+  #   created      false for a host that does not exist yet: `fleet status` shows
+  #                it as "not created" instead of probing it (default true)
   #   buildOnTarget  `deploy` builds on the host itself instead of locally + nix copy
   #                (cloud boxes: only derivations cross the uplink; butternut: hazel
   #                must not fill its small disk with butternut's closure)
@@ -131,6 +133,7 @@ in {
       syncthingId = null;
       roles = ["agent-host" "cloud"];
       tags = ["tag:cloud" "tag:agent-host"];
+      created = false; # TODO(user): drop once fern is up (docs/plans/2026-11-17-aws-agent-host.md)
       # `deploy` builds on the box (eval here, substitutes inside AWS): only
       # derivations travel over a café connection, not the closure.
       buildOnTarget = true;

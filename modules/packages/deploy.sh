@@ -1,6 +1,7 @@
 # deploy — body of the `deploy` package (modules/packages/deploy.nix, which
 # prepends the registry data: registry_hosts, target_build_hosts, builders,
-# caches, default_user, default_port). Not a standalone script.
+# caches, default_user, default_port; then fleet-lib.sh: in_list, reachable,
+# find_target, remote, running_revision). Not a standalone script.
 
 usage() {
   cat >&2 <<EOF
@@ -29,7 +30,6 @@ die() {
   exit 1
 }
 # Exit code 3 = target unreachable (`deploy all` reports it as such).
-in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
 
 plan_only=0
 dry_run=0
@@ -106,21 +106,8 @@ fi
 in_list "$host" "$registry_hosts" ||
   die "unknown host '$host' (registry hosts: $registry_hosts)"
 
-# Keepalives: a target that vanishes (spot stop, Wi-Fi drop) fails the
-# deploy within ~1 min instead of hanging on a dead connection.
-ssh_opts=(-p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new
-  -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
-export NIX_SSHOPTS="${ssh_opts[*]}"
+set_ssh_opts
 
-# Can we log in? In --plan mode nothing is probed: everything is assumed
-# reachable except the hosts in DEPLOY_PLAN_UNREACHABLE (tests).
-reachable() {
-  if [ "$plan_only" = 1 ]; then
-    if in_list "${1%.local}" "${DEPLOY_PLAN_UNREACHABLE:-}"; then return 1; fi
-    return 0
-  fi
-  ssh "${ssh_opts[@]}" -o BatchMode=yes "$user@$1" true 2>/dev/null
-}
 lookup() { # lookup <key> <"k=v k=v"> → v
   local kv
   for kv in $2; do
@@ -132,20 +119,10 @@ lookup() { # lookup <key> <"k=v k=v"> → v
   return 1
 }
 
-# 1. Where is the target? This machine: no ssh at all. Otherwise `<host>`
-#    first (the registry ssh config takes the cable when it is up, else the
-#    tailnet IP from /etc/hosts), then `<host>.local` (mDNS).
+# 1. Where is the target? (find_target: this machine, <host>, <host>.local)
 target=${DEPLOY_TARGET:-}
-if [ "$host" = "$me" ] && [ -z "$target" ]; then
-  target=local
-elif [ -z "$target" ]; then
-  for candidate in "$host" "$host.local"; do
-    if reachable "$candidate"; then
-      target=$candidate
-      break
-    fi
-  done
-  if [ -z "$target" ]; then
+if [ -z "$target" ]; then
+  if ! target=$(find_target "$host"); then
     echo "deploy: cannot log in to $host or $host.local on port $port as $user." >&2
     echo "  - cable: is the link up? (nmcli device; ping $host.local)" >&2
     echo "  - tailnet: tailscale status | grep $host" >&2
@@ -221,21 +198,10 @@ echo "   copy:     $copy_how"
 echo "   activate: $activate_how"
 [ "$plan_only" = 0 ] || exit 0
 
-# Arguments are store paths/fixed words, so client-side expansion is intended.
-# shellcheck disable=SC2029
-remote() {
-  if [ "$target" = local ]; then
-    "$@"
-  else
-    ssh "${ssh_opts[@]}" "$user@$target" "$@"
-  fi
-}
-
 # 3. Is this checkout at least as new as what the target runs? Deploying an
 #    older checkout (a machine that wasn't synced) silently rolls the target
-#    back. The target's commit comes from system.configurationRevision
-#    (base/revision.nix); systems built before it have none: no check.
-running=$(remote nixos-version --configuration-revision 2>/dev/null || true)
+#    back. Systems built before base/revision.nix record none: no check.
+running=$(running_revision)
 running_rev=${running%-dirty}
 if [ -n "$running_rev" ] && [ "$force" = 0 ]; then
   head_rev=$(git -C "$flake" rev-parse HEAD 2>/dev/null || true)

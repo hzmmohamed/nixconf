@@ -1,13 +1,16 @@
-# deploy + nixconf-sync: the fleet's deploy and repo-sync commands, with the
-# hosts registry (modules/hosts-registry.nix) baked in. perSystem packages so
-# that `just deploy` / `just sync` run the repo's CURRENT version
-# (`nix run .#deploy`): a new host or builder works before any switch.
-# The remote-deploy feature installs both system-wide.
+# deploy + fleet + nixconf-sync: the fleet's deploy, deploy-visibility and
+# repo-sync commands, with the hosts registry (modules/hosts-registry.nix)
+# baked in. perSystem packages so that `just deploy` / `just sync` run the
+# repo's CURRENT version (`nix run .#deploy`): a new host or builder works
+# before any switch. The remote-deploy feature installs deploy and sync
+# system-wide.
 #
 #   deploy [--plan] [--dry-run] <host>|all [switch|boot|test|dry-activate]
+#   fleet affects [<base>] | fleet status    (read-only)
 #   nixconf-sync [--dry-run]
 #
-# Logic and docs: deploy.sh, nixconf-sync.sh next to this file.
+# Logic and docs: deploy.sh, fleet.sh, nixconf-sync.sh next to this file;
+# fleet-lib.sh (reaching a host, what it runs) is shared by deploy and fleet.
 {
   lib,
   self,
@@ -22,6 +25,7 @@
     (n: h: has "sshPort" h && self.nixosConfigurations ? ${n})
     hosts);
   targetBuildHosts = lib.attrNames (lib.filterAttrs (_: h: h.buildOnTarget or false) hosts);
+  uncreatedHosts = lib.attrNames (lib.filterAttrs (_: h: !(h.created or true)) hosts);
 
   # client=builder: the first registry host listing the client in builderFor.
   builders = words (lib.concatLists (lib.mapAttrsToList
@@ -53,7 +57,22 @@ in {
           default_user=${q self.user.name}
           default_port=7654
         ''
+        + builtins.readFile ./fleet-lib.sh
         + builtins.readFile ./deploy.sh;
+    };
+
+    packages.fleet = pkgs.writeShellApplication {
+      name = "fleet";
+      runtimeInputs = with pkgs; [openssh coreutils git gnused gnugrep nix];
+      text =
+        ''
+          registry_hosts=${q (words registryHosts)}
+          uncreated_hosts=${q (words uncreatedHosts)}
+          default_user=${q self.user.name}
+          default_port=7654
+        ''
+        + builtins.readFile ./fleet-lib.sh
+        + builtins.readFile ./fleet.sh;
     };
 
     packages.nixconf-sync = pkgs.writeShellApplication {
