@@ -1101,7 +1101,9 @@ def push(d, url, timeout=10):
     except (OSError, urllib.error.URLError, ValueError) as err:
         log(f"push {d.id}: {getattr(err, 'code', None) or type(err).__name__}")
         return False
-    d.save(uploaded=int(time.time()))
+    # Re-read first: the session may have rewritten meta.json (compress) since
+    # this copy was loaded (the hourly retry racing a session's own push).
+    Draft.load(d.path).save(uploaded=int(time.time()))
     return True
 
 

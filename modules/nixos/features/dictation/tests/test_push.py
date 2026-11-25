@@ -123,6 +123,17 @@ class Push(unittest.TestCase):
         self.assertFalse(ds.push(d, fake.url))
         self.assertFalse(ds.Draft.load(d.path).meta.get("uploaded"))
 
+    def test_push_keeps_what_compress_wrote_meanwhile(self):
+        fake = self.inbox()
+        stale = make_draft()
+        # The session compresses (and rewrites meta.json) after the timer loaded the draft.
+        ds.Draft.load(stale.path).save(duration=5.0, audio={"file": "audio.opus", "format": "opus"})
+        self.assertTrue(ds.push(stale, fake.url))
+        meta = ds.Draft.load(stale.path).meta
+        self.assertEqual(meta["duration"], 5.0)
+        self.assertEqual(meta["audio"]["file"], "audio.opus")
+        self.assertTrue(meta.get("uploaded"))
+
     def test_push_unreachable_is_false(self):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))

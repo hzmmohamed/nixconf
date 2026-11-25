@@ -183,8 +183,24 @@ def _replace_dir(tmp, target):
         shutil.rmtree(old)
 
 
+_locks = {}
+_locks_lock = threading.Lock()
+
+
+def _draft_lock(origin, ident):
+    with _locks_lock:
+        return _locks.setdefault((origin, ident), threading.Lock())
+
+
 def finish(data_dir, origin, ident):
-    """POST done: incoming/<origin>/<id> -> drafts/<origin>/<id>, normalized."""
+    """POST done: incoming/<origin>/<id> -> drafts/<origin>/<id>, normalized.
+    One at a time per draft: two uploads of the same draft (a laptop's own
+    push and its hourly retry) must not share the .tmp dir."""
+    with _draft_lock(origin, ident):
+        return _finish(data_dir, origin, ident)
+
+
+def _finish(data_dir, origin, ident):
     inc = data_dir / "incoming" / origin / ident
     src = {p.name: p.read_bytes() for p in inc.iterdir() if p.name in FILES} if inc.is_dir() else {}
     audio = next((a for a in AUDIO if a in src), None)
@@ -293,7 +309,7 @@ def make_server(data_dir, port, peers, host="0.0.0.0"):
                 return
             try:
                 meta = finish(data_dir, origin, ident)
-            except (ValueError, KeyError, subprocess.SubprocessError, OSError) as err:
+            except (ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError, OSError) as err:
                 log(f"{origin}/{ident}: rejected ({type(err).__name__})")
                 self.reply(400, {"error": str(err) if isinstance(err, ValueError) else type(err).__name__})
                 return

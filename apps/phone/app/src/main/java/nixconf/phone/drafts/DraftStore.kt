@@ -203,9 +203,14 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
         }
     }
 
-    /** Delivered drafts the training lab has not received yet, oldest first. */
-    fun toUpload(): List<Draft> =
-        ids().mapNotNull(::load).filter { it.status == DraftStatus.DELIVERED && it.uploadedMs == null }.sortedBy { it.createdMs }
+    /**
+     * Delivered drafts the training lab has not received yet, oldest first;
+     * only those last changed at or before [settledBefore] (Undo may still
+     * cancel a fresher one).
+     */
+    fun toUpload(settledBefore: Long = Long.MAX_VALUE): List<Draft> = ids().filter { id ->
+        readMeta(File(root, id))?.let { it.status == DraftStatus.DELIVERED && it.uploadedMs == null && it.updatedMs <= settledBefore } == true
+    }.mapNotNull(::load).sortedBy { it.createdMs }
 
     /** What goes to the lab: meta.json, segments.jsonl (if any), audio.wav. */
     fun files(draft: Draft): List<File> =
