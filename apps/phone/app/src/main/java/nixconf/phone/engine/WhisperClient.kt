@@ -83,7 +83,7 @@ class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
 // Runs the call on OkHttp's threads and [read]s the response there (no network
 // I/O on the caller's thread, which may be the main one); cancelling the
 // coroutine cancels the call.
-private suspend fun <T> Call.await(read: (Response) -> T): T = suspendCancellableCoroutine { cont ->
+internal suspend fun <T> Call.await(read: (Response) -> T): T = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)

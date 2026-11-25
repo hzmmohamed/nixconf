@@ -25,6 +25,7 @@ import nixconf.phone.drafts.DraftStore
 import nixconf.phone.drafts.SegmentText
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.RemoteTranscriber
+import nixconf.phone.engine.Where
 import nixconf.phone.engine.chooseEngine
 import nixconf.phone.profile.MODE_STREAM
 import nixconf.phone.profile.Profile
@@ -128,6 +129,10 @@ class DictationSession(
     private val local: LocalTranscriber,
     private val probe: suspend (String) -> Boolean,
     private val scope: CoroutineScope,
+    // A power status URL (Profile.power) → whether that host runs on battery (null: unknown).
+    private val onBattery: suspend (String) -> Boolean? = { null },
+    // The keyboard's Auto / Phone toggle, read at each mic press.
+    private val where: () -> Where = { Where.AUTO },
     private val vad: (() -> SpeechProbability)? = null,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -526,8 +531,18 @@ class DictationSession(
         return if (text.isEmpty()) Outcome(null, engine, NOTHING_HEARD) else Outcome(text, engine, null)
     }
 
-    private suspend fun choose(p: Profile?, language: String): Engine =
-        chooseEngine(p?.servers.orEmpty(), language, local.ready, p?.localModel?.language.orEmpty(), probe)
+    private suspend fun choose(p: Profile?, language: String): Engine {
+        val power = p?.power.orEmpty().associate { it.server to it.url }
+        return chooseEngine(
+            p?.servers.orEmpty(),
+            language,
+            local.ready,
+            p?.localModel?.language.orEmpty(),
+            where(),
+            { url -> power[url]?.let { onBattery(it) } },
+            probe,
+        )
+    }
 
     private fun localEligible(p: Profile?, language: String) = local.ready && p?.localModel?.language == language
 

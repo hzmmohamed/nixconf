@@ -1,6 +1,7 @@
 package nixconf.phone.ime
 
 import nixconf.phone.engine.Engine
+import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
 import nixconf.phone.session.Delivery
 import nixconf.phone.session.SessionState
@@ -15,6 +16,12 @@ class PanelTextTest {
         assertEquals("on phone", engineLabel(Engine.Local))
         assertEquals("no server · will save as draft", engineLabel(Engine.Unavailable))
         assertEquals("finding server…", engineLabel(null))
+    }
+
+    @Test
+    fun where_label() {
+        assertEquals("Auto", whereLabel(Where.AUTO))
+        assertEquals("Phone", whereLabel(Where.PHONE))
     }
 
     @Test

@@ -130,6 +130,10 @@ for f in files:
 own_urls = [("$.servers", u) for u in profile.get("servers", [])]
 own_urls += [(f"$.localModel.files {f.get('name')}", f.get("url", "")) for f in files]
 own_urls.append(("$.appUrl", profile.get("appUrl") or ""))
+own_urls += [("$.power", s.get("url", "")) for s in profile.get("power", [])]
+for s in profile.get("power", []):
+    if s.get("server") not in profile.get("servers", []):
+        errors.append(f"$.power: {s.get('server')!r} is not one of servers")
 for where, url in own_urls:
     host = urlparse(str(url)).hostname or ""
     if "." not in host:

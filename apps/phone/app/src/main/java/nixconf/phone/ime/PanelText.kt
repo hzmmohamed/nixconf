@@ -2,6 +2,7 @@ package nixconf.phone.ime
 
 import java.net.URI
 import nixconf.phone.engine.Engine
+import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
 import nixconf.phone.session.Delivery
 import nixconf.phone.session.SessionState
@@ -15,6 +16,18 @@ fun engineLabel(engine: Engine?): String = when (engine) {
     is Engine.Remote -> hostOf(engine.url)
     Engine.Local -> "on phone"
     Engine.Unavailable -> "no server · will save as draft"
+}
+
+/** The Auto / Phone toggle's text. */
+fun whereLabel(where: Where): String = when (where) {
+    Where.AUTO -> "Auto"
+    Where.PHONE -> "Phone"
+}
+
+/** What the toggle means, for TalkBack. */
+fun whereDescription(where: Where): String = when (where) {
+    Where.AUTO -> "Transcribes on a plugged-in server, else on the phone"
+    Where.PHONE -> "Transcribes on the phone"
 }
 
 /** A draft's engine as stored ([nixconf.phone.drafts.Draft.engine]): server URL or "local". */

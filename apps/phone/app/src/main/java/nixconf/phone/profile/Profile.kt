@@ -10,7 +10,8 @@ import kotlinx.serialization.json.jsonPrimitive
 // which servers to try, languages, Whisper prompt, draft retention, the
 // on-phone model to download, how a recording is cut and delivered
 // (pauseMs, maxSegmentSec and mode, as on the laptops) and when one without
-// speech stops itself (noSpeechSec; 0: never). Fields added later
+// speech stops itself (noSpeechSec; 0: never) and where to read whether a
+// server's host runs on battery (power). Fields added later
 // have defaults: a profile without them still parses, and an older app
 // ignores them (ignoreUnknownKeys), so they need no version bump.
 const val PROFILE_VERSION = 1
@@ -35,7 +36,12 @@ data class Profile(
     val maxSegmentSec: Int = 25,
     val mode: String = MODE_BATCH,
     val noSpeechSec: Int = 10,
+    val power: List<PowerStatus> = emptyList(),
 )
+
+/** Where [server]'s host publishes whether it runs on battery (Auto passes it over then). */
+@Serializable
+data class PowerStatus(val server: String, val url: String)
 
 @Serializable
 data class LocalModel(

@@ -32,6 +32,11 @@
 #                     pins as the laptops)
 #   app.json, app/    the published release APK, written by
 #                     `nix run .#phone-app -- publish` as the user (no redeploy)
+#   power.json        {"onBattery": bool}: whether this host runs on battery
+#                     (a battery and no charger online), rewritten on every
+#                     power_supply change (udev) and each minute; the
+#                     keyboard's Auto passes over a server on battery
+#                     (`phone.power` lists where each server's status is)
 # URLs use the MagicDNS FQDN (`phone.url`: http://<host>.<tailnet domain>:port),
 # which `phone-app` also builds into the app as its default profile URL.
 # profile.json and models/ are symlinks into the store, relinked (as root)
@@ -110,6 +115,7 @@
     # MagicDNS FQDN: the phone's resolver may not search the tailnet domain.
     tailnetName = "${config.networking.hostName}.${self.tailnet.domain}";
     phoneUrl = "http://${tailnetName}:${toString phone.port}";
+    ownServer = "http://${tailnetName}:${toString cfg.port}";
     parakeetFiles = ["encoder.int8.onnx" "decoder.int8.onnx" "joiner.int8.onnx" "tokens.txt"];
 
     profile =
@@ -120,7 +126,7 @@
         modelUrl = "${phoneUrl}/models/parakeet";
         base = builtins.toJSON {
           version = 1;
-          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec;
+          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec power;
           localModel = {
             name = "parakeet-tdt-0.6b-v2-int8";
             language = "en";
@@ -151,6 +157,26 @@
       set -eu
       ln -sfnT ${profile} ${stateDir}/profile.json
       ln -sfnT ${modelsDir} ${stateDir}/models
+    '';
+
+    # Written as root into the user's state dir, read by darkhttpd.
+    writePower = pkgs.writeShellScript "phone-power" ''
+      set -eu
+      battery=0 online=0
+      for s in /sys/class/power_supply/*; do
+        type=$(cat "$s/type" 2>/dev/null || true)
+        case $type in
+          Battery) battery=1 ;;
+          Mains | USB)
+            if [ "$(cat "$s/online" 2>/dev/null || true)" = 1 ]; then online=1; fi
+            ;;
+        esac
+      done
+      if [ $battery = 1 ] && [ $online = 0 ]; then on=true; else on=false; fi
+      tmp=$(mktemp ${stateDir}/.power.XXXXXX)
+      printf '{"onBattery": %s}\n' "$on" >"$tmp"
+      chmod 0644 "$tmp"
+      mv -f "$tmp" ${stateDir}/power.json
     '';
 
     mimeTypes = pkgs.writeText "phone-profile-mime.types" ''
@@ -217,7 +243,7 @@
 
         servers = lib.mkOption {
           type = lib.types.listOf lib.types.str;
-          default = ["http://${tailnetName}:${toString cfg.port}"];
+          default = [ownServer];
           defaultText = lib.literalExpression ''["http://''${config.networking.hostName}.''${self.tailnet.domain}:''${toString config.preferences.dictation-server.port}"]'';
           description = "Whisper servers the phone tries, in order (MagicDNS FQDNs).";
         };
@@ -278,6 +304,31 @@
             the text shows in the field as composing text, segment by segment,
             and is committed when you stop (some apps handle composing text
             poorly, hence not the default).
+          '';
+        };
+
+        power = lib.mkOption {
+          type = lib.types.listOf (lib.types.submodule {
+            options = {
+              server = lib.mkOption {
+                type = lib.types.str;
+                description = "A URL of `servers`.";
+              };
+              url = lib.mkOption {
+                type = lib.types.str;
+                description = "Its host's power.json (MagicDNS FQDN).";
+              };
+            };
+          });
+          default = lib.optional (lib.elem ownServer phone.servers) {
+            server = ownServer;
+            url = "${phoneUrl}/power.json";
+          };
+          defaultText = lib.literalExpression ''[{server = <this host's server>; url = "''${phone.url}/power.json";}] (if it is in servers)'';
+          description = ''
+            Where the phone reads whether a server's host runs on battery
+            (`power.json` of that host's phone profile). A server without an
+            entry counts as plugged in.
           '';
         };
 
@@ -396,6 +447,27 @@
             RestartSec = 5;
           };
         };
+
+        systemd.services.phone-power = {
+          description = "Power status for the Nixconf app (power.json)";
+          wantedBy = ["multi-user.target"];
+          after = ["systemd-tmpfiles-setup.service"];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = writePower;
+          };
+        };
+        # The udev event is what makes it prompt; the timer catches a missed one.
+        systemd.timers.phone-power = {
+          wantedBy = ["timers.target"];
+          timerConfig = {
+            OnBootSec = "1min";
+            OnUnitActiveSec = "1min";
+          };
+        };
+        services.udev.extraRules = ''
+          SUBSYSTEM=="power_supply", ACTION=="change", RUN+="${pkgs.systemd}/bin/systemctl --no-block start phone-power.service"
+        '';
 
         preferences.trustedNetworks.allowedTCPPorts = [phone.port];
       })
