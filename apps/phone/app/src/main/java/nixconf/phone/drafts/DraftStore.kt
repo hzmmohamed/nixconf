@@ -7,6 +7,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.random.Random
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -19,6 +21,12 @@ import nixconf.phone.audio.WavFiles
 // threw it away (CANCELLED); only those two are pruned, so audio is never
 // lost: a draft whose meta.json is missing or unreadable but has audio is
 // PENDING.
+/** Privacy tier (training lab): a work draft may be analysed by Claude. */
+const val TIER_WORK = "work"
+
+/** Privacy tier: only the user's own machines read it. The default, and what any unknown value means. */
+const val TIER_PERSONAL = "personal"
+
 @Serializable
 enum class DraftStatus {
     @SerialName("pending") PENDING,
@@ -35,15 +43,46 @@ data class Draft(
     val engine: String?,
     val text: String?,
     val error: String?,
+    /** The app the text was for (package name), null if unknown. */
+    val app: String? = null,
+    val tier: String = TIER_PERSONAL,
+    /** First 12 hex of the SHA-256 of the Whisper prompt in use. */
+    val promptSha: String? = null,
 ) {
     val audio: File get() = File(dir, "audio.wav")
 }
 
-/** One line of segments.jsonl: segment [i] (samples [start, end) of audio.wav), its text and who transcribed it. */
+/**
+ * One line of segments.jsonl: segment [i] (samples [start, end) of audio.wav), its text, who
+ * transcribed it and how sure Whisper was ([conf]; null for Parakeet or a plain-json server).
+ */
 @Serializable
-data class SegmentText(val i: Int, val start: Long, val end: Long, val text: String, val engine: String? = null)
+data class SegmentText(
+    val i: Int,
+    val start: Long,
+    val end: Long,
+    val text: String,
+    val engine: String? = null,
+    val conf: SegmentConf? = null,
+)
+
+/** Whisper's verbose_json confidence for one request: the worst segment's scores, every word, the detected language. */
+@Serializable
+data class SegmentConf(
+    val avgLogprob: Double,
+    val noSpeechProb: Double,
+    val words: List<WordConf> = emptyList(),
+    val lang: String? = null,
+    val langP: Double? = null,
+)
+
+/** A word, its probability and its time in seconds from the start of the segment's audio. */
+@Serializable
+data class WordConf(val w: String, val p: Double, val start: Double, val end: Double)
 
 // meta.json; updatedMs (last status/text change) is what keepDays counts from.
+// tier and origin are always written: the lab reads them without defaults.
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 private data class Meta(
     val status: DraftStatus,
@@ -53,13 +92,19 @@ private data class Meta(
     val engine: String? = null,
     val text: String? = null,
     val error: String? = null,
+    val app: String? = null,
+    @EncodeDefault val tier: String = TIER_PERSONAL,
+    val promptSha: String? = null,
+    @EncodeDefault val origin: String = ORIGIN_PHONE,
 )
+
+private const val ORIGIN_PHONE = "phone"
 
 class DraftStore(private val root: File, private val clock: () -> Long) {
     private val json = Json { ignoreUnknownKeys = true }
     private val idTime = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").withZone(ZoneId.systemDefault())
 
-    fun create(language: String): Draft {
+    fun create(language: String, app: String? = null, tier: String = TIER_PERSONAL, promptSha: String? = null): Draft {
         val now = clock()
         val stamp = idTime.format(Instant.ofEpochMilli(now))
         var dir: File
@@ -67,14 +112,14 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
             dir = File(root, "$stamp-%04x".format(Random.nextInt(0x10000)))
         } while (dir.exists())
         if (!dir.mkdirs()) throw IOException("cannot create $dir")
-        val draft = Draft(dir.name, dir, DraftStatus.PENDING, now, language, null, null, null)
+        val draft = Draft(dir.name, dir, DraftStatus.PENDING, now, language, null, null, null, app, tier, promptSha)
         update(draft)
         return draft
     }
 
     /** Writes [draft]'s meta.json atomically (tmp file, fsync, rename). */
     fun update(draft: Draft) {
-        val meta = with(draft) { Meta(status, createdMs, clock(), language, engine, text, error) }
+        val meta = with(draft) { Meta(status, createdMs, clock(), language, engine, text, error, app, tier, promptSha) }
         val tmp = File(draft.dir, "meta.json.tmp")
         FileOutputStream(tmp).use {
             it.write(json.encodeToString(Meta.serializer(), meta).toByteArray())
@@ -117,7 +162,9 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
     fun load(id: String): Draft? {
         val dir = File(root, id)
         val meta = readMeta(dir) ?: lostMeta(dir) ?: return null
-        val draft = with(meta) { Draft(id, dir, status, createdMs, language, engine, text, error) }
+        val draft = with(meta) {
+            Draft(id, dir, status, createdMs, language, engine, text, error, app, if (tier == TIER_WORK) TIER_WORK else TIER_PERSONAL, promptSha)
+        }
         if (draft.status == DraftStatus.PENDING && draft.audio.exists()) {
             try {
                 WavFiles.repair(draft.audio)

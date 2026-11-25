@@ -6,6 +6,7 @@ import nixconf.phone.audio.WavWriter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -165,5 +166,53 @@ class DraftStoreTest {
 
     private companion object {
         const val DAY = 24 * 3_600_000L
+    }
+
+    @Test
+    fun create_records_app_tier_and_prompt_hash() {
+        val d = store.create("en", "com.example.chat", TIER_WORK, "abc123def456")
+        val loaded = store.load(d.id)!!
+        assertEquals("com.example.chat", loaded.app)
+        assertEquals(TIER_WORK, loaded.tier)
+        assertEquals("abc123def456", loaded.promptSha)
+        val meta = File(d.dir, "meta.json").readText()
+        assertTrue(meta, meta.contains("\"origin\":\"phone\""))
+        assertTrue(meta, meta.contains("\"tier\":\"work\""))
+    }
+
+    @Test
+    fun default_tier_is_written_as_personal() {
+        val d = store.create("en")
+        assertTrue(File(d.dir, "meta.json").readText().contains("\"tier\":\"personal\""))
+    }
+
+    @Test
+    fun meta_without_tier_loads_as_personal() {
+        val dir = File(tmp.root, "20261101_120000-abcd").apply { mkdirs() }
+        File(dir, "meta.json").writeText(
+            """{"status":"delivered","createdMs":1,"updatedMs":2,"language":"en","text":"old"}""",
+        )
+        val d = store.load(dir.name)!!
+        assertEquals(TIER_PERSONAL, d.tier)
+        assertNull(d.app)
+        assertEquals("old", d.text)
+    }
+
+    @Test
+    fun segment_confidence_round_trips() {
+        val d = store.create("en")
+        val conf = SegmentConf(
+            avgLogprob = -0.4,
+            noSpeechProb = 0.02,
+            words = listOf(WordConf(" an", 0.9, 0.0, 0.2), WordConf(" example", 0.4, 0.2, 0.8)),
+            lang = "english",
+            langP = 0.97,
+        )
+        store.addSegment(d, SegmentText(0, 0, 16000, "an example", "remote", conf))
+        store.addSegment(d, SegmentText(1, 16000, 32000, "more", "local"))
+        val segs = store.segments(d)
+        assertEquals(conf, segs[0].conf)
+        assertNotNull(segs[0].conf)
+        assertNull(segs[1].conf)
     }
 }
