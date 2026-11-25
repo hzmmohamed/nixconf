@@ -26,7 +26,8 @@
 #                     names, sizes, sha256 and URLs) and how recordings are
 #                     cut and delivered (pauseMs, maxSegmentSec: the laptops'
 #                     values; mode), when a recording without speech stops
-#                     itself (noSpeechSec) (`phone.profile`; its shape is checked
+#                     itself (noSpeechSec), which apps are work tier (workApps)
+#                     (`phone.profile`; its shape is checked
 #                     against the app by checks.phone-profile)
 #   models/parakeet/  the Parakeet int8 files (self.dictationModels, the same
 #                     pins as the laptops)
@@ -126,7 +127,7 @@
         modelUrl = "${phoneUrl}/models/parakeet";
         base = builtins.toJSON {
           version = 1;
-          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec power;
+          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec power workApps;
           localModel = {
             name = "parakeet-tdt-0.6b-v2-int8";
             language = "en";
@@ -330,6 +331,17 @@
             Where the phone reads whether a server's host runs on battery
             (`power.json` of that host's phone profile). A server without an
             entry counts as plugged in.
+          '';
+        };
+
+        workApps = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [];
+          example = ["com.termux"];
+          description = ''
+            Android packages whose dictation is work tier (Claude may analyse
+            it, dictation training lab); everything else, browsers included,
+            is personal. Exact package names.
           '';
         };
 

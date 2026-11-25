@@ -124,4 +124,11 @@ class ProfileTest {
     private companion object {
         const val URL = "http://butternut:8180/profile.json"
     }
+
+    @Test
+    fun work_apps_default_empty() {
+        assertEquals(emptyList<String>(), parseProfile(full).workApps)
+        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"workApps\":[\"a.b\"],"))
+        assertEquals(listOf("a.b"), p.workApps)
+    }
 }
