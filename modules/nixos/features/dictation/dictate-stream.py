@@ -24,6 +24,7 @@ and `cancelled` drafts are compressed to Opus and pruned after keep_days.
   dictate-stream recover [ID | --latest] [--type | --copy] [--all] [--fresh]
   dictate-stream discard ID
   dictate-stream prune [--check]   prune old drafts; --check: notify pending
+  dictate-stream push [--all | ID] upload delivered drafts to the training lab
   dictate-stream input [--json] [--set NODE|auto]
                         the mics, and which one sessions record from
 
@@ -197,7 +198,9 @@ import shlex  # noqa: E402
 import shutil  # noqa: E402
 import socket  # noqa: E402
 import threading  # noqa: E402
+import urllib.error  # noqa: E402
 import urllib.parse  # noqa: E402
+import urllib.request  # noqa: E402
 import uuid  # noqa: E402
 import wave  # noqa: E402
 
@@ -1051,8 +1054,11 @@ def find_draft(ident):
 
 
 def prune(keep_days=None):
-    """Drop delivered/cancelled drafts older than keep_days, and empty ones."""
+    """Drop delivered/cancelled drafts older than keep_days, and empty ones.
+    With a training lab (lab_url), a delivered draft not uploaded yet is kept
+    until unsent_days: butternut being off must not lose it."""
     keep = CFG["keep_days"] if keep_days is None else keep_days
+    unsent = CFG.get("unsent_days", 30)
     now = time.time()
     removed = 0
     for d in list_drafts():
@@ -1062,10 +1068,41 @@ def prune(keep_days=None):
         except OSError:
             age = now - os.path.getmtime(d.path)
         empty = st == "interrupted" and d.duration() < 0.5 and not d.commits()
-        if (st in TERMINAL and age > keep * 86400) or (empty and age > 60):
+        limit = keep
+        if CFG.get("lab_url") and st == "done" and not d.meta.get("uploaded"):
+            limit = max(keep, unsent)
+        if (st in TERMINAL and age > limit * 86400) or (empty and age > 60):
             d.discard()
             removed += 1
     return removed
+
+
+# --- training lab -----------------------------------------------------------
+def push(d, url, timeout=10):
+    """Upload a delivered draft to the lab's inbox (dictation-lab feature):
+    PUT meta.json, commits.jsonl and the audio, then POST done; mark it
+    uploaded. False (and the draft stays unsent) on any failure. The text
+    is never logged."""
+    if d.status != "done" or d.meta.get("uploaded"):
+        return False
+    base = f"{url.rstrip('/')}/inbox/{socket.gethostname().lower()}/{d.id}"
+    files = ["meta.json", "commits.jsonl"]
+    files += [a for a in ("audio.opus", "audio.pcm") if os.path.exists(d.file(a))][:1]
+    try:
+        for name in files:
+            if not os.path.exists(d.file(name)):
+                continue
+            with open(d.file(name), "rb") as f:
+                data = f.read()
+            req = urllib.request.Request(f"{base}/{name}", data=data, method="PUT")
+            urllib.request.urlopen(req, timeout=timeout).close()
+        req = urllib.request.Request(f"{base}/done", data=b"", method="POST")
+        urllib.request.urlopen(req, timeout=max(timeout, 60)).close()
+    except (OSError, urllib.error.URLError, ValueError) as err:
+        log(f"push {d.id}: {getattr(err, 'code', None) or type(err).__name__}")
+        return False
+    d.save(uploaded=int(time.time()))
+    return True
 
 
 def attention_notice(exclude=None):
@@ -1515,6 +1552,8 @@ def cmd_record(args):
         notify(sess.error, "critical", 0)
     if status == "done":
         draft.compress()
+        if CFG.get("lab_url"):
+            push(draft, CFG["lab_url"])
 
 
 def run_file(samples, args, sess, draft):
@@ -1750,6 +1789,17 @@ def cmd_prune(args):
         attention_notice()
 
 
+def cmd_push(args):
+    url = CFG.get("lab_url")
+    if not url:
+        print("dictate: no lab configured (preferences.dictation.labUrl)")
+        return
+    drafts = list_drafts() if args.all or not args.id else [find_draft(args.id)]
+    sent = sum(push(d, url) for d in drafts if d.status == "done" and not d.meta.get("uploaded"))
+    if sent:
+        log(f"uploaded {sent} drafts to the lab")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="dictate-stream")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1785,11 +1835,14 @@ def main():
     p = sub.add_parser("prune")
     p.add_argument("--check", action="store_true", help="also notify about pending drafts")
     p.add_argument("--keep-days", type=float)
+    u = sub.add_parser("push")
+    u.add_argument("id", nargs="?")
+    u.add_argument("--all", action="store_true", help="every delivered draft not uploaded yet")
     args = ap.parse_args()
     if args.cmd == "recover" and args.list:
         args.cmd, args.json = "drafts", False
     {"record": cmd_record, "file": cmd_file, "recover": cmd_recover, "drafts": cmd_drafts,
-     "discard": cmd_discard, "prune": cmd_prune, "input": cmd_input}[args.cmd](args)
+     "discard": cmd_discard, "prune": cmd_prune, "input": cmd_input, "push": cmd_push}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -123,6 +123,8 @@
     # Dictation (Mod4+d): butternut's GPU server when reachable (cable
     # first, then the tailnet), else Parakeet/Whisper on this CPU/iGPU.
     preferences.dictation.servers = ["http://butternut-cable:8178" "http://butternut:8178"];
+    # Training lab: delivered drafts go to butternut's inbox (tailnet).
+    preferences.dictation.labUrl = "http://butternut.${self.tailnet.domain}:8181";
 
     networking = {
       hostName = "hazel";
