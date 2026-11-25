@@ -680,11 +680,11 @@
   };
 
   # dictate-stream's capture fields (tier, app, prompt hash, Whisper
-  # confidences): dictation/tests, stdlib unittest.
+  # confidences) and `dictate tier`: dictation/tests, stdlib unittest.
   perSystem = {pkgs, ...}: {
     checks.dictation-capture =
       pkgs.runCommand "dictation-capture-check" {
-        nativeBuildInputs = [(pkgs.python3.withPackages (ps: [ps.numpy ps.onnxruntime]))];
+        nativeBuildInputs = [(pkgs.python3.withPackages (ps: [ps.numpy ps.onnxruntime])) pkgs.bash pkgs.coreutils pkgs.util-linux pkgs.jq];
       } ''
         cp -r ${./dictation} dictation
         export HOME=$TMPDIR

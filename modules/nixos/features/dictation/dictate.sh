@@ -9,6 +9,9 @@
 #   dictate mode [batch|stream|toggle]
 #                      the mode of the next sessions: batch types the text at
 #                      the end, stream types each segment at its pause
+#   dictate tier [work|personal|auto]
+#                      privacy tier of the next session only (training lab:
+#                      work may be analysed by Claude); auto: from the app
 #   dictate status     waybar JSON (idle / recording mm:ss / transcribing)
 #   dictate drafts     list drafts: status, duration, first words
 #   dictate recover [ID|--latest] [--type|--copy] [--all] [--fresh]
@@ -19,7 +22,7 @@
 #                      list the mics and which one the next session uses, or
 #                      choose one (auto: newest headset, else the default)
 #   dictate menu       launcher picker: drafts (copy / type / retranscribe /
-#                      discard), the mic and the mode switch
+#                      discard), the mic, the mode switch and the next tier
 #   dictate file WAV [--stream] [--mode M] [--realtime] [--overlay]
 #                      run the pipeline on a 16-bit WAV and print the text
 #                      (--stream: each segment as it commits, with times)
@@ -113,12 +116,28 @@ set_mode() {
   notify low 3000 "Next dictation: $(mode_label "$m") ($m mode)"
 }
 
+# One-shot: the next session takes it (start() deletes it), then the tier
+# comes from the focused app again.
+set_tier() {
+  case "$1" in
+  work | personal)
+    put tier "$1"
+    notify low 3000 "Next dictation: $1"
+    ;;
+  auto)
+    rm -f "$state_dir/tier"
+    notify low 3000 "Next dictation: tier from the app"
+    ;;
+  esac
+}
+
 start() {
-  local lang t0
+  local lang t0 tier_args=()
   lang=$(current_lang)
   t0=$(now_ms)
   mode=$(current_mode)
-  rm -f "$state_dir"/{pid,latched}
+  [[ -n $(get tier) ]] && tier_args=(--tier "$(get tier)")
+  rm -f "$state_dir"/{pid,latched,tier}
   put t0 "$t0"
   put lang "$lang"
   put mode "$mode"
@@ -127,7 +146,7 @@ start() {
   # SIGUSR1 (flushing the last segment) and cancels on SIGUSR2.
   (
     exec 9>&-
-    exec setsid "$cfg_stream" record --lang "$lang" --t0 "$t0" --mode "$mode" \
+    exec setsid "$cfg_stream" record --lang "$lang" --t0 "$t0" --mode "$mode" "${tier_args[@]}" \
       </dev/null >"$state_dir/session.log" 2>&1
   ) &
   put pid $!
@@ -203,6 +222,8 @@ menu() {
   ' <<<"$drafts")
   entries+=$'\n'"Microphone: $("$cfg_stream" input --json | jq -r '.current.label + (if .preferred then "" else " (automatic)" end)'): change"$'\t'"@input"
   entries+=$'\n'"Mode: $(mode_label "$(current_mode)") ($(current_mode)): switch"$'\t'"@mode"
+  entries+=$'\n'"Next dictation: work"$'\t'"@tier-work"
+  entries+=$'\n'"Next dictation: personal"$'\t'"@tier-personal"
   choice=$(cut -f1 <<<"${entries#$'\n'}" | "${launcher[@]}") || exit 0
   [[ -n $choice ]] || exit 0
   line=$(awk -F'\t' -v c="$choice" '$1 == c { print; exit }' <<<"$entries")
@@ -210,6 +231,10 @@ menu() {
   [[ -n $id ]] || exit 1
   if [[ $id == @mode ]]; then
     set_mode toggle
+    return
+  fi
+  if [[ $id == @tier-* ]]; then
+    set_tier "${id#@tier-}"
     return
   fi
   if [[ $id == @input ]]; then
@@ -299,6 +324,19 @@ mode)
     ;;
   esac
   ;;
+tier)
+  case "${2:-}" in
+  "")
+    t=$(get tier)
+    echo "${t:-auto (from the app)}"
+    ;;
+  work | personal | auto) set_tier "$2" ;;
+  *)
+    echo "usage: dictate tier [work|personal|auto]" >&2
+    exit 2
+    ;;
+  esac
+  ;;
 menu) menu ;;
 backends)
   lang=$(current_lang)
@@ -319,7 +357,7 @@ backends)
   "$cfg_stream" drafts
   ;;
 *)
-  echo "usage: dictate press|release|toggle|cancel|mode|input|status|drafts|recover|discard|menu|file WAV|backends" >&2
+  echo "usage: dictate press|release|toggle|cancel|mode|tier|input|status|drafts|recover|discard|menu|file WAV|backends" >&2
   exit 2
   ;;
 esac
