@@ -678,4 +678,18 @@
       })
     ];
   };
+
+  # dictate-stream's capture fields (tier, app, prompt hash, Whisper
+  # confidences): dictation/tests, stdlib unittest.
+  perSystem = {pkgs, ...}: {
+    checks.dictation-capture =
+      pkgs.runCommand "dictation-capture-check" {
+        nativeBuildInputs = [(pkgs.python3.withPackages (ps: [ps.numpy ps.onnxruntime]))];
+      } ''
+        cp -r ${./dictation} dictation
+        export HOME=$TMPDIR
+        python3 -m unittest discover -s dictation/tests -v
+        touch $out
+      '';
+  };
 }

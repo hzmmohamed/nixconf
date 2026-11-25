@@ -186,6 +186,7 @@ else:
     INPUT = RECORDER = None
 
 import argparse  # noqa: E402
+import hashlib  # noqa: E402
 import http.client  # noqa: E402
 import io  # noqa: E402
 import queue  # noqa: E402
@@ -383,6 +384,48 @@ def clean(text):
     return " ".join(text.split())
 
 
+def tier_for(app, work_apps, override):
+    """Privacy tier of a draft (training lab): "work" may be analysed by
+    Claude, "personal" only on the user's machines. An explicit override
+    wins; else work iff the target app is on the work list; else personal."""
+    if override in ("work", "personal"):
+        return override
+    return "work" if app and app.lower() in work_apps else "personal"
+
+
+def prompt_sha(prompt):
+    """Which Whisper prompt a draft was transcribed with (12 hex of SHA-256)."""
+    return hashlib.sha256(prompt.encode()).hexdigest()[:12]
+
+
+def parse_inference(answer):
+    """whisper-server's answer -> (text, conf). conf (verbose_json only):
+    the worst segment's avg_logprob and no_speech_prob, every word with its
+    probability, the detected language; None when there are no segments."""
+    text = answer["text"]
+    segs = answer.get("segments") or []
+    if not segs:
+        return text, None
+    conf = {"avg_logprob": min(s.get("avg_logprob", 0.0) for s in segs),
+            "no_speech_prob": max(s.get("no_speech_prob", 0.0) for s in segs),
+            "words": [{"w": w.get("word", ""), "p": w.get("probability", 0.0),
+                       "start": w.get("start", 0.0), "end": w.get("end", 0.0)}
+                      for s in segs for w in s.get("words") or []]}
+    if answer.get("detected_language"):
+        conf["lang"] = answer["detected_language"]
+        conf["lang_p"] = answer.get("detected_language_probability")
+    return text, conf
+
+
+def commit_entry(i, start, end, ok, text, delivered, conf):
+    """One line of commits.jsonl; `conf` only when Whisper gave one."""
+    entry = {"i": i, "start": start, "end": end, "ok": ok, "text": text,
+             "delivered": delivered}
+    if conf is not None:
+        entry["conf"] = conf
+    return entry
+
+
 def joined(prev, text):
     """The text to type after `prev` (already typed in this session)."""
     if not prev or not text or text[0] in NO_SPACE_BEFORE or prev[-1].isspace():
@@ -554,20 +597,20 @@ class Backends:
                 pass
 
     def _whisper(self, url, samples, prompt):
-        fields = {"response_format": "json", "language": self.lang,
+        fields = {"response_format": "verbose_json", "language": self.lang,
                   "temperature": "0.0", "temperature_inc": "0.2"}
         if prompt:
             fields["prompt"] = prompt
         body, headers = multipart(fields, wav_bytes(samples))
-        return json.loads(http_request(url + "/inference", "POST", body, headers,
-                                       timeout=120))["text"]
+        return parse_inference(json.loads(http_request(url + "/inference", "POST", body,
+                                                       headers, timeout=120)))
 
     def _local(self, samples):
         if self.lang == CFG["local_lang"]:
             data = http_request("/inference", "POST", wav_bytes(samples),
                                 {"Content-Type": "audio/wav"},
                                 unix=CFG["local_socket"], timeout=120)
-            return json.loads(data)["text"]
+            return json.loads(data)["text"], None
         if not CFG.get("whisper_model"):
             raise OSError(f"no local model for '{self.lang}' (needs a server)")
         if not self.local_whisper:
@@ -575,6 +618,7 @@ class Backends:
         return self._whisper(self.local_whisper[1], samples, "")
 
     def transcribe(self, samples, prompt=""):
+        """(text, conf): conf is Whisper's confidence (parse_inference) or None."""
         self.ready.wait()
         url = self.url
         if url:
@@ -820,7 +864,7 @@ class Draft:
         self.audio_fd = None
 
     @classmethod
-    def create(cls, lang, mode, source, journal, t0):
+    def create(cls, lang, mode, source, journal, t0, app="", tier="personal"):
         os.makedirs(DRAFTS, mode=0o700, exist_ok=True)
         sid = uuid.uuid4().hex[:4]
         name = time.strftime("%Y-%m-%d_%H%M%S", time.localtime(t0)) + "-" + sid
@@ -832,6 +876,8 @@ class Draft:
             "t0": t0, "lang": lang, "mode": mode, "source": source,
             "journal": journal, "status": "recording", "pid": os.getpid(),
             "backend": None, "complete": False, "error": None, "delivered": None,
+            "app": app, "tier": tier, "origin": socket.gethostname(),
+            "prompt_sha": prompt_sha(CFG["prompt"]),
             "audio": {"file": "audio.pcm", "format": "s16le", "rate": RATE, "channels": 1},
         })
         d.audio_fd = os.open(os.path.join(path, "audio.pcm"),
@@ -1104,7 +1150,7 @@ class Session:
             msg = {"t": round(time.time() - self.t0, 2), "level": round(self.level, 3),
                    "speech": self.speaking, "lang": self.lang.upper(), "mode": self.mode,
                    "backend": self.backends.label, "input": self.input,
-                   "warning": self.warning,
+                   "warning": self.warning, "tier": self.draft.meta.get("tier", "personal"),
                    "lines": self.lines[-3:] if self.mode == "stream" else [],
                    "done": self.next_commit, "total": self.next_index,
                    "failed": self.failures, "state": self.state}
@@ -1141,7 +1187,7 @@ class Session:
             if item is None:
                 return
             i, samples = item
-            text, ok = "", False
+            text, ok, conf = "", False, None
             # Every segment gets a result, whatever happens: a gap would stall
             # the in-order commit.
             try:
@@ -1151,13 +1197,14 @@ class Session:
                         time.sleep(random.uniform(0, delay))
                     context = join_texts(self.texts)[-200:]
                     prompt = (CFG["prompt"] + " " + context).strip()
-                    text, ok = clean(self.backends.transcribe(samples, prompt)), True
+                    raw, conf = self.backends.transcribe(samples, prompt)
+                    text, ok = clean(raw), True
                     if delay:
                         log(f"segment {i} transcribed (next to commit: {self.next_commit})")
             except Exception as err:
                 log(f"segment {i}: {err}")
             with self.lock:
-                self.results[i] = (text, ok)
+                self.results[i] = (text, ok, conf)
             self._commit_ready()
 
     def _commit_ready(self):
@@ -1166,10 +1213,10 @@ class Session:
                 i = self.next_commit
                 if i not in self.results or self.cancelled:
                     return
-                text, ok = self.results.pop(i)
+                text, ok, conf = self.results.pop(i)
                 start, end, closed = self.meta.pop(i)
             try:
-                self._commit(i, start, end, closed, text, ok)
+                self._commit(i, start, end, closed, text, ok, conf)
             except Exception as err:
                 log(f"commit {i}: {err}")
             finally:
@@ -1177,7 +1224,7 @@ class Session:
                     self.next_commit += 1
             self.push()
 
-    def _commit(self, i, start, end, closed, text, ok):
+    def _commit(self, i, start, end, closed, text, ok, conf=None):
         delivered = False
         if ok:
             self.texts.append(text)
@@ -1193,8 +1240,8 @@ class Session:
         lat = time.time() - closed
         self.latencies.append(lat)
         self.draft.sync()  # audio up to here is on disk before the commit is
-        self.draft.add_commit({"i": i, "start": start, "end": end, "ok": ok,
-                               "text": text, "delivered": delivered or (ok and not text)})
+        self.draft.add_commit(commit_entry(i, start, end, ok, text,
+                                           delivered or (ok and not text), conf))
         if text:
             with self.lock:
                 self.lines.append(text)
@@ -1326,7 +1373,9 @@ def cmd_record(args):
     lang = args.lang or os.environ.get("DICTATE_LANG") or CFG["default_lang"]
     mode = args.mode or CFG["mode"]
     t0 = (args.t0 / 1000.0) if args.t0 else time.time()
-    draft = Draft.create(lang, mode, "mic", journal=True, t0=t0)
+    app = focused_app()  # the recorder is already running: this costs no audio
+    draft = Draft.create(lang, mode, "mic", journal=True, t0=t0, app=app,
+                         tier=tier_for(app, CFG.get("work_apps", []), args.tier))
     mic = INPUT["label"]
     draft.save(input=mic)
     write_input(mic)
@@ -1523,11 +1572,11 @@ def recover_draft(d, how, scope_all=False, fresh=False, delay=0.0):
     complete = d.meta.get("complete", False) and d.status not in ("interrupted",)
     undelivered = any(not c.get("delivered") for c in commits) or not complete
     use_all = scope_all or fresh or not undelivered
-    pieces = []  # [start, end, text or None]
+    pieces = []  # [start, end, text or None, conf or None]
     if not fresh:
         for c in commits:
             if use_all or not c.get("delivered"):
-                pieces.append([c["start"], c["end"], c["text"] if c.get("ok") else None])
+                pieces.append([c["start"], c["end"], c["text"] if c.get("ok") else None, None])
     samples = None
     if fresh or not complete or any(p[2] is None for p in pieces):
         samples = d.samples()
@@ -1538,7 +1587,7 @@ def recover_draft(d, how, scope_all=False, fresh=False, delay=0.0):
         segs = segment_all(samples[tail:], offset=tail)
     else:
         segs = []
-    pieces += [[a, b, None] for a, b, _ in segs]
+    pieces += [[a, b, None, None] for a, b, _ in segs]
     pieces.sort(key=lambda p: p[0])
     todo = [p for p in pieces if p[2] is None]
     backends = Backends(d.meta.get("lang") or CFG["default_lang"])
@@ -1549,7 +1598,8 @@ def recover_draft(d, how, scope_all=False, fresh=False, delay=0.0):
     failed = 0
     for p in todo:
         try:
-            p[2] = clean(backends.transcribe(samples[p[0]:p[1]]))
+            raw, p[3] = backends.transcribe(samples[p[0]:p[1]])
+            p[2] = clean(raw)
         except Exception as err:
             log(f"segment at {fmt_t(p[0] / RATE)} failed: {err}")
             failed += 1
@@ -1564,6 +1614,8 @@ def recover_draft(d, how, scope_all=False, fresh=False, delay=0.0):
             c = kept.get((p[0], p[1]), {"i": i})
             kept[(p[0], p[1])] = dict(c, start=p[0], end=p[1], ok=True, text=p[2],
                                       delivered=bool(delivered or c.get("delivered")))
+            if p[3] is not None:
+                kept[(p[0], p[1])]["conf"] = p[3]
         d.set_commits(list(kept.values()))
 
     text = join_texts(p[2] for p in ok if p[2])
@@ -1702,6 +1754,8 @@ def main():
     r.add_argument("--lang")
     r.add_argument("--t0", type=int, help="key press time, ms since the epoch")
     r.add_argument("--mode", choices=["batch", "stream"])
+    r.add_argument("--tier", choices=["work", "personal"],
+                   help="privacy tier of this draft (default: from the focused app)")
     f = sub.add_parser("file")
     f.add_argument("wav")
     f.add_argument("--stream", action="store_true", help="stream mode; print segments as they commit")
