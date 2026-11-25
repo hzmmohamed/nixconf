@@ -68,6 +68,7 @@
       self.nixosModules.memory-guard
       self.nixosModules.dictation
       self.nixosModules.dictation-server
+      self.nixosModules.dictation-lab
       self.nixosModules.openrgb
       self.nixosModules.activitywatch
       self.nixosModules.spotify
