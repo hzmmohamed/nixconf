@@ -73,6 +73,12 @@ interface EditorTarget {
      * typed into again when the user comes back to it. Null: never matches.
      */
     val field: String? get() = token
+
+    /** Up to [n] characters before the cursor; null when the field cannot say. */
+    fun textBefore(n: Int): String? = null
+
+    /** Deletes [n] characters before the cursor. */
+    fun deleteBefore(n: Int): Boolean = false
 }
 
 /** What [DictationSession.deliver] did; BUSY: a session is running (its text must not be mixed in). */
@@ -182,6 +188,10 @@ class DictationSession(
     // Drafts a retry is transcribing (main thread).
     private val retrying = mutableSetOf<String>()
 
+    // What the last Done typed, exactly as committed, and where ([undo]).
+    private class Typed(val draft: Draft, val text: String, val token: String?, val incognito: Boolean)
+    private var typed: Typed? = null
+
     /** The draft being recorded or transcribed: not one to list as pending or retry. */
     val activeDraftId: String? get() = current?.draft?.id
 
@@ -191,6 +201,7 @@ class DictationSession(
      */
     fun start(language: String, target: EditorTarget) {
         if (current != null) return
+        typed = null
         val p = profile()
         val draft = try {
             drafts.create(language)
@@ -356,10 +367,33 @@ class DictationSession(
         val text = draft.text ?: return Delivery.NO_TEXT
         if (current != null) return Delivery.BUSY
         if (onDisk(draft).status != DraftStatus.PENDING) return Delivery.GONE
-        if (!target.commit("$text ")) return Delivery.NO_FIELD
+        val committed = "$text "
+        if (!target.commit(committed)) return Delivery.NO_FIELD
         delivered(draft, target)
+        typed = Typed(draft, committed, target.token, target.incognito)
         mutableState.value = SessionState.Done(text)
         return Delivery.TYPED
+    }
+
+    /**
+     * Takes the text the last Done typed back out of [target], if the field
+     * still ends in exactly that text at the cursor (same input, nothing typed
+     * or moved since); the draft is CANCELLED (audio kept for keepDays) and
+     * the state turns Kept ([UNDONE]: the text stays on offer to copy).
+     * False if there is nothing to undo or the field changed.
+     */
+    fun undo(target: EditorTarget): Boolean {
+        val last = typed ?: return false
+        if (current != null || mutableState.value !is SessionState.Done) return false
+        if (target.token == null || target.token != last.token) return false
+        val n = last.text.length
+        if (target.textBefore(n) != last.text || !target.deleteBefore(n)) return false
+        typed = null
+        val draft = last.draft.copy(status = DraftStatus.CANCELLED)
+        // An incognito draft is gone already: nothing to write back.
+        if (!last.incognito) save(draft)
+        mutableState.value = SessionState.Kept(draft, UNDONE)
+        return true
     }
 
     /**
@@ -393,9 +427,11 @@ class DictationSession(
         }
         // Only into the field the recording started in: the user may have
         // switched app (or closed the keyboard) while it was transcribing.
-        if (cur.inField() && cur.target.commit("$text ")) {
+        val committed = "$text "
+        if (cur.inField() && cur.target.commit(committed)) {
             cur.composed = false
             delivered(draft, cur.target)
+            typed = Typed(draft, committed, cur.token, cur.target.incognito)
             end(SessionState.Done(text))
         } else {
             dropComposing(cur)
@@ -578,6 +614,7 @@ class DictationSession(
         const val NOTHING_HEARD = "nothing heard"
         const val NO_SPEECH = "no speech"
         const val LOCAL_FAILED = "on-phone transcription failed"
+        const val UNDONE = "undone"
 
         // Defaults when there is no profile (as the profile's).
         private const val PAUSE_MS = 550

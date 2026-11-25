@@ -84,9 +84,18 @@ class DictationSessionTest {
         val commits = mutableListOf<String>()
         val composed = mutableListOf<String>()
         var composing = ""
+
+        // The field's committed text; the cursor at its end.
+        var content = ""
         override fun commit(text: String): Boolean {
             commits += text
+            content += text
             composing = ""
+            return true
+        }
+        override fun textBefore(n: Int): String = content.takeLast(n)
+        override fun deleteBefore(n: Int): Boolean {
+            content = content.dropLast(n)
             return true
         }
         override fun compose(text: String): Boolean {
@@ -459,6 +468,60 @@ class DictationSessionTest {
         assertEquals(Delivery.TYPED, s.deliver(kept, editor))
         assertEquals(Delivery.GONE, s.deliver(kept, editor))
         assertEquals(listOf("hello world "), editor.commits)
+    }
+
+    // --- undo ---
+
+    @Test
+    fun undo_takes_the_typed_text_back_out_and_cancels_the_draft() = runTest {
+        editor.content = "Note: "
+        val s = session()
+        dictate(s)
+        assertEquals("Note: hello world ", editor.content)
+
+        assertTrue(s.undo(editor))
+        assertEquals("Note: ", editor.content)
+        val kept = s.state.value as SessionState.Kept
+        assertEquals(DictationSession.UNDONE, kept.reason)
+        assertEquals("hello world", kept.draft.text) // still there to copy
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+        assertFalse(s.undo(editor)) // once
+    }
+
+    @Test
+    fun undo_leaves_a_field_that_changed_alone() = runTest {
+        val s = session()
+        dictate(s)
+        editor.content += "x" // typed after it
+        assertFalse(s.undo(editor))
+        assertEquals("hello world x", editor.content)
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+        assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
+
+        editor.content = "hello world "
+        editor.token = "org.chat/7" // another field
+        assertFalse(s.undo(editor))
+        assertEquals("hello world ", editor.content)
+    }
+
+    @Test
+    fun undo_after_inserting_a_draft() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertTrue(s.undo(editor))
+        assertEquals("", editor.content)
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+    }
+
+    @Test
+    fun nothing_to_undo_once_a_new_session_starts() = runTest {
+        val s = session()
+        dictate(s)
+        s.start("en", editor)
+        assertFalse(s.undo(editor))
+        s.cancel()
+        assertFalse(s.undo(editor))
     }
 
     @Test

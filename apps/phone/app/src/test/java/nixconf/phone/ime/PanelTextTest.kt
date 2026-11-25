@@ -55,6 +55,7 @@ class PanelTextTest {
         assertEquals("Saved as draft (field changed)", keptText(DictationSession.FIELD_CHANGED))
         assertEquals("Saved as draft: no server. Transcribes when one is back", keptText(DictationSession.NO_SERVER))
         assertEquals("Nothing heard: check the level bar", keptText(DictationSession.NOTHING_HEARD))
+        assertEquals("Removed from the field", keptText(DictationSession.UNDONE))
         assertEquals("Saved as draft: odd", keptText("odd"))
     }
 

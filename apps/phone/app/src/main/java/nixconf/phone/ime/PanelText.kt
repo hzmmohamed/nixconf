@@ -124,6 +124,9 @@ fun deliveryText(result: Delivery): String? = when (result) {
     Delivery.BUSY -> "Finish the dictation first"
 }
 
+/** Undo found other text before the cursor (typed, moved, or another field): it leaves the field alone. */
+const val UNDO_FAILED = "Can't undo: the text before the cursor changed"
+
 /** m:ss */
 fun elapsed(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -137,6 +140,7 @@ fun keptText(reason: String): String = when (reason) {
     DictationSession.NOTHING_HEARD -> "Nothing heard: check the level bar"
     DictationSession.NO_SPEECH -> "Stopped: no speech heard. Mic muted or in use by another app?"
     DictationSession.LOCAL_FAILED -> "On-phone transcription failed: saved as draft"
+    DictationSession.UNDONE -> "Removed from the field"
     else -> "Saved as draft: $reason"
 }
 

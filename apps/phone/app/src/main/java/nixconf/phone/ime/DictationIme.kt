@@ -137,6 +137,8 @@ class DictationIme :
                             switchKeyboard = ::onSwitchKeyboard,
                             insert = ::insert,
                             copy = ::copy,
+                            copyText = ::copyText,
+                            undo = ::undo,
                             retry = ::retry,
                             delete = { sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL) },
                             enter = ::onEnter,
@@ -195,6 +197,10 @@ class DictationIme :
     override fun commit(text: String): Boolean = (currentInputConnection?.commitText(text, 1) ?: false).also {
         if (it) composing = false
     }
+
+    override fun textBefore(n: Int): String? = currentInputConnection?.getTextBeforeCursor(n, 0)?.toString()
+
+    override fun deleteBefore(n: Int): Boolean = currentInputConnection?.deleteSurroundingText(n, 0) ?: false
 
     override fun compose(text: String): Boolean {
         val ic = currentInputConnection ?: return false
@@ -294,9 +300,16 @@ class DictationIme :
     }
 
     private fun copy(draft: Draft) {
-        val text = draft.text ?: return
+        copyText(draft.text ?: return)
+    }
+
+    private fun copyText(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("dictation", text))
         notice = Notice("Copied")
+    }
+
+    private fun undo() {
+        notice = if (app.session.undo(this)) null else Notice(UNDO_FAILED, error = true)
     }
 
     // Transcribes a draft and types it here, if the user is still in the
