@@ -77,6 +77,8 @@
 
       self.nixosModules.powersave
       self.nixosModules.battery-notify
+      # Launcher "Server mode": lid closed keeps running (T3 from the phone).
+      self.nixosModules.server-mode
       self.nixosModules.memory-guard
 
       # disko

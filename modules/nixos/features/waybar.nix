@@ -28,6 +28,8 @@
     netModules = networkManager && netUi != null;
     # swayidle feature (caffeine), when imported.
     idle = lib.attrByPath ["preferences" "idle"] null config;
+    # server-mode feature, when imported.
+    serverMode = lib.attrByPath ["preferences" "serverMode"] null config;
     # battery-notify feature (alert tiers), when imported.
     alert = lib.attrByPath ["preferences" "batteryAlert"] {} config;
     terminal = lib.getExe selfpkgs.terminal;
@@ -151,6 +153,7 @@
       modules-left =
         ["clock" "custom/language" "custom/notification"]
         ++ lib.optional (idle != null) "custom/caffeine"
+        ++ lib.optional (serverMode != null) "custom/server-mode"
         ++ ["custom/mail" "mpris"];
       modules-center = ["sway/mode" "custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
       modules-right =
@@ -546,6 +549,31 @@
       };
     };
 
+    # Server mode (server-mode feature): accent glyph only while the lid
+    # switch is ignored; click turns it off. Refreshed via SIGRTMIN+14. Kept
+    # out of the bar entirely where the feature isn't imported.
+    serverModeModule = lib.optionalAttrs (serverMode != null) {
+      "custom/server-mode" = {
+        exec = "${serverMode.command} waybar";
+        return-type = "json";
+        justify = "center";
+        interval = "once";
+        signal = serverMode.barSignal;
+        hide-empty-text = true;
+        on-click = "${serverMode.command} off";
+      };
+    };
+    serverModeStyle = lib.optionalString (serverMode != null) ''
+
+      #custom-server-mode {
+        padding: ${px d.bar.itemPaddingY} 0;
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
+        color: @accent;
+      }
+      #custom-server-mode:hover { background: @tint; }
+    '';
+
     waybarStyle = ''
       @import url("file://${theme.stateDir}/current/waybar.css");
 
@@ -710,8 +738,8 @@
         programs.waybar = {
           enable = true;
           systemd.enable = true;
-          settings = waybarSettings;
-          style = waybarStyle;
+          settings = lib.recursiveUpdate waybarSettings {mainBar = serverModeModule;};
+          style = waybarStyle + serverModeStyle;
         };
 
         # MPRIS: track the most recently active player for playerctl/media keys.
