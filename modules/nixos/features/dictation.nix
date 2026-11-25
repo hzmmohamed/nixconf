@@ -233,6 +233,7 @@
       local_lang = "en";
       whisper_model = lib.optionalString cfg.localMultilingual "${whisperSmall}";
       append_space = cfg.appendSpace;
+      work_apps = map lib.toLower cfg.workApps;
       max_sec = cfg.maxSeconds;
       no_speech_sec = cfg.noSpeechSec;
       pause_ms = cfg.pauseMs;
@@ -422,12 +423,24 @@
 
       prompt = lib.mkOption {
         type = lib.types.str;
-        default = "";
-        example = "NixOS, Sway, Claude Code, T3 Code, flake, home-manager.";
+        default = lib.concatStringsSep ", " self.dictationVocabulary + ".";
+        defaultText = lib.literalExpression ''lib.concatStringsSep ", " self.dictationVocabulary + "."'';
         description = ''
           Whisper initial prompt (Whisper backends only): vocabulary and
-          style hints. The session's last committed text is appended, so a
-          segment continues the previous one's casing and punctuation.
+          style hints (the fleet vocabulary, modules/dictation-vocabulary.nix,
+          as the phone gets it). The session's last committed text is
+          appended, so a segment continues the previous one's casing and
+          punctuation.
+        '';
+      };
+
+      workApps = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = ["kitty" "codium" "com.t3tools.T3Code"];
+        description = ''
+          Sway app_ids (or X11 classes) whose dictation is work tier (Claude
+          may analyse it, dictation training lab); everything else is
+          personal. Matched exactly, ignoring case.
         '';
       };
 
