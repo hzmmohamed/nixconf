@@ -22,11 +22,14 @@ import nixconf.phone.audio.WavWriter
 import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.DraftStore
+import nixconf.phone.drafts.SegmentConf
 import nixconf.phone.drafts.SegmentText
+import nixconf.phone.drafts.TIER_PERSONAL
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.RemoteTranscriber
 import nixconf.phone.engine.Where
 import nixconf.phone.engine.chooseEngine
+import nixconf.phone.engine.promptSha
 import nixconf.phone.profile.MODE_STREAM
 import nixconf.phone.profile.Profile
 import nixconf.phone.segment.RATE
@@ -84,6 +87,12 @@ interface EditorTarget {
 
     /** Deletes [n] characters before the cursor. */
     fun deleteBefore(n: Int): Boolean = false
+
+    /** The app the text is for (package name), recorded in the draft. */
+    val appPackage: String? get() = null
+
+    /** The draft's privacy tier (training lab), guessed from [appPackage] or flipped by the user. */
+    val tier: String get() = TIER_PERSONAL
 }
 
 /** What [DictationSession.deliver] did; BUSY: a session is running (its text must not be mixed in). */
@@ -225,7 +234,7 @@ class DictationSession(
         typed = null
         val p = profile()
         val draft = try {
-            drafts.create(language)
+            drafts.create(language, target.appPackage, target.tier, promptSha(p?.prompt.orEmpty()))
         } catch (e: IOException) {
             throw StartException(storage = true, e)
         }
@@ -554,7 +563,7 @@ class DictationSession(
                 used = outcome.engine
                 val text = outcome.text ?: continue
                 texts += text
-                record(cur, index, segment, text, outcome.engine)
+                record(cur, index, segment, text, outcome.engine, outcome.conf)
                 cur.text = joinTexts(texts)
                 cur.textEngine = outcome.engine
                 if (cur.stream && cur.inField()) cur.composed = cur.target.compose(lead(cur, cur.text) + cur.text) || cur.composed
@@ -570,9 +579,9 @@ class DictationSession(
         return Outcome(joinTexts(texts), used, null)
     }
 
-    private suspend fun record(cur: Current, i: Int, segment: Segment, text: String, engine: String?) {
+    private suspend fun record(cur: Current, i: Int, segment: Segment, text: String, engine: String?, conf: SegmentConf?) {
         try {
-            withContext(io) { drafts.addSegment(cur.draft, SegmentText(i, segment.start, segment.end, text, engine)) }
+            withContext(io) { drafts.addSegment(cur.draft, SegmentText(i, segment.start, segment.end, text, engine, conf)) }
         } catch (e: IOException) {
             // The text still goes into the session's result.
         }
@@ -617,7 +626,13 @@ class DictationSession(
 
     // text: the cleaned, non-empty transcript; otherwise reason says why not
     // (and error what failed, if anything did).
-    private class Outcome(val text: String?, val engine: String?, val reason: String?, val error: String? = null)
+    private class Outcome(
+        val text: String?,
+        val engine: String?,
+        val reason: String?,
+        val error: String? = null,
+        val conf: SegmentConf? = null,
+    )
 
     // Remote first; if it fails mid-session (server busy, network gone, 500,
     // timeout) the on-phone model takes over when it can (onLocal first).
@@ -632,7 +647,8 @@ class DictationSession(
         var error: String? = null
         if (engine is Engine.Remote) {
             try {
-                return outcome(remote.transcribe(engine.url, wav, language, prompt), engine.url)
+                val answer = remote.transcribe(engine.url, wav, language, prompt)
+                return outcome(answer.text, engine.url, answer.conf)
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 error = e.message
@@ -648,9 +664,9 @@ class DictationSession(
         }
     }
 
-    private fun outcome(raw: String, engine: String): Outcome {
+    private fun outcome(raw: String, engine: String, conf: SegmentConf? = null): Outcome {
         val text = clean(raw)
-        return if (text.isEmpty()) Outcome(null, engine, NOTHING_HEARD) else Outcome(text, engine, null)
+        return if (text.isEmpty()) Outcome(null, engine, NOTHING_HEARD) else Outcome(text, engine, null, conf = conf)
     }
 
     private suspend fun choose(p: Profile?, language: String, onBatteryLastResort: Boolean = true): Engine {

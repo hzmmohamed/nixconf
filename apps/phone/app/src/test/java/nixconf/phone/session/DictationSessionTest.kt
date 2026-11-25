@@ -16,9 +16,14 @@ import nixconf.phone.audio.WavWriter
 import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.DraftStore
+import nixconf.phone.drafts.SegmentConf
+import nixconf.phone.drafts.TIER_PERSONAL
+import nixconf.phone.drafts.TIER_WORK
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.RemoteTranscriber
 import nixconf.phone.engine.Where
+import nixconf.phone.engine.Transcript
+import nixconf.phone.engine.promptSha
 import nixconf.phone.profile.LocalModel
 import nixconf.phone.profile.MODE_STREAM
 import nixconf.phone.profile.PowerStatus
@@ -50,6 +55,7 @@ class DictationSessionTest {
     private var probeDelayMs = 0L
     private val remoteCalls = mutableListOf<List<String>>()
     private var remote: suspend (File) -> String = { "hello world" }
+    private var remoteConf: SegmentConf? = null
 
     private class FakeLocal(override var ready: Boolean = true, var text: String = "local text") : LocalTranscriber {
         var calls = 0
@@ -90,6 +96,8 @@ class DictationSessionTest {
 
     private class FakeEditor(override var token: String?) : EditorTarget {
         override var field: String? = token
+        override var appPackage: String? = null
+        override var tier: String = TIER_PERSONAL
         override var incognito = false
         override var composable = true
         val commits = mutableListOf<String>()
@@ -135,7 +143,7 @@ class DictationSessionTest {
         audio = audio,
         remote = RemoteTranscriber { url, wav, language, prompt ->
             remoteCalls += listOf(url, language, prompt)
-            remote(wav)
+            Transcript(remote(wav), remoteConf)
         },
         local = local,
         probe = {
@@ -781,6 +789,27 @@ class DictationSessionTest {
         assertFalse(java.io.File(d.dir, "segment.wav").exists())
     }
 
+    @Test
+    fun segment_confidence_is_stored() = runTest {
+        segmented()
+        remoteConf = SegmentConf(avgLogprob = -0.3, noSpeechProb = 0.05, lang = "english", langP = 0.9)
+        dictate(session())
+        val d = onlyDraft()
+        assertTrue(drafts.segments(d).isNotEmpty())
+        assertTrue(drafts.segments(d).all { it.conf == remoteConf })
+    }
+
+    @Test
+    fun draft_records_target_app_tier_and_prompt_hash() = runTest {
+        editor.appPackage = "com.example.chat"
+        editor.tier = TIER_WORK
+        dictate(session())
+        val d = onlyDraft()
+        assertEquals("com.example.chat", d.app)
+        assertEquals(TIER_WORK, d.tier)
+        assertEquals(promptSha("NixOS, flake."), d.promptSha)
+    }
+
     // --- no speech ---
 
     @Test
@@ -1310,7 +1339,7 @@ class DictationSessionTest {
             profile = { profile },
             drafts = DraftStore(File(file, "drafts"), { 0L }),
             audio = audio,
-            remote = RemoteTranscriber { _, _, _, _ -> "x" },
+            remote = RemoteTranscriber { _, _, _, _ -> Transcript("x") },
             local = local,
             probe = { true },
             scope = this,

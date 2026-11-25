@@ -72,6 +72,12 @@ class DictationIme :
     // The focused field (onStartInput).
     private var kind by mutableStateOf(FieldKind.TEXT)
     private var incognitoField by mutableStateOf(false)
+
+    // The focused app and the user's flip of its tier (one draft only: kept
+    // through the recording, cleared when it ends or another app takes focus).
+    private var pkg by mutableStateOf<String?>(null)
+    private var tierOverride by mutableStateOf<String?>(null)
+    private var overrideSpent = false
     private var enter by mutableStateOf<Int?>(null)
 
     // Keyboard tapped while finishing: switch once the text is typed.
@@ -84,6 +90,8 @@ class DictationIme :
     override val field: String? get() = tokens.field
     override val incognito: Boolean get() = incognitoField
     override val composable: Boolean get() = kind == FieldKind.TEXT && !incognitoField
+    override val appPackage: String? get() = pkg
+    override val tier: String get() = tierFor(pkg, app.profile.value?.workApps.orEmpty(), tierOverride)
 
     // Composing text of ours is showing in the current field.
     private var composing = false
@@ -122,6 +130,11 @@ class DictationIme :
                             notice = notice,
                             field = kind,
                             incognito = incognitoField,
+                            tier = if (incognitoField || kind == FieldKind.PASSWORD) {
+                                null
+                            } else {
+                                tierFor(pkg, profile?.workApps.orEmpty(), tierOverride)
+                            },
                             enterLabel = enterLabel(enter),
                             switchQueued = switchQueued,
                             retrying = retrying,
@@ -143,6 +156,7 @@ class DictationIme :
                             retry = ::retry,
                             delete = { sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL) },
                             enter = ::onEnter,
+                            flipTier = { tierOverride = flipped(tier) },
                         ),
                     )
                 }
@@ -153,6 +167,9 @@ class DictationIme :
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         if (attribute == null) tokens.finish() else tokens.start(attribute.packageName, attribute.fieldId, restarting)
+        val focused = attribute?.packageName
+        if (focused != pkg && app.session.state.value !is SessionState.Recording) tierOverride = null
+        pkg = focused
         kind = attribute?.let { fieldKind(it.inputType) } ?: FieldKind.TEXT
         incognitoField = attribute?.let { incognito(it.imeOptions) } ?: false
         enter = attribute?.let { enterAction(it.imeOptions) }
@@ -233,6 +250,7 @@ class DictationIme :
                 app.refreshProfileIfStale()
                 notice = try {
                     app.session.start(currentLanguage(), this)
+                    overrideSpent = tierOverride != null
                     null
                 } catch (e: StartException) {
                     Notice(startError(e.storage, e.message), error = true)
@@ -269,6 +287,10 @@ class DictationIme :
     }
 
     private fun onState(state: SessionState) {
+        if (overrideSpent && state !is SessionState.Recording && state !is SessionState.Finishing) {
+            overrideSpent = false
+            tierOverride = null
+        }
         if (!switchQueued) return
         when (state) {
             is SessionState.Done -> {

@@ -1,6 +1,7 @@
 package nixconf.phone.ime
 
 import java.net.URI
+import nixconf.phone.drafts.TIER_WORK
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
@@ -9,6 +10,13 @@ import nixconf.phone.session.SessionState
 
 // The words on the keyboard panel and the drafts list, kept out of the
 // Compose code so they can be tested on the JVM.
+
+/** The tier chip's text: who may read this draft. */
+fun tierLabel(tier: String): String = if (tier == TIER_WORK) "Work" else "Personal"
+
+/** What TalkBack says for the tier chip. */
+fun tierAnnouncement(tier: String): String =
+    "Tier: ${tierLabel(tier)}. Double-tap to make this draft ${tierLabel(flipped(tier))}"
 
 /** Who transcribes: the server's host label ("butternut"), "on phone" or "no server"; null while probing. */
 fun engineLabel(engine: Engine?): String = when (engine) {

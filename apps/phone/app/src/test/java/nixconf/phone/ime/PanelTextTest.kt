@@ -1,5 +1,7 @@
 package nixconf.phone.ime
 
+import nixconf.phone.drafts.TIER_PERSONAL
+import nixconf.phone.drafts.TIER_WORK
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
@@ -148,5 +150,14 @@ class PanelTextTest {
     fun keep_on_label() {
         assertEquals("Keep recording in background", keepOnLabel(false))
         assertEquals("✓ Keeps recording in background", keepOnLabel(true))
+    }
+
+    @Test
+    fun tier_chip_label_and_announcement() {
+        assertEquals("Work", tierLabel(TIER_WORK))
+        assertEquals("Personal", tierLabel(TIER_PERSONAL))
+        assertEquals("Personal", tierLabel("bogus"))
+        assertEquals("Tier: Work. Double-tap to make this draft Personal", tierAnnouncement(TIER_WORK))
+        assertEquals("Tier: Personal. Double-tap to make this draft Work", tierAnnouncement(TIER_PERSONAL))
     }
 }

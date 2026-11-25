@@ -1,5 +1,7 @@
 package nixconf.phone.ime
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -42,6 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
@@ -61,6 +68,7 @@ import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import nixconf.phone.drafts.Draft
+import nixconf.phone.drafts.TIER_WORK
 import nixconf.phone.engine.Where
 import nixconf.phone.session.DictationSession
 import nixconf.phone.session.SessionState
@@ -84,6 +92,8 @@ data class PanelModel(
     // The Auto / Phone toggle; shown when the profile has an on-phone model.
     val where: Where = Where.AUTO,
     val phoneModel: Boolean = false,
+    // The draft's privacy tier (training lab); null: no chip (incognito, password).
+    val tier: String? = null,
 )
 
 /** A one-line message under the status: info ("Copied") or an error. */
@@ -107,6 +117,7 @@ class PanelActions(
     val retry: (Draft) -> Unit,
     val delete: () -> Unit,
     val enter: () -> Unit,
+    val flipTier: () -> Unit = {},
 )
 
 // Close to a system keyboard's height, so neither the host app nor the mic
@@ -157,6 +168,7 @@ fun Panel(model: PanelModel, actions: PanelActions) {
                         Text(whereLabel(model.where))
                     }
                 }
+                model.tier?.let { TierChip(it, enabled = !active, actions.flipTier) }
                 Spacer(Modifier.weight(1f))
                 when {
                     // Finishing: segments already have text; cancelling would throw it away.
@@ -213,6 +225,44 @@ private fun Main(model: PanelModel, actions: PanelActions, password: Boolean) {
                 )
             }
         }
+    }
+}
+
+// Who may read this draft: Work (outlined in the accent, as the one ink
+// marks where input goes; Claude may analyse it) or Personal (plain, a lock;
+// only the user's machines). Tap flips it for this draft.
+@Composable
+private fun TierChip(tier: String, enabled: Boolean, onClick: () -> Unit) {
+    val work = tier == TIER_WORK
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(50),
+        color = colors.surfaceContainer,
+        border = BorderStroke(if (work) 2.dp else 1.dp, if (work) colors.primary else colors.outlineVariant),
+        modifier = Modifier.padding(horizontal = 4.dp).semantics { contentDescription = tierAnnouncement(tier) },
+    ) {
+        Row(
+            Modifier.heightIn(min = 32.dp).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!work) {
+                LockGlyph(colors.onSurfaceVariant)
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(tierLabel(tier), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun LockGlyph(color: Color) {
+    Canvas(Modifier.size(12.dp)) {
+        val w = size.width
+        val h = size.height
+        drawArc(color, 180f, 180f, false, Offset(w * 0.28f, h * 0.08f), Size(w * 0.44f, h * 0.6f), style = Stroke(w * 0.12f))
+        drawRoundRect(color, Offset(w * 0.15f, h * 0.42f), Size(w * 0.7f, h * 0.52f), CornerRadius(w * 0.1f))
     }
 }
 

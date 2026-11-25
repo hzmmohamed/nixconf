@@ -9,8 +9,8 @@ and the transcription progress after stop. It never takes keyboard focus and
 lets pointer input through, so wtype keeps typing into the focused window.
 
 Input: one JSON object per line on stdin, sent by dictate-stream ~15 times a
-second ({t, level, speech, lang, mode, backend, input, warning, lines, done,
-total, failed, state}); EOF
+second ({t, level, speech, lang, mode, backend, tier, input, warning, lines,
+done, total, failed, state}); EOF
 closes it. Look: the palette CSS rendered per mode by the dictation feature
 (--css, from the theme state dir); every colour and size lives there.
 
@@ -158,7 +158,8 @@ class Overlay:
         lv = float(msg.get("level", 0.0))
         self.level = lv if lv > self.level else self.level * 0.7 + lv * 0.3
         self.meter.set_value(self.level)
-        self.meta.set_text(f"{msg.get('lang', '')} · {msg.get('backend', '')}")
+        parts = (msg.get("lang", ""), msg.get("tier", ""), msg.get("backend", ""))
+        self.meta.set_text(" · ".join(x for x in parts if x))
         self.mic.set_text(f"Mic: {msg.get('input', '')}")
         self.mic.set_visible(bool(msg.get("input")))
         lines = msg.get("lines") or []
