@@ -171,7 +171,9 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   `agent-push` + `gh pr create` (the user merges). Before the PR, run
   `nix run .#fleet -- affects` and put its `Affects:` line in the PR body.
   A thread is settled once merged **and** `just status` shows those hosts
-  current (laptops are deployed by hand). `git push` stays denied;
+  current (laptops are deployed by hand). After a merge, `just
+  prune-worktrees` (dry run; the user adds `--apply`) lists merged branches
+  and their worktrees to remove. `git push` stays denied;
   `agent-push` pushes only the current non-default branch. Direct commits
   to main are fine for small changes in the main checkout (commit your own
   files by path); end the hand-back with the hosts it touches

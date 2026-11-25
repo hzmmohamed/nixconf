@@ -34,6 +34,10 @@ status:
 sync *args:
     NIXCONF_SYNC_REPO={{justfile_directory()}} nix run {{justfile_directory()}}#nixconf-sync -- {{args}}
 
+# Branches merged into main + their worktrees; dry run, --apply removes them (raw: bash scripts/repo/prune-worktrees.sh [--apply])
+prune-worktrees *args:
+    bash {{justfile_directory()}}/scripts/repo/prune-worktrees.sh {{args}}
+
 # Dry run of the GitHub history scrub (raw: bash scripts/repo/scrub-unpushed-history.sh [--apply])
 scrub-history *args:
     bash scripts/repo/scrub-unpushed-history.sh {{args}}
