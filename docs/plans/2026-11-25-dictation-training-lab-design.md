@@ -1,6 +1,6 @@
 # Dictation training lab: design
 
-Status: design, awaiting approval (2026-11-25). Nothing built yet.
+Status: design approved (2026-11-25), including the §5.8 UX calls. Nothing built yet.
 Scoping: `2026-11-24-pollen-keyboard-audit-and-ideas.md` §3 (this doc
 supersedes its §3.4 pick and §3.5 privacy section where they differ).
 
@@ -285,6 +285,33 @@ first phase defaults it to the fleet vocabulary, as the phone already does.
   fine-tuning would pay off.
 - Phone: unchanged 7 days, but never prunes a draft before it is uploaded.
 - Deleting a draft in the game deletes it everywhere in the lab.
+
+### 5.8 UX decisions (approved with the user, 2026-11-25)
+
+Reviewed as a clickable walkthrough (tier chip, entry points, an example
+round, census, outcomes); the user accepted every default:
+
+| | Decision | Rejected alternative |
+|---|---|---|
+| a | The tier chip is always visible in Pollen's top row (next to the language toggle); Work is drawn in ink (outlined), Personal is plain with a lock glyph; incognito fields show no chip | chip only when the app is on neither list |
+| b | No notifications: a "Lab · N cards" row in the Pollen app and a desktop launcher entry ("Dictation lab") are the only entry points and the only places a count appears | weekly digest notification |
+| c | Rounds of 10 cards with a finish and a round summary (fixed / were right / skipped / new rules and words) | an endless queue |
+| d | A light game layer: a day streak and a weekly fixed-count; no points or levels | none, or more |
+| e | New words default to the private list; the lab suggests public for technical-looking words; the user picks per word | ask every time with no default |
+| f | Repeated identical edits still produce a card ("you changed this N times") with *Make a rule* pre-selected; no automatic rules | auto-rule after 3 identical edits |
+| g | Audio plays on tap only | autoplay per card on the laptop |
+| h | The phone plays in the browser until the native Pollen screen exists | wait for the native screen |
+
+Card anatomy (for the page and later the Pollen screen): meta row (tier
+tag, tappable to flip; app; when; kind; "found by"), the sentence with the
+suspect span marked, a play button over the segment's audio, one line of
+why it was flagged (personal cards say "checked on your machines only"),
+the suggestion, then Accept / Edit / It's right / Skip (`a` `e` `r` `s` on
+the laptop). After a fix: *Learn the word* (then public or private) /
+*Make a rule* / *Just this once*, with the likely one outlined. Cards
+order: agent-prompt edits, then repeats, then by score. Census: the
+per-100-words trend first, then confirmed mistakes by kind (largest in
+ink), filterable by origin, tier and language.
 
 ## 6. Phases
 
