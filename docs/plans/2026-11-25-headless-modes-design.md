@@ -40,7 +40,7 @@ connector logic.
 |---|---|---|---|
 | Built-in keyboard + touchpad (`/sys/class/input/*/inhibited`) | on | muted | muted |
 | CPU | ppd `performance` | `performance` | ppd `power-saver` (firmware "quiet") + RAPL long-term cap ~15 W |
-| dGPU | as now | as now | ASUS `nv_dynamic_boost=0`, lower `nv_temp_target` |
+| dGPU | as now | as now | as now (builder call: ASUS `nv_dynamic_boost`/`nv_temp_target` already sit at their minimums, 5 / 75) |
 
 USB keyboards are never muted. Muting the built-in keyboard also stops stray
 Ctrl+Alt+Del and SysRq presses from it.
