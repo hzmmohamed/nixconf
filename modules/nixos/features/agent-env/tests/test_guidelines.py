@@ -24,6 +24,8 @@ REQUIRED_HEADINGS = [
     "Tools (nx)",
     "Network",
     "Git",
+    "Delegation (T3)",
+    "Working with the user",
     "Editing",
 ]
 
@@ -32,7 +34,7 @@ class GuidelinesContentTests(unittest.TestCase):
     def test_sections_and_import_line(self):
         text = GUIDELINES.read_text()
         lines = text.splitlines()
-        self.assertLessEqual(len(lines), 80, "guidelines.md should stay short")
+        self.assertLessEqual(len(lines), 100, "guidelines.md should stay short")
 
         headings = re.findall(r"^##\s+(.+?)\s*$", text, re.MULTILINE)
         self.assertEqual(headings, REQUIRED_HEADINGS)

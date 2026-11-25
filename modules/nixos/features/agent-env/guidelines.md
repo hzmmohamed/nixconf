@@ -62,13 +62,36 @@ asked".
   unless the user says so. After rebasing a pushed branch:
   `agent-push --force-with-lease`.
 - **Main checkout** (shared with other threads): its dirty files may not
-  be yours. Stage only your own files by path; for non-trivial edits
-  suggest a worktree thread.
+  be yours, and another thread may have files staged. Commit by path
+  (`git commit -- <paths>`), never a bare `git commit`; for non-trivial
+  edits suggest a worktree thread.
 - Never skip commit hooks (`--no-verify`, `PREK_ALLOW_NO_CONFIG=1`). A
   hook with no config in a new worktree means the dev shell was never
   entered there: run `nix develop -c true` in it once, then commit.
 - A repo's own CLAUDE.md/AGENTS.md can override this (e.g. direct to
   main, or no PRs).
+
+## Delegation (T3)
+
+- Quick, blocking helper on your own model (lookup, search, one-off
+  review): your native subagent (Claude `Agent` in the foreground,
+  OpenCode `task`).
+- Long or background work, another model/provider, its own checkout, or
+  anything the user may want to message mid-way: T3 `delegate_task`
+  (`isolation:"worktree"` for its own branch).
+- New top-level threads only when the user asks.
+- In between (long enough to steer, or editing code alongside others):
+  ask the user. Otherwise pick, and say which in one line.
+- A brief gives exact paths, verified facts and decisions already made;
+  the child's last message is its report.
+
+## Working with the user
+
+- Steps only the user can run (privileges, logins, deploys): paste-ready
+  CLI blocks; you make every file edit. Their shell is fish and root is
+  `doas`, so give multi-line logic as a bash script.
+- Personal activity data (tracker events, check-ins, location) never
+  goes to a commercial model, you included: open-weight models only.
 
 ## Editing
 

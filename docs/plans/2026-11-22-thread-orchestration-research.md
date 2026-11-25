@@ -272,6 +272,15 @@ The coordinator pays to read each child's summary, so keep reports short (§3.2)
 
 ### 2.6 Recommendation: when to use which
 
+> **Superseded 2026-11-25.** This section missed that T3 0.1.9 itself injects the
+> policy (`provider-core/src/server/orchestrationInstructions.ts`): native foreground
+> subagent for a same-model helper with no extra settings, `delegate_task` for another
+> model, user-asked settings, a separate checkout or background work. Quality evidence
+> doesn't separate the two (§2.5), so the user adopted T3's split, plus "ask the user
+> when unclear" and "new top-level threads only on request". The rule now lives in the
+> shared agent guidelines (`modules/nixos/features/agent-env/guidelines.md`,
+> "Delegation (T3)"). The table below is kept for its per-situation reasoning.
+
 | Situation | Use |
 |---|---|
 | Plan step, review pass, research question, anything the user may want to watch or steer from the phone | **`delegate_task`** (default). `shared` for sequential work, `worktree` for parallel or risky work |
