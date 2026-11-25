@@ -139,6 +139,7 @@
     preferences.dictation-server.vulkanDriverFiles = "/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json";
     # The phone's profile, Parakeet files and APKs (Nixconf app, apps/phone/).
     preferences.dictation-server.phone.enable = true;
+    preferences.dictation-server.phone.lab = config.preferences.dictation-lab.url;
 
     # Auto-place apps on fixed workspaces (2 files/office, 3 audio, 4 browser,
     # 5 editor, 6 QGIS) — see modules/nixos/features/sway-workspaces.nix.

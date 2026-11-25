@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
         val profile by app.profile.collectAsState()
         val model by app.modelStatus.collectAsState()
         val pending by app.pending.collectAsState()
+        val unsent by app.unsent.collectAsState()
         Surface(Modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -100,6 +101,15 @@ class MainActivity : ComponentActivity() {
                 item { ModelSection(model) }
                 profile?.appUrl?.let { item { UpdateSection(it) } }
                 drafts(pending)
+                if (unsent > 0) {
+                    item {
+                        Text(
+                            if (unsent == 1) "1 draft waiting to send to the lab" else "$unsent drafts waiting to send to the lab",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 item { Text("", Modifier.padding(bottom = 24.dp)) }
             }
         }

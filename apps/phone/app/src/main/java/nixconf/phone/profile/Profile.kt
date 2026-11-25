@@ -12,7 +12,8 @@ import kotlinx.serialization.json.jsonPrimitive
 // (pauseMs, maxSegmentSec and mode, as on the laptops) and when one without
 // speech stops itself (noSpeechSec; 0: never), where to read whether a
 // server's host runs on battery (power) and which apps' dictation is
-// work tier (workApps, package names; training lab). Fields added later
+// work tier (workApps, package names; training lab) and where delivered
+// drafts go (lab, the training lab's inbox; unsentDays). Fields added later
 // have defaults: a profile without them still parses, and an older app
 // ignores them (ignoreUnknownKeys), so they need no version bump.
 const val PROFILE_VERSION = 1
@@ -39,6 +40,8 @@ data class Profile(
     val noSpeechSec: Int = 20,
     val power: List<PowerStatus> = emptyList(),
     val workApps: List<String> = emptyList(),
+    val lab: String? = null,
+    val unsentDays: Int = 30,
 )
 
 /** Where [server]'s host publishes whether it runs on battery (Auto passes it over then). */
