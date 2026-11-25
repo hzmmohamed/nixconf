@@ -291,9 +291,10 @@
 
         noSpeechSec = lib.mkOption {
           type = lib.types.ints.unsigned;
-          default = config.preferences.dictation.noSpeechSec or 10;
-          defaultText = lib.literalExpression "config.preferences.dictation.noSpeechSec or 10";
-          description = "A phone recording with no speech in its first this-many seconds stops itself and says so (0: never).";
+          # Not the laptops' value: there the key goes down as speech starts;
+          # on the phone the mic is tapped first and the thinking comes after.
+          default = 20;
+          description = "A phone recording with no speech in its first this-many seconds stops itself and says so, after a countdown in its last 5 s (0: never).";
         };
 
         mode = lib.mkOption {

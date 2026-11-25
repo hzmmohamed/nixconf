@@ -105,6 +105,8 @@ sealed interface SessionState {
         val startedMs: Long,
         val transcribing: Boolean = false,
         val background: Boolean = false,
+        // Nothing heard yet: the session stops itself in this many seconds (the last few only).
+        val stopsInSec: Int? = null,
     ) : SessionState
 
     /**
@@ -128,8 +130,9 @@ sealed interface SessionState {
  * shows it as composing text as it grows and commits it at stop. Anything
  * that goes wrong leaves the draft PENDING with its audio (and text, if any).
  * With a VAD, a recording with no speech in its first noSpeechSec (profile)
- * stops itself (Kept, [NO_SPEECH]): a muted or busy mic shows at once, not
- * after minutes of talking into it.
+ * stops itself (Kept, [NO_SPEECH]) after a countdown in its last seconds
+ * (Recording.stopsInSec; speech ends it): a muted or busy mic shows at
+ * once, not after minutes of talking into it.
  * Call from the main thread.
  */
 class DictationSession(
@@ -187,6 +190,7 @@ class DictationSession(
         var transcribing = false
         var done = 0
         var wholeFile = false
+        var stopsInSec: Int? = null
 
         fun inField(): Boolean = target.token.let { it != null && it == token }
     }
@@ -247,19 +251,34 @@ class DictationSession(
         if (feed != null && quietSec > 0) scope.launch { watchForSpeech(cur, feed, quietSec) }
     }
 
-    // No speech in the first [sec] seconds of audio (or no audio at all for
-    // twice that): the session stops itself. Ends with the session.
+    // No speech in the first [sec] seconds (of time and of audio, or of
+    // time alone for twice that: no audio at all): the session stops
+    // itself, counting down its last COUNTDOWN_MS. Ends with the session
+    // or the first speech.
     private suspend fun watchForSpeech(cur: Current, feed: SegmentFeed, sec: Int) {
         val limitMs = sec * 1000L
-        delay(limitMs)
+        delay((limitMs - COUNTDOWN_MS).coerceAtLeast(0))
         while (current === cur && !cur.stopped) {
-            if (feed.heard || feed.failed) return
-            if (feed.processed >= sec.toLong() * RATE || clock() - cur.startedMs >= 2 * limitMs) {
+            if (feed.heard || feed.failed) {
+                countdown(cur, null)
+                return
+            }
+            val elapsedMs = clock() - cur.startedMs
+            val audioMs = feed.processed * 1000 / RATE
+            val leftMs = maxOf(limitMs - elapsedMs, minOf(limitMs - audioMs, 2 * limitMs - elapsedMs))
+            if (leftMs <= 0) {
                 noSpeech(cur)
                 return
             }
+            countdown(cur, if (leftMs <= COUNTDOWN_MS) ((leftMs + 999) / 1000).toInt() else null)
             delay(WATCH_MS)
         }
+    }
+
+    private fun countdown(cur: Current, sec: Int?) {
+        if (cur.stopsInSec == sec) return
+        cur.stopsInSec = sec
+        publish(cur)
     }
 
     // Nothing to transcribe: the draft is CANCELLED (its audio kept for
@@ -522,7 +541,7 @@ class DictationSession(
     private fun publish(cur: Current) {
         if (current !== cur) return
         mutableState.value = if (!cur.stopped) {
-            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing, cur.background)
+            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing, cur.background, cur.stopsInSec)
         } else {
             val total = if (cur.wholeFile) 0 else cur.feed?.closed ?: 0
             SessionState.Finishing(cur.engine, if (total == 0) 0 else cur.done, total)
@@ -633,9 +652,11 @@ class DictationSession(
         // Defaults when there is no profile (as the profile's).
         private const val PAUSE_MS = 550
         private const val MAX_SEGMENT_SEC = 25
-        private const val NO_SPEECH_SEC = 10
+        private const val NO_SPEECH_SEC = 20
 
-        // How often the no-speech watchdog looks again once its time is up.
+        // The no-speech watchdog counts down this long before it stops the
+        // session, looking again this often.
+        private const val COUNTDOWN_MS = 5_000L
         private const val WATCH_MS = 250L
 
         // Characters of the text so far that go into a segment's prompt.

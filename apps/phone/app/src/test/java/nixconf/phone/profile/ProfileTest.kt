@@ -54,7 +54,7 @@ class ProfileTest {
         assertEquals(550, old.pauseMs)
         assertEquals(25, old.maxSegmentSec)
         assertEquals(MODE_BATCH, old.mode)
-        assertEquals(10, old.noSpeechSec)
+        assertEquals(20, old.noSpeechSec)
         val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"pauseMs\":700,\"maxSegmentSec\":20,\"mode\":\"stream\",\"noSpeechSec\":0,"))
         assertEquals(700, p.pauseMs)
         assertEquals(20, p.maxSegmentSec)

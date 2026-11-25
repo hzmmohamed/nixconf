@@ -65,10 +65,19 @@ class DictationSessionTest {
         override val level = MutableStateFlow(0f)
         var recording = false
         var failure: Exception? = null
+        private var out: WavWriter? = null
+        private var tap: ((ShortArray, Int) -> Unit)? = null
         override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
             failure?.let { throw it }
             recording = true
-            out.write(samples, samples.size)
+            this.out = out
+            this.tap = tap
+            more(samples)
+        }
+
+        // Later reads of the running recording.
+        fun more(samples: ShortArray) {
+            out!!.write(samples, samples.size)
             tap?.invoke(samples, samples.size)
         }
         override fun stop() {
@@ -655,12 +664,14 @@ class DictationSessionTest {
     // --- no speech ---
 
     @Test
-    fun no_speech_in_ten_seconds_stops_the_session() = runTest {
-        segmented(samples = speech(12.0 to false))
+    fun no_speech_in_twenty_seconds_stops_the_session() = runTest {
+        segmented(samples = speech(22.0 to false))
         val s = session()
         s.start("en", editor)
-        advanceTimeBy(9_000)
-        assertTrue(s.state.value is SessionState.Recording)
+        advanceTimeBy(14_000)
+        assertEquals(SessionState.Recording(Engine.Remote(server), 0), s.state.value)
+        advanceTimeBy(5_500) // 19.5 s
+        assertEquals(1, (s.state.value as SessionState.Recording).stopsInSec)
         advanceUntilIdle()
         val kept = s.state.value as SessionState.Kept
         assertEquals(DictationSession.NO_SPEECH, kept.reason)
@@ -677,15 +688,17 @@ class DictationSessionTest {
         segmented(samples = ShortArray(0))
         val s = session()
         s.start("en", editor)
-        advanceTimeBy(19_000)
-        assertTrue(s.state.value is SessionState.Recording)
+        advanceTimeBy(30_000)
+        assertEquals(null, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(9_100) // 39.1 s
+        assertEquals(1, (s.state.value as SessionState.Recording).stopsInSec)
         advanceTimeBy(2_000)
         assertEquals(DictationSession.NO_SPEECH, (s.state.value as SessionState.Kept).reason)
     }
 
     @Test
-    fun speech_keeps_the_session_going_past_ten_seconds() = runTest {
-        segmented(samples = speech(1.0 to true, 11.0 to false), texts = listOf("Hello."))
+    fun speech_keeps_the_session_going_past_twenty_seconds() = runTest {
+        segmented(samples = speech(1.0 to true, 21.0 to false), texts = listOf("Hello."))
         val s = session()
         s.start("en", editor)
         advanceTimeBy(30_000)
@@ -693,6 +706,41 @@ class DictationSessionTest {
         s.stop()
         advanceUntilIdle()
         assertEquals(SessionState.Done("Hello."), s.state.value)
+    }
+
+    @Test
+    fun countdown_shows_the_last_seconds_and_speech_ends_it() = runTest {
+        profile = profile!!.copy(noSpeechSec = 10)
+        segmented(samples = speech(7.0 to false), texts = listOf("Hello."))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(5_100)
+        assertEquals(5, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(2_000) // 7.1 s
+        assertEquals(3, (s.state.value as SessionState.Recording).stopsInSec)
+
+        audio.more(speech(1.0 to true, 1.0 to false)) // the user starts talking
+        advanceTimeBy(500)
+        assertEquals(null, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(30_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("Hello."), s.state.value)
+    }
+
+    @Test
+    fun stop_mid_countdown_finishes_as_usual() = runTest {
+        profile = profile!!.copy(noSpeechSec = 10)
+        segmented(samples = speech(12.0 to false))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(7_100)
+        assertEquals(3, (s.state.value as SessionState.Recording).stopsInSec)
+        s.stop()
+        assertEquals(SessionState.Finishing(Engine.Remote(server)), s.state.value)
+        advanceUntilIdle()
+        assertEquals(DictationSession.NOTHING_HEARD, (s.state.value as SessionState.Kept).reason)
     }
 
     @Test
