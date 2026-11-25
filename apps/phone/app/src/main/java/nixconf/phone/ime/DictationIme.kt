@@ -200,6 +200,8 @@ class DictationIme :
 
     override fun textBefore(n: Int): String? = currentInputConnection?.getTextBeforeCursor(n, 0)?.toString()
 
+    override fun textAfter(n: Int): String? = currentInputConnection?.getTextAfterCursor(n, 0)?.toString()
+
     override fun deleteBefore(n: Int): Boolean = currentInputConnection?.deleteSurroundingText(n, 0) ?: false
 
     override fun compose(text: String): Boolean {

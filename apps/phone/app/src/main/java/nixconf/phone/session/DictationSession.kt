@@ -34,6 +34,8 @@ import nixconf.phone.segment.Segment
 import nixconf.phone.segment.SpeechProbability
 import nixconf.phone.segment.clean
 import nixconf.phone.segment.joinTexts
+import nixconf.phone.segment.spaceAfter
+import nixconf.phone.segment.spaceBefore
 
 /**
  * The microphone. Every read goes to [start]'s writer, then to tap (if any);
@@ -76,6 +78,9 @@ interface EditorTarget {
 
     /** Up to [n] characters before the cursor; null when the field cannot say. */
     fun textBefore(n: Int): String? = null
+
+    /** Up to [n] characters after the cursor; null when the field cannot say. */
+    fun textAfter(n: Int): String? = null
 
     /** Deletes [n] characters before the cursor. */
     fun deleteBefore(n: Int): Boolean = false
@@ -165,6 +170,10 @@ class DictationSession(
         // Composing text is showing in the field (stream mode); the text so far.
         var composed = false
         var text = ""
+
+        // The space the text needs after what the field held before it
+        // (null: not looked yet; looked before any composing text shows).
+        var lead: String? = null
 
         // Recording goes on when the keyboard closes (keepOn).
         var background = false
@@ -310,7 +319,7 @@ class DictationSession(
         if (cur.field == null || target.field != cur.field || token == cur.token) return
         cur.token = token
         cur.composed = false
-        if (cur.stream && cur.text.isNotEmpty()) cur.composed = target.compose(cur.text)
+        if (cur.stream && cur.text.isNotEmpty()) cur.composed = target.compose(lead(cur, cur.text) + cur.text)
     }
 
     /** Discards the session: draft CANCELLED, nothing typed. */
@@ -359,7 +368,7 @@ class DictationSession(
     }
 
     /**
-     * Types a draft's text (plus a space) into [target]; DELIVERED if it went
+     * Types a draft's text (spaced from the field's text around the cursor) into [target]; DELIVERED if it went
      * in (and the state shows it Done). Only a still PENDING draft (else GONE:
      * delivered or discarded since), and not while a session runs.
      */
@@ -367,7 +376,7 @@ class DictationSession(
         val text = draft.text ?: return Delivery.NO_TEXT
         if (current != null) return Delivery.BUSY
         if (onDisk(draft).status != DraftStatus.PENDING) return Delivery.GONE
-        val committed = "$text "
+        val committed = spaceBefore(target.textBefore(1), text) + text + spaceAfter(target.textAfter(1))
         if (!target.commit(committed)) return Delivery.NO_FIELD
         delivered(draft, target)
         typed = Typed(draft, committed, target.token, target.incognito)
@@ -427,7 +436,7 @@ class DictationSession(
         }
         // Only into the field the recording started in: the user may have
         // switched app (or closed the keyboard) while it was transcribing.
-        val committed = "$text "
+        val committed = if (cur.inField()) lead(cur, text) + text + spaceAfter(cur.target.textAfter(1)) else ""
         if (cur.inField() && cur.target.commit(committed)) {
             cur.composed = false
             delivered(draft, cur.target)
@@ -476,7 +485,7 @@ class DictationSession(
                 texts += text
                 record(cur, index, segment, text, outcome.engine)
                 cur.text = joinTexts(texts)
-                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(cur.text) || cur.composed
+                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(lead(cur, cur.text) + cur.text) || cur.composed
             }
         } catch (e: CancellationException) {
             throw e
@@ -496,6 +505,11 @@ class DictationSession(
             // The text still goes into the session's result.
         }
     }
+
+    // The space before the session's text, from the field as it was before
+    // any of it showed (composing text sits before the cursor once it does).
+    private fun lead(cur: Current, text: String): String =
+        cur.lead ?: spaceBefore(cur.target.textBefore(1), text).also { cur.lead = it }
 
     // Composing text left in the field the session started in is removed
     // (a field the user left already lost it: DictationIme.onFinishInput).

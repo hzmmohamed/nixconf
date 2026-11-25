@@ -85,7 +85,7 @@ class DictationSessionTest {
         val composed = mutableListOf<String>()
         var composing = ""
 
-        // The field's committed text; the cursor at its end.
+        // The field's committed text; the cursor at its end, after any composing text.
         var content = ""
         override fun commit(text: String): Boolean {
             commits += text
@@ -93,7 +93,11 @@ class DictationSessionTest {
             composing = ""
             return true
         }
-        override fun textBefore(n: Int): String = content.takeLast(n)
+        override fun textBefore(n: Int): String = (content + composing).takeLast(n)
+
+        // What follows the cursor (not part of content).
+        var after = ""
+        override fun textAfter(n: Int): String = after.take(n)
         override fun deleteBefore(n: Int): Boolean {
             content = content.dropLast(n)
             return true
@@ -468,6 +472,67 @@ class DictationSessionTest {
         assertEquals(Delivery.TYPED, s.deliver(kept, editor))
         assertEquals(Delivery.GONE, s.deliver(kept, editor))
         assertEquals(listOf("hello world "), editor.commits)
+    }
+
+    // --- the field's edges ---
+
+    @Test
+    fun space_before_when_the_field_ends_in_a_word() = runTest {
+        editor.content = "deploy butternut" // a burst, then ⌫ over its space
+        remote = { "then run" }
+        dictate(session())
+        assertEquals("deploy butternut then run ", editor.content)
+    }
+
+    @Test
+    fun no_space_before_after_a_space_or_before_punctuation() = runTest {
+        editor.content = "deploy "
+        remote = { "butternut" }
+        val s = session()
+        dictate(s)
+        assertEquals("deploy butternut ", editor.content)
+
+        editor.content = "deploy butternut"
+        remote = { "?" }
+        tmp.root.listFiles()!!.forEach { it.deleteRecursively() }
+        dictate(s)
+        assertEquals("deploy butternut? ", editor.content)
+    }
+
+    @Test
+    fun no_space_after_when_one_follows_the_cursor() = runTest {
+        editor.content = "say"
+        editor.after = " then stop"
+        dictate(session())
+        assertEquals(listOf(" hello world"), editor.commits)
+    }
+
+    @Test
+    fun insert_spaces_a_draft_like_a_session() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        editor.content = "note:"
+        editor.after = "."
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertEquals(listOf(" hello world"), editor.commits)
+        // Undo takes the added space too.
+        assertTrue(s.undo(editor))
+        assertEquals("note:", editor.content)
+    }
+
+    @Test
+    fun stream_mode_spaces_composing_text_from_the_field_before_it() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        segmented()
+        editor.content = "Intro"
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        // Looked once, before the composing text was there (it sits before the cursor).
+        assertEquals(listOf(" Hello there.", " Hello there. how are you"), editor.composed)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(listOf(" Hello there. how are you? "), editor.commits)
     }
 
     // --- undo ---
