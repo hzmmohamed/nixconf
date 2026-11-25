@@ -140,6 +140,12 @@ class WhisperClientTest {
     }
 
     @Test
+    fun malformed_confidence_keeps_the_text() {
+        val bad = """{"text":"kept","segments":[{"avg_logprob":-0.1,"no_speech_prob":0.0,"words":[1,2]}]}"""
+        assertEquals(Transcript("kept", null), parseInference(bad))
+    }
+
+    @Test
     fun transcribe_plain_json_has_no_conf() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"text":"hi","segments":[]}"""))
         assertEquals(Transcript("hi", null), client.transcribe(url, wav(), "en", ""))

@@ -406,11 +406,14 @@ def parse_inference(answer):
     segs = answer.get("segments") or []
     if not segs:
         return text, None
-    conf = {"avg_logprob": min(s.get("avg_logprob", 0.0) for s in segs),
-            "no_speech_prob": max(s.get("no_speech_prob", 0.0) for s in segs),
-            "words": [{"w": w.get("word", ""), "p": w.get("probability", 0.0),
-                       "start": w.get("start", 0.0), "end": w.get("end", 0.0)}
-                      for s in segs for w in s.get("words") or []]}
+    try:  # a malformed score must never cost the text
+        conf = {"avg_logprob": min(s.get("avg_logprob", 0.0) for s in segs),
+                "no_speech_prob": max(s.get("no_speech_prob", 0.0) for s in segs),
+                "words": [{"w": w.get("word", ""), "p": w.get("probability", 0.0),
+                           "start": w.get("start", 0.0), "end": w.get("end", 0.0)}
+                          for s in segs for w in s.get("words") or []]}
+    except (TypeError, AttributeError, ValueError):
+        return text, None
     if answer.get("detected_language"):
         conf["lang"] = answer["detected_language"]
         conf["lang_p"] = answer.get("detected_language_probability")

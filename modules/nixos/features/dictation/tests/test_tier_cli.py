@@ -74,6 +74,14 @@ class TierOverride(unittest.TestCase):
         self.dictate("tier", "auto")
         self.assertNotIn("--tier", self.start_session())
 
+    def test_stale_override_is_ignored(self):
+        # A flag set and forgotten must not mark a later session as work.
+        self.dictate("tier", "work")
+        old = time.time() - 6 * 60
+        os.utime(os.path.join(self.state, "tier"), (old, old))
+        self.assertNotIn("--tier", self.start_session())
+        self.assertFalse(os.path.exists(os.path.join(self.state, "tier")))
+
     def test_bad_value_is_rejected(self):
         r = self.dictate("tier", "bogus")
         self.assertEqual(r.returncode, 2)

@@ -117,7 +117,8 @@ set_mode() {
 }
 
 # One-shot: the next session takes it (start() deletes it), then the tier
-# comes from the focused app again.
+# comes from the focused app again. A flag older than 5 minutes is dropped,
+# so one set and forgotten never marks a later session as work.
 set_tier() {
   case "$1" in
   work | personal)
@@ -136,7 +137,9 @@ start() {
   lang=$(current_lang)
   t0=$(now_ms)
   mode=$(current_mode)
-  [[ -n $(get tier) ]] && tier_args=(--tier "$(get tier)")
+  if [[ -n $(find "$state_dir/tier" -mmin -5 2>/dev/null) && -n $(get tier) ]]; then
+    tier_args=(--tier "$(get tier)")
+  fi
   rm -f "$state_dir"/{pid,latched,tier}
   put t0 "$t0"
   put lang "$lang"

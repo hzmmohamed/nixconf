@@ -55,10 +55,15 @@ fun parseInference(body: String): Transcript? {
     }
     if (segments.isEmpty()) return Transcript(text)
     fun JsonObject.num(key: String) = this[key]?.jsonPrimitive?.doubleOrNull ?: 0.0
-    val words = segments.flatMap { seg ->
-        seg["words"]?.jsonArray.orEmpty().map { it.jsonObject }.map {
-            WordConf(it["word"]?.jsonPrimitive?.contentOrNull.orEmpty(), it.num("probability"), it.num("start"), it.num("end"))
+    // A malformed score must never cost the text.
+    val words = try {
+        segments.flatMap { seg ->
+            seg["words"]?.jsonArray.orEmpty().map { it.jsonObject }.map {
+                WordConf(it["word"]?.jsonPrimitive?.contentOrNull.orEmpty(), it.num("probability"), it.num("start"), it.num("end"))
+            }
         }
+    } catch (e: IllegalArgumentException) {
+        return Transcript(text)
     }
     return Transcript(
         text,

@@ -87,6 +87,12 @@ class Inference(unittest.TestCase):
         self.assertEqual(ds.parse_inference({"text": "hello", "segments": []}), ("hello", None))
 
 
+    def test_malformed_confidence_keeps_the_text(self):
+        bad = dict(VERBOSE, segments=[dict(VERBOSE["segments"][0], avg_logprob=None),
+                                      dict(VERBOSE["segments"][1], words="nope")])
+        self.assertEqual(ds.parse_inference(bad), (VERBOSE["text"], None))
+
+
 class Drafts(unittest.TestCase):
     def test_draft_meta_has_tier_fields(self):
         d = ds.Draft.create("en", "batch", "mic", journal=True, t0=1_700_000_000,
