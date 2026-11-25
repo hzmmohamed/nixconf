@@ -48,6 +48,8 @@ data class Draft(
     val tier: String = TIER_PERSONAL,
     /** First 12 hex of the SHA-256 of the Whisper prompt in use. */
     val promptSha: String? = null,
+    /** When the training lab received it (null: not yet). */
+    val uploadedMs: Long? = null,
 ) {
     val audio: File get() = File(dir, "audio.wav")
 }
@@ -96,6 +98,7 @@ private data class Meta(
     @EncodeDefault val tier: String = TIER_PERSONAL,
     val promptSha: String? = null,
     @EncodeDefault val origin: String = ORIGIN_PHONE,
+    val uploadedMs: Long? = null,
 )
 
 private const val ORIGIN_PHONE = "phone"
@@ -119,7 +122,9 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
 
     /** Writes [draft]'s meta.json atomically (tmp file, fsync, rename). */
     fun update(draft: Draft) {
-        val meta = with(draft) { Meta(status, createdMs, clock(), language, engine, text, error, app, tier, promptSha) }
+        val meta = with(draft) {
+            Meta(status, createdMs, clock(), language, engine, text, error, app, tier, promptSha, uploadedMs = uploadedMs)
+        }
         val tmp = File(draft.dir, "meta.json.tmp")
         FileOutputStream(tmp).use {
             it.write(json.encodeToString(Meta.serializer(), meta).toByteArray())
@@ -163,7 +168,10 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
         val dir = File(root, id)
         val meta = readMeta(dir) ?: lostMeta(dir) ?: return null
         val draft = with(meta) {
-            Draft(id, dir, status, createdMs, language, engine, text, error, app, if (tier == TIER_WORK) TIER_WORK else TIER_PERSONAL, promptSha)
+            Draft(
+                id, dir, status, createdMs, language, engine, text, error, app,
+                if (tier == TIER_WORK) TIER_WORK else TIER_PERSONAL, promptSha, uploadedMs,
+            )
         }
         if (draft.status == DraftStatus.PENDING && draft.audio.exists()) {
             try {
@@ -179,15 +187,29 @@ class DraftStore(private val root: File, private val clock: () -> Long) {
     fun pending(isActive: (String) -> Boolean = { false }): List<Draft> =
         ids().filterNot(isActive).mapNotNull(::load).filter { it.status == DraftStatus.PENDING }.sortedBy { it.createdMs }
 
-    /** Deletes delivered/cancelled drafts finished more than [keepDays] ago. */
-    fun prune(keepDays: Int) {
-        val cutoff = clock() - keepDays * 24L * 3_600_000
+    /**
+     * Deletes delivered/cancelled drafts finished more than [keepDays] ago. With a
+     * training lab ([unsentDays] non-null), a delivered draft it has not received
+     * yet is kept until [unsentDays]: the hub being off must not lose it.
+     */
+    fun prune(keepDays: Int, unsentDays: Int? = null) {
+        val day = 24L * 3_600_000
         for (id in ids()) {
             val dir = File(root, id)
             val meta = readMeta(dir) ?: continue
-            if (meta.status != DraftStatus.PENDING && meta.updatedMs < cutoff) dir.deleteRecursively()
+            val unsent = unsentDays != null && meta.status == DraftStatus.DELIVERED && meta.uploadedMs == null
+            val days = if (unsent) maxOf(keepDays, unsentDays!!) else keepDays
+            if (meta.status != DraftStatus.PENDING && meta.updatedMs < clock() - days * day) dir.deleteRecursively()
         }
     }
+
+    /** Delivered drafts the training lab has not received yet, oldest first. */
+    fun toUpload(): List<Draft> =
+        ids().mapNotNull(::load).filter { it.status == DraftStatus.DELIVERED && it.uploadedMs == null }.sortedBy { it.createdMs }
+
+    /** What goes to the lab: meta.json, segments.jsonl (if any), audio.wav. */
+    fun files(draft: Draft): List<File> =
+        listOf(File(draft.dir, "meta.json"), File(draft.dir, SEGMENTS), draft.audio).filter { it.isFile }
 
     private fun ids(): List<String> = root.listFiles { f -> f.isDirectory }?.map { it.name }.orEmpty()
 
