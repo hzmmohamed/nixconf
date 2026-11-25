@@ -7,6 +7,7 @@ generates replaced by test values; `dictate-stream` is a fake that records
 its arguments. Needs bash, coreutils, util-linux (flock, setsid), jq.
 """
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -36,7 +37,8 @@ class TierOverride(unittest.TestCase):
         self.args = os.path.join(self.tmp, "args")
         fake = os.path.join(self.tmp, "fake-stream")
         with open(fake, "w") as f:
-            f.write(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {self.args}\n')
+            # No /usr/bin/env in the Nix build sandbox.
+            f.write(f'#!{shutil.which("bash")}\nprintf "%s\\n" "$*" >> {self.args}\n')
         os.chmod(fake, os.stat(fake).st_mode | stat.S_IEXEC)
         self.env = dict(os.environ, XDG_RUNTIME_DIR=self.tmp, HOME=self.tmp,
                         FAKE_STREAM=fake, DICTATE_LANG="en")
