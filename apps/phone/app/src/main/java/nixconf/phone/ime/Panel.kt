@@ -92,6 +92,8 @@ data class Notice(val text: String, val error: Boolean = false)
 class PanelActions(
     val mic: () -> Unit,
     val cancel: () -> Unit,
+    // Finishing: the text so far becomes a draft instead of waiting for the rest.
+    val stopWaiting: () -> Unit,
     // Recording goes on with the keyboard closed (toggles).
     val keepOn: () -> Unit,
     val language: () -> Unit,
@@ -157,6 +159,8 @@ fun Panel(model: PanelModel, actions: PanelActions) {
                 }
                 Spacer(Modifier.weight(1f))
                 when {
+                    // Finishing: segments already have text; cancelling would throw it away.
+                    state is SessionState.Finishing -> TextButton(onClick = actions.stopWaiting) { Text("Stop waiting") }
                     active -> TextButton(onClick = actions.cancel) { Text("Cancel") }
                     !password && offered.isNotEmpty() -> TextButton(onClick = { showDrafts = !showDrafts }) {
                         Text(if (draftsShown) "Back" else draftsLabel(offered.size))

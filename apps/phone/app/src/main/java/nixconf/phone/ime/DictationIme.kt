@@ -131,6 +131,7 @@ class DictationIme :
                         PanelActions(
                             mic = ::onMic,
                             cancel = { app.session.cancel() },
+                            stopWaiting = { app.session.stopWaiting() },
                             keepOn = ::onKeepOn,
                             language = { language = nextLanguage(languages, currentLanguage()) },
                             where = { app.setWhere(app.where.value.next()) },

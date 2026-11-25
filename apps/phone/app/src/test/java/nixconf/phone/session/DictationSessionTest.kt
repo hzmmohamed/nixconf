@@ -948,6 +948,73 @@ class DictationSessionTest {
     }
 
     @Test
+    fun stop_waiting_keeps_the_segments_so_far_as_a_pending_draft() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        segmented()
+        val texts = listOf("Hello there.", "how are you")
+        var call = 0
+        remote = {
+            if (call == 2) delay(60_000) // the last segment hangs
+            texts[call++]
+        }
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        advanceTimeBy(1000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server), 2, 3), s.state.value)
+
+        s.stopWaiting()
+        val kept = s.state.value as SessionState.Kept
+        assertEquals(DictationSession.STOPPED_WAITING, kept.reason)
+        assertEquals("Hello there. how are you", kept.draft.text)
+        assertTrue(editor.commits.isEmpty())
+        assertEquals("", editor.composing) // the composing text went with it
+        val d = onlyDraft()
+        assertEquals(DraftStatus.PENDING, d.status)
+        assertEquals("Hello there. how are you", d.text)
+        assertEquals(server, d.engine)
+        assertEquals(threeSegments.size, WavFiles.readSamples(d.audio).size)
+        advanceUntilIdle() // the late answer changes nothing
+        assertEquals(kept, s.state.value)
+        assertEquals(Delivery.TYPED, s.deliver(kept.draft, editor))
+    }
+
+    @Test
+    fun stop_waiting_with_nothing_transcribed_keeps_it_for_retry() = runTest {
+        remote = {
+            delay(60_000)
+            "too late"
+        }
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        advanceTimeBy(1000)
+        s.stopWaiting()
+        assertEquals(DictationSession.STOPPED_WAITING, (s.state.value as SessionState.Kept).reason)
+        val d = onlyDraft()
+        assertEquals(DraftStatus.PENDING, d.status)
+        assertNull(d.text)
+        assertEquals(listOf(d), drafts.pending())
+        advanceUntilIdle()
+        assertTrue(editor.commits.isEmpty())
+    }
+
+    @Test
+    fun stop_waiting_only_while_finishing() = runTest {
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stopWaiting()
+        assertTrue(s.state.value is SessionState.Recording)
+        s.stop()
+        advanceUntilIdle()
+        s.stopWaiting()
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+    }
+
+    @Test
     fun vad_failure_finishes_without_segment_counts() = runTest {
         segmented()
         vad = { throw IllegalStateException("model missing") }

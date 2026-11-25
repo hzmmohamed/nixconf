@@ -174,6 +174,9 @@ class DictationSession(
         var composed = false
         var text = ""
 
+        // The engine that transcribed the text so far (a draft's engine).
+        var textEngine: String? = null
+
         // The space the text needs after what the field held before it
         // (null: not looked yet; looked before any composing text shows).
         var lead: String? = null
@@ -358,6 +361,26 @@ class DictationSession(
     }
 
     /**
+     * Stops waiting for a stopped session's text: what is transcribed so far
+     * (segments) becomes the draft's text, PENDING (Kept, [STOPPED_WAITING]:
+     * Insert here / Copy; no text yet: Retry, and auto-retried as any draft
+     * without text). Nothing is typed. A no-op unless finishing.
+     */
+    fun stopWaiting() {
+        val cur = current ?: return
+        if (!cur.stopped) return
+        cur.chosen.cancel()
+        cur.segmented?.cancel()
+        cur.feed?.cancel()
+        cur.job?.cancel()
+        dropComposing(cur)
+        val text = cur.text.ifEmpty { null }
+        val draft = cur.draft.copy(engine = text?.let { cur.textEngine }, text = text, error = STOPPED_WAITING)
+        save(draft)
+        end(SessionState.Kept(draft, STOPPED_WAITING))
+    }
+
+    /**
      * Transcribes a kept draft again; its text is stored (and shown, if it is
      * the Kept one) but it stays PENDING until [deliver]ed. A no-op (returns
      * [draft]) while that draft is being recorded, transcribed or retried; if
@@ -504,6 +527,7 @@ class DictationSession(
                 texts += text
                 record(cur, index, segment, text, outcome.engine)
                 cur.text = joinTexts(texts)
+                cur.textEngine = outcome.engine
                 if (cur.stream && cur.inField()) cur.composed = cur.target.compose(lead(cur, cur.text) + cur.text) || cur.composed
             }
         } catch (e: CancellationException) {
@@ -648,6 +672,7 @@ class DictationSession(
         const val NO_SPEECH = "no speech"
         const val LOCAL_FAILED = "on-phone transcription failed"
         const val UNDONE = "undone"
+        const val STOPPED_WAITING = "stopped waiting"
 
         // Defaults when there is no profile (as the profile's).
         private const val PAUSE_MS = 550
