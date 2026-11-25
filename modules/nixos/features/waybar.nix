@@ -28,6 +28,8 @@
     netModules = networkManager && netUi != null;
     # swayidle feature (caffeine), when imported.
     idle = lib.attrByPath ["preferences" "idle"] null config;
+    # server-mode feature, when imported.
+    serverMode = lib.attrByPath ["preferences" "serverMode"] null config;
     # battery-notify feature (alert tiers), when imported.
     alert = lib.attrByPath ["preferences" "batteryAlert"] {} config;
     terminal = lib.getExe selfpkgs.terminal;
@@ -151,6 +153,7 @@
       modules-left =
         ["clock" "custom/language" "custom/notification"]
         ++ lib.optional (idle != null) "custom/caffeine"
+        ++ lib.optional (serverMode != null) "custom/server-mode"
         ++ ["custom/mail" "mpris"];
       modules-center = ["sway/mode" "custom/agents" "custom/agents-input" "custom/nix-build" "privacy" "custom/camera"];
       modules-right =
@@ -314,6 +317,18 @@
         signal = 13;
         on-click = "${idle.caffeineCommand} toggle";
         on-click-right = "${idle.caffeineCommand} menu";
+      };
+
+      # Server mode (server-mode feature): accent glyph only while the lid
+      # switch is ignored; click turns it off. Refreshed via SIGRTMIN+14.
+      "custom/server-mode" = lib.optionalAttrs (serverMode != null) {
+        exec = "${serverMode.command} waybar";
+        return-type = "json";
+        justify = "center";
+        interval = "once";
+        signal = serverMode.barSignal;
+        hide-empty-text = true;
+        on-click = "${serverMode.command} off";
       };
 
       # Mail: per-account unread counts (local file read; refreshed by
@@ -690,6 +705,15 @@
       }
       #custom-caffeine:hover { background: @tint; }
       #custom-caffeine.on { color: @accent; }
+
+      /* Server mode: only shown while on. */
+      #custom-server-mode {
+        padding: ${px d.bar.itemPaddingY} 0;
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
+        color: @accent;
+      }
+      #custom-server-mode:hover { background: @tint; }
     '';
   in {
     config = lib.mkIf (config.preferences.desktopShell == "waybar") {
