@@ -48,6 +48,15 @@
       enterShell = ''
         alias claude=claude-bun
 
+        # Shared post-checkout hook: links this shell's .pre-commit-config.yaml
+        # into new worktrees (scripts/git-hooks/post-checkout). Never replaces a
+        # hook it didn't install.
+        hook=$(git rev-parse --git-path hooks/post-checkout 2>/dev/null) || hook=""
+        if [ -n "$hook" ] && { [ ! -e "$hook" ] || grep -q nixconf-post-checkout "$hook"; }; then
+          cmp -s ${../scripts/git-hooks/post-checkout} "$hook" ||
+            install -m 755 ${../scripts/git-hooks/post-checkout} "$hook" 2>/dev/null || true
+        fi
+
         echo "nixconf devshell"
         echo ""
         echo "  sops secrets/<host>/<name>.yaml   — edit/create secrets"

@@ -141,9 +141,12 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   run `nix flake update` unless asked.
 - **New worktrees**: start them as T3 worktree threads (their dev shell is
   allowed and reused from main), not Claude's `EnterWorktree`
-  (`.claude/worktrees/`). In any fresh worktree run `nix develop --impure -c
-  true` once before committing: it creates the gitignored
-  `.pre-commit-config.yaml` the commit hook needs. Never commit with
+  (`.claude/worktrees/`). A fresh worktree gets the gitignored
+  `.pre-commit-config.yaml` the commit hook needs from the shared
+  `post-checkout` hook (`scripts/git-hooks/post-checkout`, installed by the
+  dev shell) when its shell files match the main checkout's; if the hook
+  says they differ (or the config is missing), run `nix develop --impure -c
+  true` there once before committing. Never commit with
   `PREK_ALLOW_NO_CONFIG=1` or `--no-verify`.
 - **Tests aren't in `just check`**: it only evaluates. Python tests (e.g.
   `modules/nixos/features/agent-env/tests/`) run at build time, so after
