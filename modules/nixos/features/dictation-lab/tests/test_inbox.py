@@ -189,6 +189,53 @@ class Inbox(unittest.TestCase):
         status, _ = self.req("PUT", "/inbox/phone/f2/meta.json", b"{}", server=owner)
         self.assertEqual(status, 204)
 
+    def test_malformed_segments_is_400_and_server_lives(self):
+        files = self.phone_files()
+        files["segments.jsonl"] = b"1\n"
+        status, _ = self.upload("phone", "m1", files)
+        self.assertEqual(status, 400)
+        self.assertEqual(self.req("GET", "/health")[0], 200)
+        laptop = {"meta.json": json.dumps(dict(LAPTOP_META, t0="soon")).encode(),
+                  "commits.jsonl": b"", "audio.pcm": b"\0\0" * 1600}
+        self.assertEqual(self.upload("hazel", "m2", laptop)[0], 400)
+
+    def test_concurrent_done_on_one_id_keeps_a_whole_draft(self):
+        # The interleaving that loses the audio without a per-draft lock: the
+        # first done writes its audio and is still finishing when the second
+        # starts over in the same .tmp dir (its audio not written yet).
+        import time
+        real = lab.to_opus
+        calls = []
+
+        def staged(name, data, dest):
+            calls.append(name)
+            if len(calls) == 1:
+                real(name, data, dest)
+                time.sleep(0.4)
+            else:
+                time.sleep(0.8)
+                real(name, data, dest)
+        lab.to_opus = staged
+        self.addCleanup(setattr, lab, "to_opus", real)
+        for name, data in self.phone_files().items():
+            self.req("PUT", f"/inbox/phone/c1/{name}", data)
+        results = []
+
+        def done():
+            results.append(self.req("POST", "/inbox/phone/c1/done", b"")[0])
+        first = threading.Thread(target=done)
+        first.start()
+        time.sleep(0.15)
+        second = threading.Thread(target=done)
+        second.start()
+        first.join()
+        second.join()
+        self.assertIn(200, results)
+        d = self.data / "drafts" / "phone" / "c1"
+        self.assertTrue((d / "audio.opus").exists())
+        self.assertTrue((d / "meta.json").exists())
+        self.assertEqual(sorted(p.name for p in d.parent.iterdir()), ["c1"])
+
     def test_put_without_length_is_411(self):
         port = self.server.server_address[1]
         c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
