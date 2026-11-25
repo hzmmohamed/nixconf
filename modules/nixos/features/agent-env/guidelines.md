@@ -64,6 +64,9 @@ asked".
 - **Main checkout** (shared with other threads): its dirty files may not
   be yours. Stage only your own files by path; for non-trivial edits
   suggest a worktree thread.
+- Never skip commit hooks (`--no-verify`, `PREK_ALLOW_NO_CONFIG=1`). A
+  hook with no config in a new worktree means the dev shell was never
+  entered there: run `nix develop -c true` in it once, then commit.
 - A repo's own CLAUDE.md/AGENTS.md can override this (e.g. direct to
   main, or no PRs).
 
