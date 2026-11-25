@@ -15,7 +15,7 @@ eq() { # eq <name> <expected> <actual>
 }
 
 reset() {
-  rm -rf "$T/sys" "$T/run" "$T/calls"
+  rm -rf "$T/sys" "$T/run" "$T/calls" "$T/profile"
   : >"$T/calls"
   S=$T/sys
   mkdir -p "$S/class/drm/card1-eDP-1" "$S/class/drm/card1-HDMI-A-1" \
@@ -47,7 +47,9 @@ last_ppd() { grep '^ppd' "$T/calls" | tail -n1; }
 
 cat >"$T/ppd" <<EOF
 #!/bin/sh
+if [ "\$1" = get ]; then cat "$T/profile" 2>/dev/null; exit 0; fi
 echo "ppd \$*" >>"$T/calls"
+echo "\$2" >"$T/profile"
 EOF
 cat >"$T/curl" <<EOF
 #!/bin/sh
@@ -75,6 +77,9 @@ eq "1 keyboard on" 0 "$(inh input0)"
 eq "1 touchpad on" 0 "$(inh input12)"
 eq "1 rapl unchanged" 45000000/95000000 "$(rapl)"
 eq "1 ppd" "ppd set performance" "$(last_ppd)"
+
+run apply >/dev/null
+eq "1b same profile not set again" 1 "$(grep -c '^ppd' "$T/calls")"
 
 echo "== 2: no monitor, AC → headless"
 reset

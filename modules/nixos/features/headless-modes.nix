@@ -164,11 +164,20 @@
           };
         };
 
+        # Boot can run before the display is probed and no hotplug follows:
+        # check once more when things have settled.
+        systemd.timers.headless-mode-apply = {
+          wantedBy = ["timers.target"];
+          timerConfig.OnBootSec = "45s";
+        };
+
         # `restart` (not `start`): an event during a run queues a fresh run, so
-        # the last state always wins.
+        # the last state always wins. Battery `change` events (capacity, every
+        # minute or so) are left out: only the chargers' online state matters.
         services.udev.extraRules = ''
           ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ENV{HOTPLUG}=="1", RUN+="${restart}"
-          ACTION=="change", SUBSYSTEM=="power_supply", RUN+="${restart}"
+          ACTION=="change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", RUN+="${restart}"
+          ACTION=="change", SUBSYSTEM=="power_supply", ATTR{type}=="USB", RUN+="${restart}"
           ACTION=="add", SUBSYSTEM=="input", KERNEL=="input[0-9]*", RUN+="${restart}"
         '';
 

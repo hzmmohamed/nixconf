@@ -120,10 +120,10 @@ apply() {
   if [ "$mode" = bag ]; then tier=bag; else tier=full; fi
   apply_rapl $tier
   if [ -n "${HM_PPD:-}" ]; then
-    if [ $tier = bag ]; then
-      "$HM_PPD" set power-saver || log "power-saver profile failed"
-    else
-      "$HM_PPD" set "${HM_FULL_PROFILE:-performance}" || log "profile failed"
+    local want=${HM_FULL_PROFILE:-performance}
+    [ $tier = bag ] && want=power-saver
+    if [ "$("$HM_PPD" get 2>/dev/null)" != "$want" ]; then
+      if "$HM_PPD" set "$want"; then log "profile = $want"; else log "profile $want failed"; fi
     fi
   fi
   echo "$mode" >"$RUN/mode"
