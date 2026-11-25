@@ -204,6 +204,9 @@ class DictationSession(
     // Drafts a retry is transcribing (main thread).
     private val retrying = mutableSetOf<String>()
 
+    // retryWhenIdle's run: cancelled when a session starts.
+    private var backgroundRetry: Job? = null
+
     // What the last Done typed, exactly as committed, and where ([undo]).
     private class Typed(val draft: Draft, val text: String, val token: String?, val incognito: Boolean)
     private var typed: Typed? = null
@@ -217,6 +220,8 @@ class DictationSession(
      */
     fun start(language: String, target: EditorTarget) {
         if (current != null) return
+        // The live session gets the server (or the phone's model) to itself.
+        backgroundRetry?.cancel()
         typed = null
         val p = profile()
         val draft = try {
@@ -387,11 +392,35 @@ class DictationSession(
      * it was delivered or discarded in the meantime, that state is kept and
      * returned.
      */
-    suspend fun retry(draft: Draft): Draft {
+    suspend fun retry(draft: Draft): Draft = retry(draft, background = false)
+
+    /**
+     * Retries [todo] (drafts without text) one after the other while no
+     * session runs: start() cancels the one in flight (left as it was, for
+     * the next time) and the rest. Each only with a server that answers, or
+     * the phone in Phone mode; in Phone mode never a server on battery, not
+     * even as the last resort a live session would use. Null (nothing
+     * started) while a session or another run is going.
+     */
+    fun retryWhenIdle(todo: List<Draft>): Job? {
+        if (current != null || backgroundRetry?.isActive == true) return null
+        return scope.launch {
+            for (draft in todo) {
+                if (current != null) break
+                retry(draft, background = true)
+            }
+        }.also { backgroundRetry = it }
+    }
+
+    private suspend fun retry(draft: Draft, background: Boolean): Draft {
         if (draft.id == activeDraftId || !retrying.add(draft.id)) return draft
         try {
             val p = profile()
-            val outcome = transcribe(draft.audio, draft.language, p, choose(p, draft.language), p?.prompt.orEmpty())
+            val phone = where() == Where.PHONE
+            val engine = choose(p, draft.language, onBatteryLastResort = !(background && phone))
+            // Not worth a "no server" on the draft: it waits for the next time.
+            if (background && !(engine is Engine.Remote || (phone && engine == Engine.Local))) return draft
+            val outcome = transcribe(draft.audio, draft.language, p, engine, p?.prompt.orEmpty())
             val now = onDisk(draft)
             if (now.status != DraftStatus.PENDING) return now
             val updated = if (outcome.text != null) {
@@ -624,7 +653,7 @@ class DictationSession(
         return if (text.isEmpty()) Outcome(null, engine, NOTHING_HEARD) else Outcome(text, engine, null)
     }
 
-    private suspend fun choose(p: Profile?, language: String): Engine {
+    private suspend fun choose(p: Profile?, language: String, onBatteryLastResort: Boolean = true): Engine {
         val power = p?.power.orEmpty().associate { it.server to it.url }
         return chooseEngine(
             p?.servers.orEmpty(),
@@ -633,6 +662,7 @@ class DictationSession(
             p?.localModel?.language.orEmpty(),
             where(),
             { url -> power[url]?.let { onBattery(it) } },
+            onBatteryLastResort,
             probe,
         )
     }

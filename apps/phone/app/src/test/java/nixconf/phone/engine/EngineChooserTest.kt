@@ -94,6 +94,14 @@ class EngineChooserTest {
     fun a_server_on_battery_is_used_when_nothing_else_can() = runTest {
         assertEquals(Engine.Remote(a), chooseEngine(listOf(a), "ar", true, "en", onBattery = { true }) { true })
         assertEquals(Engine.Unavailable, chooseEngine(listOf(a), "ar", true, "en", onBattery = { true }) { false })
+        // Not even then, when asked (background retries in Phone mode); nor woken.
+        var probed = false
+        val engine = chooseEngine(listOf(a), "ar", true, "en", onBattery = { true }, onBatteryLastResort = false) {
+            probed = true
+            true
+        }
+        assertEquals(Engine.Unavailable, engine)
+        assertFalse(probed)
     }
 
     @Test

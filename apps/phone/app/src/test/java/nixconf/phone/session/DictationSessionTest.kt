@@ -18,8 +18,10 @@ import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.DraftStore
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.RemoteTranscriber
+import nixconf.phone.engine.Where
 import nixconf.phone.profile.LocalModel
 import nixconf.phone.profile.MODE_STREAM
+import nixconf.phone.profile.PowerStatus
 import nixconf.phone.profile.Profile
 import nixconf.phone.segment.SpeechProbability
 import org.junit.Assert.assertEquals
@@ -124,6 +126,8 @@ class DictationSessionTest {
         override fun probability(frame: FloatArray): Float = if (frame.any { kotlin.math.abs(it) > 0.05f }) 0.9f else 0f
     }
     private var vad: (() -> SpeechProbability)? = null
+    private var where = Where.AUTO
+    private var serverOnBattery: Boolean? = null
 
     private fun TestScope.session() = DictationSession(
         profile = { profile },
@@ -139,6 +143,8 @@ class DictationSessionTest {
             serverUp
         },
         scope = this,
+        onBattery = { serverOnBattery },
+        where = { where },
         vad = vad,
         io = StandardTestDispatcher(testScheduler),
         clock = { testScheduler.currentTime },
@@ -472,6 +478,120 @@ class DictationSessionTest {
         assertEquals(1, remoteCalls.size)
         assertEquals("hello world", onlyDraft().text)
         assertEquals(DraftStatus.PENDING, onlyDraft().status)
+    }
+
+    // --- background retries ---
+
+    // An Arabic draft no server heard: PENDING without text.
+    private fun TestScope.untranscribed(s: DictationSession): Draft {
+        serverUp = false
+        dictate(s, "ar")
+        serverUp = true
+        return (s.state.value as SessionState.Kept).draft.also { assertNull(it.text) }
+    }
+
+    @Test
+    fun background_retry_transcribes_while_idle() = runTest {
+        val s = session()
+        val d = untranscribed(s)
+        val job = s.retryWhenIdle(listOf(d))!!
+        assertNull(s.retryWhenIdle(listOf(d))) // one run at a time
+        advanceUntilIdle()
+        assertTrue(job.isCompleted)
+        assertEquals("hello world", drafts.load(d.id)!!.text)
+        assertEquals(DraftStatus.PENDING, drafts.load(d.id)!!.status) // offered, not typed
+        assertTrue(editor.commits.isEmpty())
+    }
+
+    @Test
+    fun background_retry_not_while_a_session_runs() = runTest {
+        val s = session()
+        val d = untranscribed(s)
+        s.start("en", editor)
+        assertNull(s.retryWhenIdle(listOf(d)))
+        s.cancel()
+        advanceUntilIdle()
+        assertNull(drafts.load(d.id)!!.text)
+    }
+
+    @Test
+    fun a_session_start_cancels_the_background_retry() = runTest {
+        val s = session()
+        val first = untranscribed(s)
+        val second = untranscribed(s)
+        remoteCalls.clear()
+        remote = {
+            delay(5000)
+            "old draft"
+        }
+        s.retryWhenIdle(listOf(first, second))
+        advanceTimeBy(1000)
+        assertEquals(1, remoteCalls.size) // the first old draft is on the server
+
+        remote = { "live" }
+        s.start("en", editor)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("live"), s.state.value)
+        assertEquals(listOf("live "), editor.commits)
+        // Both old drafts as they were: the next keyboard open retries them.
+        assertEquals(2, remoteCalls.size)
+        assertNull(drafts.load(first.id)!!.text)
+        assertEquals(DictationSession.NO_SERVER, drafts.load(first.id)!!.error) // no error from the cancel
+        assertNull(drafts.load(second.id)!!.text)
+        assertTrue(s.retryWhenIdle(listOf(first, second)) != null) // idle again: may run
+    }
+
+    @Test
+    fun phone_mode_background_retry_leaves_a_server_on_battery_alone() = runTest {
+        profile = profile!!.copy(power = listOf(PowerStatus(server, "http://butternut:8179/power.json")))
+        val s = session()
+        val d = untranscribed(s)
+        remoteCalls.clear()
+        where = Where.PHONE
+        serverOnBattery = true
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertTrue(remoteCalls.isEmpty())
+        assertEquals(d, drafts.load(d.id))
+
+        // Asked for by a tap, it is still the last resort; Auto in the background too.
+        assertEquals("hello world", s.retry(d).text)
+        where = Where.AUTO
+        val other = untranscribed(s)
+        serverOnBattery = true
+        s.retryWhenIdle(listOf(other))
+        advanceUntilIdle()
+        assertEquals("hello world", drafts.load(other.id)!!.text)
+    }
+
+    @Test
+    fun phone_mode_background_retry_uses_the_phone_for_english() = runTest {
+        where = Where.PHONE
+        val s = session()
+        remote = { throw IOException("down") }
+        local.ready = false
+        dictate(s) // English, no server, no model yet: kept
+        val d = (s.state.value as SessionState.Kept).draft
+        local.ready = true
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertEquals("local text", drafts.load(d.id)!!.text)
+    }
+
+    @Test
+    fun auto_background_retry_waits_for_a_server() = runTest {
+        val s = session()
+        remote = { throw IOException("down") }
+        local.ready = false
+        dictate(s)
+        val d = (s.state.value as SessionState.Kept).draft
+        local.ready = true
+        serverUp = false
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertEquals(0, local.calls)
+        assertEquals(d, drafts.load(d.id))
     }
 
     @Test
