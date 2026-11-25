@@ -135,6 +135,12 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   worktree per agent for anything non-trivial, re-read files right before
   editing, never `git add -A`/`git stash`/re-lock inputs you didn't add, don't
   run `nix flake update` unless asked.
+- **New worktrees**: start them as T3 worktree threads (their dev shell is
+  allowed and reused from main), not Claude's `EnterWorktree`
+  (`.claude/worktrees/`). In any fresh worktree run `nix develop --impure -c
+  true` once before committing: it creates the gitignored
+  `.pre-commit-config.yaml` the commit hook needs. Never commit with
+  `PREK_ALLOW_NO_CONFIG=1` or `--no-verify`.
 - **Long builds**: NVIDIA kernel modules, CUDA (llama.cpp), etc. Prefer eval.
 - **Tools in agent shells**: whether the dev shell is loaded depends on how
   the agent was started (VSCodium + direnv: yes; T3/OpenCode threads: not

@@ -5,7 +5,12 @@
 # off until the previous one was tested with a screen attached.
 {self, ...}: {
   flake.nixosModules.hostButternut = {config, ...}: {
-    imports = [self.nixosModules.headless-boot];
+    imports = [self.nixosModules.headless-boot self.nixosModules.headless-modes];
+
+    # Mode from "external display?" + "on AC?": desk / headless (built-in
+    # keyboard muted) / bag (also CPU capped, power-saver). It also sets the
+    # ppd profile (performance outside bag). `headless-mode status`.
+    preferences.headlessModes.enable = true;
 
     preferences.headlessBoot = {
       # Active now (harmless): lid switch ignored (broken panel, always on AC),
