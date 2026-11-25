@@ -10,6 +10,8 @@
 
 **Spec:** `docs/plans/2026-11-25-dictation-training-lab-design.md` (§3 tiers, §5.2 capture, §5.6, §5.8 a, §6 phase 1).
 
+**Deviations from the spec:** the desktop override is `dictate tier work|personal|auto` (one-shot, plus two `dictate menu` entries) instead of `dictate --work/--personal`: sessions start from a key bound to `dictate press`, so a flag has nowhere to go. The spec's `model` field is dropped: whisper-server does not report its model, and `backend` is already recorded. The design doc is updated to match.
+
 **Plan series:** 1 Capture (this) · 2 Hub (inbox, uploads, retention) · 3 Suspects (heuristics, agent-prompt mining, CLI census) · 4 Game page · 5 Claude pass + apply (`private.json`) · 6 Pollen screen, open-weight pass, dataset. Each is written when the previous one merges.
 
 ## Global Constraints
@@ -84,7 +86,7 @@ Verified response shape (whisper.cpp server on butternut, 2026-11-25, `response_
   - `transcribe` returns the tuple.
   - `_worker` stores `(text, ok, conf)`, cleaning only the text. `_commit` passes `conf` through to `add_commit`.
   - `Draft.create` gains keyword params `app=""` and `tier="personal"` and sets `origin` and `prompt_sha`.
-  - `cmd_record`: call `focused_app()` once, after `Draft.create` would be too late for the recorder? No: the recorder already started at import (line 182), so calling it before `Draft.create` costs no audio. Then compute `tier_for(app, CFG.get("work_apps", []), args.tier)`.
+  - `cmd_record`: call `focused_app()` once, before `Draft.create` (the recorder already started at import, line 182, so the lookup costs no audio), and compute `tier_for(app, CFG.get("work_apps", []), args.tier)`.
   - `cmd_file` passes `app=""`, which gives `tier` = `personal`.
   - `Session.push` adds `"tier"` from `draft.meta`.
 - [ ] **Step 4: Run the tests and see them pass.** Same command. Expected: `OK`.

@@ -81,8 +81,8 @@ analysis quality, never privacy.
   phone with the user). Browsers stay personal: the domain is not
   visible on the phone.
 - **Override.** Pollen: a small tier chip in the panel (shows the guess,
-  tap flips it for this draft). Desktop: `dictate --work` / `--personal`
-  and the overlay shows the tier. No new key binding (bindings only when
+  tap flips it for this draft). Desktop: `dictate tier work|personal`
+  (next session only; also in `dictate menu`) and the overlay shows the tier. No new key binding (bindings only when
   the user asks). The game can also flip a draft's tier, and suggests
   adding an app to the work list when the user keeps promoting it (user
   confirms; it is a config change).
@@ -134,7 +134,7 @@ Dropped earlier: a phone-only lab (data split across devices).
 
 Draft bundle (one shape for both sides; existing fields keep their names):
 `meta.json` gains `app`, `tier`, `origin` (`phone`/`hazel`/`butternut`),
-`prompt_sha` (hash of the Whisper prompt used), `model`; segments gain
+`prompt_sha` (hash of the Whisper prompt used); segments gain
 `avg_logprob`, `no_speech_prob`, and token probabilities where available.
 
 - **Confidence**: request `response_format=verbose_json` instead of `json`
@@ -316,7 +316,7 @@ ink), filterable by origin, tier and language.
 ## 6. Phases
 
 1. **Capture**: `tier`/`app`/`origin`/`prompt_sha` in drafts on both
-   sides, the Pollen tier chip, `dictate --work/--personal`,
+   sides, the Pollen tier chip, `dictate tier`,
    `verbose_json` confidences, desktop prompt default. No new service.
 2. **Hub**: `dictation-lab` feature with inbox, phone upload, desktop
    upload + sync timer, retention.
