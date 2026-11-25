@@ -124,6 +124,10 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
 - **home-manager, not hjem**: `extra_hjem` is a historical name; it wraps
   `home-manager.nixosModules.home-manager` (+ catppuccin modules). Use
   `home-manager.users.${user}`.
+- **Launcher, not shortcuts**: a new GUI tool gets a launcher entry
+  (home-manager `xdg.desktopEntries`, shows in vicinae). Add a keybinding
+  only when asked, in Sway's `keybindings` (`preferences.keymap` does
+  nothing on Sway).
 - **Style**: alejandra formatting, deadnix-clean. `{...}:` module headers are
   the convention (statix `empty_pattern` is disabled).
 
@@ -137,10 +141,17 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   run `nix flake update` unless asked.
 - **New worktrees**: start them as T3 worktree threads (their dev shell is
   allowed and reused from main), not Claude's `EnterWorktree`
-  (`.claude/worktrees/`). In any fresh worktree run `nix develop --impure -c
-  true` once before committing: it creates the gitignored
-  `.pre-commit-config.yaml` the commit hook needs. Never commit with
+  (`.claude/worktrees/`). A fresh worktree gets the gitignored
+  `.pre-commit-config.yaml` the commit hook needs from the shared
+  `post-checkout` hook (`scripts/git-hooks/post-checkout`, installed by the
+  dev shell) when its shell files match the main checkout's; if the hook
+  says they differ (or the config is missing), run `nix develop --impure -c
+  true` there once before committing. Never commit with
   `PREK_ALLOW_NO_CONFIG=1` or `--no-verify`.
+- **Tests aren't in `just check`**: it only evaluates. Python tests (e.g.
+  `modules/nixos/features/agent-env/tests/`) run at build time, so after
+  touching a directory with `tests/`, run them (`python3 -m unittest
+  discover -s <dir>/tests`).
 - **Long builds**: NVIDIA kernel modules, CUDA (llama.cpp), etc. Prefer eval.
 - **Tools in agent shells**: whether the dev shell is loaded depends on how
   the agent was started (VSCodium + direnv: yes; T3/OpenCode threads: not
@@ -160,10 +171,13 @@ features. Large hosts split concerns into extra files under `hosts/<host>/`
   `agent-push` + `gh pr create` (the user merges). Before the PR, run
   `nix run .#fleet -- affects` and put its `Affects:` line in the PR body.
   A thread is settled once merged **and** `just status` shows those hosts
-  current (laptops are deployed by hand). `git push` stays denied;
+  current (laptops are deployed by hand). After a merge, `just
+  prune-worktrees` (dry run; the user adds `--apply`) lists merged branches
+  and their worktrees to remove. `git push` stays denied;
   `agent-push` pushes only the current non-default branch. Direct commits
-  to main are fine for small changes in the main checkout (stage your own
-  files only). Don't touch `.claude/settings.json`.
+  to main are fine for small changes in the main checkout (commit your own
+  files by path); end the hand-back with the hosts it touches
+  (`nix run .#fleet -- affects HEAD~1`) so the user knows what to deploy. Don't touch `.claude/settings.json`.
 
 ## Current state (2026-11)
 

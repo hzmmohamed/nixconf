@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# nixconf post-checkout hook (installed into the shared .git/hooks by the dev
+# shell, modules/devshell.nix). Gives a new linked worktree the
+# .pre-commit-config.yaml the pre-commit hook needs, however the worktree was
+# made (T3, Claude's EnterWorktree, plain `git worktree add`).
+#
+# The config is a gitignored symlink into the store that the dev shell creates
+# on entry; a fresh worktree has none until someone runs `nix develop` there.
+# When the shell-defining files are byte-identical to the main checkout's, the
+# main checkout's config is the right one, so link the same store path.
+# Otherwise print the command to run. Never fails the checkout.
+#
+# Manual backfill for an existing worktree: run this file from its root.
+# nixconf-post-checkout (marker: the dev shell only replaces a hook carrying it)
+
+main() {
+  local cfg=.pre-commit-config.yaml
+  [ -e "$cfg" ] || [ -L "$cfg" ] && return 0
+
+  local top common main_root target f
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+  main_root=$(dirname "$common")
+  [ "$top" = "$main_root" ] && return 0 # the main checkout: the dev shell handles it
+  cd "$top" || return 0
+
+  target=$(readlink "$main_root/$cfg" 2>/dev/null) || target=""
+  case "$target" in /nix/store/*) ;; *) target="" ;; esac
+  if [ -z "$target" ] || [ ! -e "$target" ]; then
+    echo "post-checkout: no usable $cfg in $main_root; run 'nix develop --impure -c true' here before committing" >&2
+    return 0
+  fi
+
+  for f in flake.nix flake.lock .envrc modules/devshell.nix; do
+    if [ -e "$f" ] || [ -e "$main_root/$f" ]; then
+      if [ ! -e "$f" ] || [ ! -e "$main_root/$f" ] ||
+        [ "$(git hash-object --no-filters -- "$f")" != "$(git hash-object --no-filters -- "$main_root/$f")" ]; then
+        echo "post-checkout: $f differs from the main checkout; run 'nix develop --impure -c true' here before committing" >&2
+        return 0
+      fi
+    fi
+  done
+
+  ln -s "$target" "$cfg" && echo "post-checkout: linked $cfg from the main checkout" >&2
+  return 0
+}
+
+main "$@"
+exit 0

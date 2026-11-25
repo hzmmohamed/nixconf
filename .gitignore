@@ -14,3 +14,6 @@ __pycache__/
 
 # Local list of strings for scripts/repo/scrub-unpushed-history.sh (never commit)
 scripts/repo/*.local
+
+# Claude Code EnterWorktree worktrees
+.claude/worktrees/
