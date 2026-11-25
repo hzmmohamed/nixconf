@@ -319,18 +319,6 @@
         on-click-right = "${idle.caffeineCommand} menu";
       };
 
-      # Server mode (server-mode feature): accent glyph only while the lid
-      # switch is ignored; click turns it off. Refreshed via SIGRTMIN+14.
-      "custom/server-mode" = lib.optionalAttrs (serverMode != null) {
-        exec = "${serverMode.command} waybar";
-        return-type = "json";
-        justify = "center";
-        interval = "once";
-        signal = serverMode.barSignal;
-        hide-empty-text = true;
-        on-click = "${serverMode.command} off";
-      };
-
       # Mail: per-account unread counts (local file read; refreshed by
       # imapnotify / 5-min timer, which nudge this module via SIGRTMIN+9).
       # Always shown: left click is the mail menu (Thunderbird / webmail).
@@ -561,6 +549,31 @@
       };
     };
 
+    # Server mode (server-mode feature): accent glyph only while the lid
+    # switch is ignored; click turns it off. Refreshed via SIGRTMIN+14. Kept
+    # out of the bar entirely where the feature isn't imported.
+    serverModeModule = lib.optionalAttrs (serverMode != null) {
+      "custom/server-mode" = {
+        exec = "${serverMode.command} waybar";
+        return-type = "json";
+        justify = "center";
+        interval = "once";
+        signal = serverMode.barSignal;
+        hide-empty-text = true;
+        on-click = "${serverMode.command} off";
+      };
+    };
+    serverModeStyle = lib.optionalString (serverMode != null) ''
+
+      #custom-server-mode {
+        padding: ${px d.bar.itemPaddingY} 0;
+        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
+        border-radius: ${px d.bar.radius};
+        color: @accent;
+      }
+      #custom-server-mode:hover { background: @tint; }
+    '';
+
     waybarStyle = ''
       @import url("file://${theme.stateDir}/current/waybar.css");
 
@@ -705,15 +718,6 @@
       }
       #custom-caffeine:hover { background: @tint; }
       #custom-caffeine.on { color: @accent; }
-
-      /* Server mode: only shown while on. */
-      #custom-server-mode {
-        padding: ${px d.bar.itemPaddingY} 0;
-        margin: ${px d.bar.itemMarginY} ${px d.bar.itemMarginX};
-        border-radius: ${px d.bar.radius};
-        color: @accent;
-      }
-      #custom-server-mode:hover { background: @tint; }
     '';
   in {
     config = lib.mkIf (config.preferences.desktopShell == "waybar") {
@@ -734,8 +738,8 @@
         programs.waybar = {
           enable = true;
           systemd.enable = true;
-          settings = waybarSettings;
-          style = waybarStyle;
+          settings = lib.recursiveUpdate waybarSettings {mainBar = serverModeModule;};
+          style = waybarStyle + serverModeStyle;
         };
 
         # MPRIS: track the most recently active player for playerctl/media keys.
