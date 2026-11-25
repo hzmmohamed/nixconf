@@ -92,6 +92,8 @@ data class Notice(val text: String, val error: Boolean = false)
 class PanelActions(
     val mic: () -> Unit,
     val cancel: () -> Unit,
+    // Finishing: the text so far becomes a draft instead of waiting for the rest.
+    val stopWaiting: () -> Unit,
     // Recording goes on with the keyboard closed (toggles).
     val keepOn: () -> Unit,
     val language: () -> Unit,
@@ -99,6 +101,9 @@ class PanelActions(
     val switchKeyboard: () -> Unit,
     val insert: (Draft) -> Unit,
     val copy: (Draft) -> Unit,
+    val copyText: (String) -> Unit,
+    // Takes the text just typed back out of the field.
+    val undo: () -> Unit,
     val retry: (Draft) -> Unit,
     val delete: () -> Unit,
     val enter: () -> Unit,
@@ -154,6 +159,8 @@ fun Panel(model: PanelModel, actions: PanelActions) {
                 }
                 Spacer(Modifier.weight(1f))
                 when {
+                    // Finishing: segments already have text; cancelling would throw it away.
+                    state is SessionState.Finishing -> TextButton(onClick = actions.stopWaiting) { Text("Stop waiting") }
                     active -> TextButton(onClick = actions.cancel) { Text("Cancel") }
                     !password && offered.isNotEmpty() -> TextButton(onClick = { showDrafts = !showDrafts }) {
                         Text(if (draftsShown) "Back" else draftsLabel(offered.size))
@@ -274,9 +281,18 @@ private fun Status(model: PanelModel, password: Boolean, elapsedMs: Long, action
             LevelMeter(model.level)
             KeepOnToggle(state.background, actions.keepOn)
         }
+        is SessionState.Done -> Row {
+            TextButton(onClick = actions.undo) { Text("Undo") }
+            TextButton(onClick = { actions.copyText(state.text) }) { Text("Copy") }
+        }
         // No speech: nothing to retry.
-        is SessionState.Kept -> if (state.reason != DictationSession.NO_SPEECH) {
-            KeptActions(state.draft, state.draft.id in model.retrying, actions)
+        is SessionState.Kept -> when (state.reason) {
+            DictationSession.NO_SPEECH -> Unit
+            // Out of the field and discarded: copy is all that is left.
+            DictationSession.UNDONE -> state.draft.text?.let { text ->
+                TextButton(onClick = { actions.copyText(text) }) { Text("Copy") }
+            }
+            else -> KeptActions(state.draft, state.draft.id in model.retrying, actions)
         }
         else -> Unit
     }

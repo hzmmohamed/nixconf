@@ -18,13 +18,11 @@ import kotlinx.coroutines.withContext
 import nixconf.phone.audio.Recorder
 import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStore
-import nixconf.phone.engine.Engine
 import nixconf.phone.engine.LocalEngine
 import nixconf.phone.engine.PowerClient
 import nixconf.phone.engine.SileroVad
 import nixconf.phone.engine.Where
 import nixconf.phone.engine.WhisperClient
-import nixconf.phone.engine.chooseEngine
 import nixconf.phone.model.ModelDownloader
 import nixconf.phone.profile.Profile
 import nixconf.phone.profile.ProfileStore
@@ -113,7 +111,6 @@ class AppServices private constructor(context: Context) {
 
     private var openJob: Job? = null
     private var downloadJob: Job? = null
-    private var retrying = false
 
     init {
         scope.launch {
@@ -138,7 +135,7 @@ class AppServices private constructor(context: Context) {
             if (mutableModelStatus.value is ModelStatus.Missing) downloadModel(force = false)
             loadPending()
             // Not part of this job: Test waits for the profile, not for transcriptions.
-            scope.launch { retryPending(p) }
+            retryPending(p)
         }.also { openJob = it }
     }
 
@@ -181,23 +178,16 @@ class AppServices private constructor(context: Context) {
     }
 
     // Only drafts without text (those kept for "field changed" have theirs:
-    // they are offered, not transcribed again), and only when a server
-    // answers; a draft a server already heard nothing in is left alone.
-    private suspend fun retryPending(p: Profile?) {
-        if (retrying || p == null) return
+    // they are offered, not transcribed again); a draft a server already
+    // heard nothing in is left alone. Only while no session runs, which
+    // cancels it (DictationSession.retryWhenIdle).
+    private fun retryPending(p: Profile?) {
+        if (p == null) return
         val todo = pending.value.filter {
             it.text == null && it.error != DictationSession.NOTHING_HEARD && it.id != session.activeDraftId
         }
         if (todo.isEmpty()) return
-        retrying = true
-        try {
-            val engine = chooseEngine(p.servers, "", false, "") { whisper.probe(it) }
-            if (engine !is Engine.Remote) return
-            for (draft in todo) session.retry(draft)
-        } finally {
-            retrying = false
-            loadPending()
-        }
+        session.retryWhenIdle(todo)?.invokeOnCompletion { reloadPending() }
     }
 
     private fun isUnmetered(): Boolean {

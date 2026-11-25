@@ -35,7 +35,7 @@ data class Profile(
     val pauseMs: Int = 550,
     val maxSegmentSec: Int = 25,
     val mode: String = MODE_BATCH,
-    val noSpeechSec: Int = 10,
+    val noSpeechSec: Int = 20,
     val power: List<PowerStatus> = emptyList(),
 )
 

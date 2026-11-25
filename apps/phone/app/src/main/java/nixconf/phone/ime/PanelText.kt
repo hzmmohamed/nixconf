@@ -49,9 +49,15 @@ fun hostOf(url: String): String = try {
     url
 }
 
-/** "0:12 · butternut", plus " · transcribing…" while a segment is (recording goes on). */
-fun recordingText(elapsedMs: Long, state: SessionState.Recording): String =
-    "${elapsed(elapsedMs)} · ${engineLabel(state.engine)}" + if (state.transcribing) " · transcribing…" else ""
+/**
+ * "0:12 · butternut", plus " · transcribing…" while a segment is (recording
+ * goes on); "0:16 · nothing heard yet · stops in 4" while the no-speech
+ * watchdog counts down.
+ */
+fun recordingText(elapsedMs: Long, state: SessionState.Recording): String = when (val left = state.stopsInSec) {
+    null -> "${elapsed(elapsedMs)} · ${engineLabel(state.engine)}" + if (state.transcribing) " · transcribing…" else ""
+    else -> "${elapsed(elapsedMs)} · nothing heard yet · stops in $left"
+}
 
 /** The Keep on toggle under the level meter, off and on. */
 fun keepOnLabel(on: Boolean): String = if (on) "✓ Keeps recording in background" else "Keep recording in background"
@@ -76,7 +82,8 @@ fun idleText(field: FieldKind, incognito: Boolean): String = when (field) {
 /** What TalkBack announces (liveRegion) for a state: short, no timer. */
 fun announcement(state: SessionState, field: FieldKind, incognito: Boolean): String = when (state) {
     SessionState.Idle -> idleText(field, incognito)
-    is SessionState.Recording -> "Recording"
+    // Not the seconds: a polite announcement for each would pile up.
+    is SessionState.Recording -> if (state.stopsInSec != null) "Nothing heard yet, stopping soon" else "Recording"
     is SessionState.Finishing -> when {
         state.engine == null -> "Stopped, finding server"
         state.total > state.done -> "Finishing ${state.done} of ${state.total}"
@@ -124,6 +131,9 @@ fun deliveryText(result: Delivery): String? = when (result) {
     Delivery.BUSY -> "Finish the dictation first"
 }
 
+/** Undo found other text before the cursor (typed, moved, or another field): it leaves the field alone. */
+const val UNDO_FAILED = "Can't undo: the text before the cursor changed"
+
 /** m:ss */
 fun elapsed(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -135,8 +145,10 @@ fun keptText(reason: String): String = when (reason) {
     DictationSession.FIELD_CHANGED -> "Saved as draft (field changed)"
     DictationSession.NO_SERVER -> "Saved as draft: no server. Transcribes when one is back"
     DictationSession.NOTHING_HEARD -> "Nothing heard: check the level bar"
-    DictationSession.NO_SPEECH -> "Stopped: no speech heard. Mic muted or in use by another app?"
+    DictationSession.NO_SPEECH -> "Stopped: nothing heard. Mic muted or in use by another app? Tap to try again"
     DictationSession.LOCAL_FAILED -> "On-phone transcription failed: saved as draft"
+    DictationSession.UNDONE -> "Removed from the field"
+    DictationSession.STOPPED_WAITING -> "Stopped waiting: saved as draft"
     else -> "Saved as draft: $reason"
 }
 

@@ -34,6 +34,8 @@ import nixconf.phone.segment.Segment
 import nixconf.phone.segment.SpeechProbability
 import nixconf.phone.segment.clean
 import nixconf.phone.segment.joinTexts
+import nixconf.phone.segment.spaceAfter
+import nixconf.phone.segment.spaceBefore
 
 /**
  * The microphone. Every read goes to [start]'s writer, then to tap (if any);
@@ -73,6 +75,15 @@ interface EditorTarget {
      * typed into again when the user comes back to it. Null: never matches.
      */
     val field: String? get() = token
+
+    /** Up to [n] characters before the cursor; null when the field cannot say. */
+    fun textBefore(n: Int): String? = null
+
+    /** Up to [n] characters after the cursor; null when the field cannot say. */
+    fun textAfter(n: Int): String? = null
+
+    /** Deletes [n] characters before the cursor. */
+    fun deleteBefore(n: Int): Boolean = false
 }
 
 /** What [DictationSession.deliver] did; BUSY: a session is running (its text must not be mixed in). */
@@ -94,6 +105,8 @@ sealed interface SessionState {
         val startedMs: Long,
         val transcribing: Boolean = false,
         val background: Boolean = false,
+        // Nothing heard yet: the session stops itself in this many seconds (the last few only).
+        val stopsInSec: Int? = null,
     ) : SessionState
 
     /**
@@ -117,8 +130,9 @@ sealed interface SessionState {
  * shows it as composing text as it grows and commits it at stop. Anything
  * that goes wrong leaves the draft PENDING with its audio (and text, if any).
  * With a VAD, a recording with no speech in its first noSpeechSec (profile)
- * stops itself (Kept, [NO_SPEECH]): a muted or busy mic shows at once, not
- * after minutes of talking into it.
+ * stops itself (Kept, [NO_SPEECH]) after a countdown in its last seconds
+ * (Recording.stopsInSec; speech ends it): a muted or busy mic shows at
+ * once, not after minutes of talking into it.
  * Call from the main thread.
  */
 class DictationSession(
@@ -160,6 +174,13 @@ class DictationSession(
         var composed = false
         var text = ""
 
+        // The engine that transcribed the text so far (a draft's engine).
+        var textEngine: String? = null
+
+        // The space the text needs after what the field held before it
+        // (null: not looked yet; looked before any composing text shows).
+        var lead: String? = null
+
         // Recording goes on when the keyboard closes (keepOn).
         var background = false
         val stream = profile?.mode == MODE_STREAM && target.composable
@@ -172,6 +193,7 @@ class DictationSession(
         var transcribing = false
         var done = 0
         var wholeFile = false
+        var stopsInSec: Int? = null
 
         fun inField(): Boolean = target.token.let { it != null && it == token }
     }
@@ -182,6 +204,13 @@ class DictationSession(
     // Drafts a retry is transcribing (main thread).
     private val retrying = mutableSetOf<String>()
 
+    // retryWhenIdle's run: cancelled when a session starts.
+    private var backgroundRetry: Job? = null
+
+    // What the last Done typed, exactly as committed, and where ([undo]).
+    private class Typed(val draft: Draft, val text: String, val token: String?, val incognito: Boolean)
+    private var typed: Typed? = null
+
     /** The draft being recorded or transcribed: not one to list as pending or retry. */
     val activeDraftId: String? get() = current?.draft?.id
 
@@ -191,6 +220,9 @@ class DictationSession(
      */
     fun start(language: String, target: EditorTarget) {
         if (current != null) return
+        // The live session gets the server (or the phone's model) to itself.
+        backgroundRetry?.cancel()
+        typed = null
         val p = profile()
         val draft = try {
             drafts.create(language)
@@ -227,19 +259,34 @@ class DictationSession(
         if (feed != null && quietSec > 0) scope.launch { watchForSpeech(cur, feed, quietSec) }
     }
 
-    // No speech in the first [sec] seconds of audio (or no audio at all for
-    // twice that): the session stops itself. Ends with the session.
+    // No speech in the first [sec] seconds (of time and of audio, or of
+    // time alone for twice that: no audio at all): the session stops
+    // itself, counting down its last COUNTDOWN_MS. Ends with the session
+    // or the first speech.
     private suspend fun watchForSpeech(cur: Current, feed: SegmentFeed, sec: Int) {
         val limitMs = sec * 1000L
-        delay(limitMs)
+        delay((limitMs - COUNTDOWN_MS).coerceAtLeast(0))
         while (current === cur && !cur.stopped) {
-            if (feed.heard || feed.failed) return
-            if (feed.processed >= sec.toLong() * RATE || clock() - cur.startedMs >= 2 * limitMs) {
+            if (feed.heard || feed.failed) {
+                countdown(cur, null)
+                return
+            }
+            val elapsedMs = clock() - cur.startedMs
+            val audioMs = feed.processed * 1000 / RATE
+            val leftMs = maxOf(limitMs - elapsedMs, minOf(limitMs - audioMs, 2 * limitMs - elapsedMs))
+            if (leftMs <= 0) {
                 noSpeech(cur)
                 return
             }
+            countdown(cur, if (leftMs <= COUNTDOWN_MS) ((leftMs + 999) / 1000).toInt() else null)
             delay(WATCH_MS)
         }
+    }
+
+    private fun countdown(cur: Current, sec: Int?) {
+        if (cur.stopsInSec == sec) return
+        cur.stopsInSec = sec
+        publish(cur)
     }
 
     // Nothing to transcribe: the draft is CANCELLED (its audio kept for
@@ -299,7 +346,7 @@ class DictationSession(
         if (cur.field == null || target.field != cur.field || token == cur.token) return
         cur.token = token
         cur.composed = false
-        if (cur.stream && cur.text.isNotEmpty()) cur.composed = target.compose(cur.text)
+        if (cur.stream && cur.text.isNotEmpty()) cur.composed = target.compose(lead(cur, cur.text) + cur.text)
     }
 
     /** Discards the session: draft CANCELLED, nothing typed. */
@@ -319,17 +366,61 @@ class DictationSession(
     }
 
     /**
+     * Stops waiting for a stopped session's text: what is transcribed so far
+     * (segments) becomes the draft's text, PENDING (Kept, [STOPPED_WAITING]:
+     * Insert here / Copy; no text yet: Retry, and auto-retried as any draft
+     * without text). Nothing is typed. A no-op unless finishing.
+     */
+    fun stopWaiting() {
+        val cur = current ?: return
+        if (!cur.stopped) return
+        cur.chosen.cancel()
+        cur.segmented?.cancel()
+        cur.feed?.cancel()
+        cur.job?.cancel()
+        dropComposing(cur)
+        val text = cur.text.ifEmpty { null }
+        val draft = cur.draft.copy(engine = text?.let { cur.textEngine }, text = text, error = STOPPED_WAITING)
+        save(draft)
+        end(SessionState.Kept(draft, STOPPED_WAITING))
+    }
+
+    /**
      * Transcribes a kept draft again; its text is stored (and shown, if it is
      * the Kept one) but it stays PENDING until [deliver]ed. A no-op (returns
      * [draft]) while that draft is being recorded, transcribed or retried; if
      * it was delivered or discarded in the meantime, that state is kept and
      * returned.
      */
-    suspend fun retry(draft: Draft): Draft {
+    suspend fun retry(draft: Draft): Draft = retry(draft, background = false)
+
+    /**
+     * Retries [todo] (drafts without text) one after the other while no
+     * session runs: start() cancels the one in flight (left as it was, for
+     * the next time) and the rest. Each only with a server that answers, or
+     * the phone in Phone mode; in Phone mode never a server on battery, not
+     * even as the last resort a live session would use. Null (nothing
+     * started) while a session or another run is going.
+     */
+    fun retryWhenIdle(todo: List<Draft>): Job? {
+        if (current != null || backgroundRetry?.isActive == true) return null
+        return scope.launch {
+            for (draft in todo) {
+                if (current != null) break
+                retry(draft, background = true)
+            }
+        }.also { backgroundRetry = it }
+    }
+
+    private suspend fun retry(draft: Draft, background: Boolean): Draft {
         if (draft.id == activeDraftId || !retrying.add(draft.id)) return draft
         try {
             val p = profile()
-            val outcome = transcribe(draft.audio, draft.language, p, choose(p, draft.language), p?.prompt.orEmpty())
+            val phone = where() == Where.PHONE
+            val engine = choose(p, draft.language, onBatteryLastResort = !(background && phone))
+            // Not worth a "no server" on the draft: it waits for the next time.
+            if (background && !(engine is Engine.Remote || (phone && engine == Engine.Local))) return draft
+            val outcome = transcribe(draft.audio, draft.language, p, engine, p?.prompt.orEmpty())
             val now = onDisk(draft)
             if (now.status != DraftStatus.PENDING) return now
             val updated = if (outcome.text != null) {
@@ -348,7 +439,7 @@ class DictationSession(
     }
 
     /**
-     * Types a draft's text (plus a space) into [target]; DELIVERED if it went
+     * Types a draft's text (spaced from the field's text around the cursor) into [target]; DELIVERED if it went
      * in (and the state shows it Done). Only a still PENDING draft (else GONE:
      * delivered or discarded since), and not while a session runs.
      */
@@ -356,10 +447,33 @@ class DictationSession(
         val text = draft.text ?: return Delivery.NO_TEXT
         if (current != null) return Delivery.BUSY
         if (onDisk(draft).status != DraftStatus.PENDING) return Delivery.GONE
-        if (!target.commit("$text ")) return Delivery.NO_FIELD
+        val committed = spaceBefore(target.textBefore(1), text) + text + spaceAfter(target.textAfter(1))
+        if (!target.commit(committed)) return Delivery.NO_FIELD
         delivered(draft, target)
+        typed = Typed(draft, committed, target.token, target.incognito)
         mutableState.value = SessionState.Done(text)
         return Delivery.TYPED
+    }
+
+    /**
+     * Takes the text the last Done typed back out of [target], if the field
+     * still ends in exactly that text at the cursor (same input, nothing typed
+     * or moved since); the draft is CANCELLED (audio kept for keepDays) and
+     * the state turns Kept ([UNDONE]: the text stays on offer to copy).
+     * False if there is nothing to undo or the field changed.
+     */
+    fun undo(target: EditorTarget): Boolean {
+        val last = typed ?: return false
+        if (current != null || mutableState.value !is SessionState.Done) return false
+        if (target.token == null || target.token != last.token) return false
+        val n = last.text.length
+        if (target.textBefore(n) != last.text || !target.deleteBefore(n)) return false
+        typed = null
+        val draft = last.draft.copy(status = DraftStatus.CANCELLED)
+        // An incognito draft is gone already: nothing to write back.
+        if (!last.incognito) save(draft)
+        mutableState.value = SessionState.Kept(draft, UNDONE)
+        return true
     }
 
     /**
@@ -393,9 +507,11 @@ class DictationSession(
         }
         // Only into the field the recording started in: the user may have
         // switched app (or closed the keyboard) while it was transcribing.
-        if (cur.inField() && cur.target.commit("$text ")) {
+        val committed = if (cur.inField()) lead(cur, text) + text + spaceAfter(cur.target.textAfter(1)) else ""
+        if (cur.inField() && cur.target.commit(committed)) {
             cur.composed = false
             delivered(draft, cur.target)
+            typed = Typed(draft, committed, cur.token, cur.target.incognito)
             end(SessionState.Done(text))
         } else {
             dropComposing(cur)
@@ -440,7 +556,8 @@ class DictationSession(
                 texts += text
                 record(cur, index, segment, text, outcome.engine)
                 cur.text = joinTexts(texts)
-                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(cur.text) || cur.composed
+                cur.textEngine = outcome.engine
+                if (cur.stream && cur.inField()) cur.composed = cur.target.compose(lead(cur, cur.text) + cur.text) || cur.composed
             }
         } catch (e: CancellationException) {
             throw e
@@ -461,6 +578,11 @@ class DictationSession(
         }
     }
 
+    // The space before the session's text, from the field as it was before
+    // any of it showed (composing text sits before the cursor once it does).
+    private fun lead(cur: Current, text: String): String =
+        cur.lead ?: spaceBefore(cur.target.textBefore(1), text).also { cur.lead = it }
+
     // Composing text left in the field the session started in is removed
     // (a field the user left already lost it: DictationIme.onFinishInput).
     private fun dropComposing(cur: Current) {
@@ -472,7 +594,7 @@ class DictationSession(
     private fun publish(cur: Current) {
         if (current !== cur) return
         mutableState.value = if (!cur.stopped) {
-            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing, cur.background)
+            SessionState.Recording(cur.engine, cur.startedMs, cur.transcribing, cur.background, cur.stopsInSec)
         } else {
             val total = if (cur.wholeFile) 0 else cur.feed?.closed ?: 0
             SessionState.Finishing(cur.engine, if (total == 0) 0 else cur.done, total)
@@ -531,7 +653,7 @@ class DictationSession(
         return if (text.isEmpty()) Outcome(null, engine, NOTHING_HEARD) else Outcome(text, engine, null)
     }
 
-    private suspend fun choose(p: Profile?, language: String): Engine {
+    private suspend fun choose(p: Profile?, language: String, onBatteryLastResort: Boolean = true): Engine {
         val power = p?.power.orEmpty().associate { it.server to it.url }
         return chooseEngine(
             p?.servers.orEmpty(),
@@ -540,6 +662,7 @@ class DictationSession(
             p?.localModel?.language.orEmpty(),
             where(),
             { url -> power[url]?.let { onBattery(it) } },
+            onBatteryLastResort,
             probe,
         )
     }
@@ -578,13 +701,17 @@ class DictationSession(
         const val NOTHING_HEARD = "nothing heard"
         const val NO_SPEECH = "no speech"
         const val LOCAL_FAILED = "on-phone transcription failed"
+        const val UNDONE = "undone"
+        const val STOPPED_WAITING = "stopped waiting"
 
         // Defaults when there is no profile (as the profile's).
         private const val PAUSE_MS = 550
         private const val MAX_SEGMENT_SEC = 25
-        private const val NO_SPEECH_SEC = 10
+        private const val NO_SPEECH_SEC = 20
 
-        // How often the no-speech watchdog looks again once its time is up.
+        // The no-speech watchdog counts down this long before it stops the
+        // session, looking again this often.
+        private const val COUNTDOWN_MS = 5_000L
         private const val WATCH_MS = 250L
 
         // Characters of the text so far that go into a segment's prompt.

@@ -55,6 +55,8 @@ class PanelTextTest {
         assertEquals("Saved as draft (field changed)", keptText(DictationSession.FIELD_CHANGED))
         assertEquals("Saved as draft: no server. Transcribes when one is back", keptText(DictationSession.NO_SERVER))
         assertEquals("Nothing heard: check the level bar", keptText(DictationSession.NOTHING_HEARD))
+        assertEquals("Removed from the field", keptText(DictationSession.UNDONE))
+        assertEquals("Stopped waiting: saved as draft", keptText(DictationSession.STOPPED_WAITING))
         assertEquals("Saved as draft: odd", keptText("odd"))
     }
 
@@ -72,6 +74,10 @@ class PanelTextTest {
     fun recording_text_names_the_engine() {
         assertEquals("0:05 · finding server…", recordingText(5_000, SessionState.Recording(null, 0)))
         assertEquals("0:05 · on phone · transcribing…", recordingText(5_000, SessionState.Recording(Engine.Local, 0, true)))
+        assertEquals(
+            "0:16 · nothing heard yet · stops in 4",
+            recordingText(16_000, SessionState.Recording(Engine.Local, 0, stopsInSec = 4)),
+        )
     }
 
     @Test
@@ -85,6 +91,10 @@ class PanelTextTest {
     @Test
     fun announcements_are_short_and_without_the_timer() {
         assertEquals("Recording", announcement(SessionState.Recording(butternut, 0, true), FieldKind.TEXT, false))
+        assertEquals(
+            "Nothing heard yet, stopping soon",
+            announcement(SessionState.Recording(butternut, 0, stopsInSec = 3), FieldKind.TEXT, false),
+        )
         assertEquals("Stopped, finding server", announcement(SessionState.Finishing(null), FieldKind.TEXT, false))
         assertEquals("Finishing 2 of 5", announcement(SessionState.Finishing(butternut, 2, 5), FieldKind.TEXT, false))
         assertEquals("Transcribing", announcement(SessionState.Finishing(butternut), FieldKind.TEXT, false))

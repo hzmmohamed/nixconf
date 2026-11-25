@@ -18,8 +18,10 @@ import nixconf.phone.drafts.DraftStatus
 import nixconf.phone.drafts.DraftStore
 import nixconf.phone.engine.Engine
 import nixconf.phone.engine.RemoteTranscriber
+import nixconf.phone.engine.Where
 import nixconf.phone.profile.LocalModel
 import nixconf.phone.profile.MODE_STREAM
+import nixconf.phone.profile.PowerStatus
 import nixconf.phone.profile.Profile
 import nixconf.phone.segment.SpeechProbability
 import org.junit.Assert.assertEquals
@@ -65,10 +67,19 @@ class DictationSessionTest {
         override val level = MutableStateFlow(0f)
         var recording = false
         var failure: Exception? = null
+        private var out: WavWriter? = null
+        private var tap: ((ShortArray, Int) -> Unit)? = null
         override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
             failure?.let { throw it }
             recording = true
-            out.write(samples, samples.size)
+            this.out = out
+            this.tap = tap
+            more(samples)
+        }
+
+        // Later reads of the running recording.
+        fun more(samples: ShortArray) {
+            out!!.write(samples, samples.size)
             tap?.invoke(samples, samples.size)
         }
         override fun stop() {
@@ -84,9 +95,22 @@ class DictationSessionTest {
         val commits = mutableListOf<String>()
         val composed = mutableListOf<String>()
         var composing = ""
+
+        // The field's committed text; the cursor at its end, after any composing text.
+        var content = ""
         override fun commit(text: String): Boolean {
             commits += text
+            content += text
             composing = ""
+            return true
+        }
+        override fun textBefore(n: Int): String = (content + composing).takeLast(n)
+
+        // What follows the cursor (not part of content).
+        var after = ""
+        override fun textAfter(n: Int): String = after.take(n)
+        override fun deleteBefore(n: Int): Boolean {
+            content = content.dropLast(n)
             return true
         }
         override fun compose(text: String): Boolean {
@@ -102,6 +126,8 @@ class DictationSessionTest {
         override fun probability(frame: FloatArray): Float = if (frame.any { kotlin.math.abs(it) > 0.05f }) 0.9f else 0f
     }
     private var vad: (() -> SpeechProbability)? = null
+    private var where = Where.AUTO
+    private var serverOnBattery: Boolean? = null
 
     private fun TestScope.session() = DictationSession(
         profile = { profile },
@@ -117,6 +143,8 @@ class DictationSessionTest {
             serverUp
         },
         scope = this,
+        onBattery = { serverOnBattery },
+        where = { where },
         vad = vad,
         io = StandardTestDispatcher(testScheduler),
         clock = { testScheduler.currentTime },
@@ -452,6 +480,120 @@ class DictationSessionTest {
         assertEquals(DraftStatus.PENDING, onlyDraft().status)
     }
 
+    // --- background retries ---
+
+    // An Arabic draft no server heard: PENDING without text.
+    private fun TestScope.untranscribed(s: DictationSession): Draft {
+        serverUp = false
+        dictate(s, "ar")
+        serverUp = true
+        return (s.state.value as SessionState.Kept).draft.also { assertNull(it.text) }
+    }
+
+    @Test
+    fun background_retry_transcribes_while_idle() = runTest {
+        val s = session()
+        val d = untranscribed(s)
+        val job = s.retryWhenIdle(listOf(d))!!
+        assertNull(s.retryWhenIdle(listOf(d))) // one run at a time
+        advanceUntilIdle()
+        assertTrue(job.isCompleted)
+        assertEquals("hello world", drafts.load(d.id)!!.text)
+        assertEquals(DraftStatus.PENDING, drafts.load(d.id)!!.status) // offered, not typed
+        assertTrue(editor.commits.isEmpty())
+    }
+
+    @Test
+    fun background_retry_not_while_a_session_runs() = runTest {
+        val s = session()
+        val d = untranscribed(s)
+        s.start("en", editor)
+        assertNull(s.retryWhenIdle(listOf(d)))
+        s.cancel()
+        advanceUntilIdle()
+        assertNull(drafts.load(d.id)!!.text)
+    }
+
+    @Test
+    fun a_session_start_cancels_the_background_retry() = runTest {
+        val s = session()
+        val first = untranscribed(s)
+        val second = untranscribed(s)
+        remoteCalls.clear()
+        remote = {
+            delay(5000)
+            "old draft"
+        }
+        s.retryWhenIdle(listOf(first, second))
+        advanceTimeBy(1000)
+        assertEquals(1, remoteCalls.size) // the first old draft is on the server
+
+        remote = { "live" }
+        s.start("en", editor)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("live"), s.state.value)
+        assertEquals(listOf("live "), editor.commits)
+        // Both old drafts as they were: the next keyboard open retries them.
+        assertEquals(2, remoteCalls.size)
+        assertNull(drafts.load(first.id)!!.text)
+        assertEquals(DictationSession.NO_SERVER, drafts.load(first.id)!!.error) // no error from the cancel
+        assertNull(drafts.load(second.id)!!.text)
+        assertTrue(s.retryWhenIdle(listOf(first, second)) != null) // idle again: may run
+    }
+
+    @Test
+    fun phone_mode_background_retry_leaves_a_server_on_battery_alone() = runTest {
+        profile = profile!!.copy(power = listOf(PowerStatus(server, "http://butternut:8179/power.json")))
+        val s = session()
+        val d = untranscribed(s)
+        remoteCalls.clear()
+        where = Where.PHONE
+        serverOnBattery = true
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertTrue(remoteCalls.isEmpty())
+        assertEquals(d, drafts.load(d.id))
+
+        // Asked for by a tap, it is still the last resort; Auto in the background too.
+        assertEquals("hello world", s.retry(d).text)
+        where = Where.AUTO
+        val other = untranscribed(s)
+        serverOnBattery = true
+        s.retryWhenIdle(listOf(other))
+        advanceUntilIdle()
+        assertEquals("hello world", drafts.load(other.id)!!.text)
+    }
+
+    @Test
+    fun phone_mode_background_retry_uses_the_phone_for_english() = runTest {
+        where = Where.PHONE
+        val s = session()
+        remote = { throw IOException("down") }
+        local.ready = false
+        dictate(s) // English, no server, no model yet: kept
+        val d = (s.state.value as SessionState.Kept).draft
+        local.ready = true
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertEquals("local text", drafts.load(d.id)!!.text)
+    }
+
+    @Test
+    fun auto_background_retry_waits_for_a_server() = runTest {
+        val s = session()
+        remote = { throw IOException("down") }
+        local.ready = false
+        dictate(s)
+        val d = (s.state.value as SessionState.Kept).draft
+        local.ready = true
+        serverUp = false
+        s.retryWhenIdle(listOf(d))
+        advanceUntilIdle()
+        assertEquals(0, local.calls)
+        assertEquals(d, drafts.load(d.id))
+    }
+
     @Test
     fun deliver_twice_types_once() = runTest {
         val s = session()
@@ -459,6 +601,121 @@ class DictationSessionTest {
         assertEquals(Delivery.TYPED, s.deliver(kept, editor))
         assertEquals(Delivery.GONE, s.deliver(kept, editor))
         assertEquals(listOf("hello world "), editor.commits)
+    }
+
+    // --- the field's edges ---
+
+    @Test
+    fun space_before_when_the_field_ends_in_a_word() = runTest {
+        editor.content = "deploy butternut" // a burst, then ⌫ over its space
+        remote = { "then run" }
+        dictate(session())
+        assertEquals("deploy butternut then run ", editor.content)
+    }
+
+    @Test
+    fun no_space_before_after_a_space_or_before_punctuation() = runTest {
+        editor.content = "deploy "
+        remote = { "butternut" }
+        val s = session()
+        dictate(s)
+        assertEquals("deploy butternut ", editor.content)
+
+        editor.content = "deploy butternut"
+        remote = { "?" }
+        tmp.root.listFiles()!!.forEach { it.deleteRecursively() }
+        dictate(s)
+        assertEquals("deploy butternut? ", editor.content)
+    }
+
+    @Test
+    fun no_space_after_when_one_follows_the_cursor() = runTest {
+        editor.content = "say"
+        editor.after = " then stop"
+        dictate(session())
+        assertEquals(listOf(" hello world"), editor.commits)
+    }
+
+    @Test
+    fun insert_spaces_a_draft_like_a_session() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        editor.content = "note:"
+        editor.after = "."
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertEquals(listOf(" hello world"), editor.commits)
+        // Undo takes the added space too.
+        assertTrue(s.undo(editor))
+        assertEquals("note:", editor.content)
+    }
+
+    @Test
+    fun stream_mode_spaces_composing_text_from_the_field_before_it() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        segmented()
+        editor.content = "Intro"
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        // Looked once, before the composing text was there (it sits before the cursor).
+        assertEquals(listOf(" Hello there.", " Hello there. how are you"), editor.composed)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(listOf(" Hello there. how are you? "), editor.commits)
+    }
+
+    // --- undo ---
+
+    @Test
+    fun undo_takes_the_typed_text_back_out_and_cancels_the_draft() = runTest {
+        editor.content = "Note: "
+        val s = session()
+        dictate(s)
+        assertEquals("Note: hello world ", editor.content)
+
+        assertTrue(s.undo(editor))
+        assertEquals("Note: ", editor.content)
+        val kept = s.state.value as SessionState.Kept
+        assertEquals(DictationSession.UNDONE, kept.reason)
+        assertEquals("hello world", kept.draft.text) // still there to copy
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+        assertFalse(s.undo(editor)) // once
+    }
+
+    @Test
+    fun undo_leaves_a_field_that_changed_alone() = runTest {
+        val s = session()
+        dictate(s)
+        editor.content += "x" // typed after it
+        assertFalse(s.undo(editor))
+        assertEquals("hello world x", editor.content)
+        assertEquals(SessionState.Done("hello world"), s.state.value)
+        assertEquals(DraftStatus.DELIVERED, onlyDraft().status)
+
+        editor.content = "hello world "
+        editor.token = "org.chat/7" // another field
+        assertFalse(s.undo(editor))
+        assertEquals("hello world ", editor.content)
+    }
+
+    @Test
+    fun undo_after_inserting_a_draft() = runTest {
+        val s = session()
+        val kept = keptWithText(s)
+        assertEquals(Delivery.TYPED, s.deliver(kept, editor))
+        assertTrue(s.undo(editor))
+        assertEquals("", editor.content)
+        assertEquals(DraftStatus.CANCELLED, onlyDraft().status)
+    }
+
+    @Test
+    fun nothing_to_undo_once_a_new_session_starts() = runTest {
+        val s = session()
+        dictate(s)
+        s.start("en", editor)
+        assertFalse(s.undo(editor))
+        s.cancel()
+        assertFalse(s.undo(editor))
     }
 
     @Test
@@ -527,12 +784,14 @@ class DictationSessionTest {
     // --- no speech ---
 
     @Test
-    fun no_speech_in_ten_seconds_stops_the_session() = runTest {
-        segmented(samples = speech(12.0 to false))
+    fun no_speech_in_twenty_seconds_stops_the_session() = runTest {
+        segmented(samples = speech(22.0 to false))
         val s = session()
         s.start("en", editor)
-        advanceTimeBy(9_000)
-        assertTrue(s.state.value is SessionState.Recording)
+        advanceTimeBy(14_000)
+        assertEquals(SessionState.Recording(Engine.Remote(server), 0), s.state.value)
+        advanceTimeBy(5_500) // 19.5 s
+        assertEquals(1, (s.state.value as SessionState.Recording).stopsInSec)
         advanceUntilIdle()
         val kept = s.state.value as SessionState.Kept
         assertEquals(DictationSession.NO_SPEECH, kept.reason)
@@ -549,15 +808,17 @@ class DictationSessionTest {
         segmented(samples = ShortArray(0))
         val s = session()
         s.start("en", editor)
-        advanceTimeBy(19_000)
-        assertTrue(s.state.value is SessionState.Recording)
+        advanceTimeBy(30_000)
+        assertEquals(null, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(9_100) // 39.1 s
+        assertEquals(1, (s.state.value as SessionState.Recording).stopsInSec)
         advanceTimeBy(2_000)
         assertEquals(DictationSession.NO_SPEECH, (s.state.value as SessionState.Kept).reason)
     }
 
     @Test
-    fun speech_keeps_the_session_going_past_ten_seconds() = runTest {
-        segmented(samples = speech(1.0 to true, 11.0 to false), texts = listOf("Hello."))
+    fun speech_keeps_the_session_going_past_twenty_seconds() = runTest {
+        segmented(samples = speech(1.0 to true, 21.0 to false), texts = listOf("Hello."))
         val s = session()
         s.start("en", editor)
         advanceTimeBy(30_000)
@@ -565,6 +826,41 @@ class DictationSessionTest {
         s.stop()
         advanceUntilIdle()
         assertEquals(SessionState.Done("Hello."), s.state.value)
+    }
+
+    @Test
+    fun countdown_shows_the_last_seconds_and_speech_ends_it() = runTest {
+        profile = profile!!.copy(noSpeechSec = 10)
+        segmented(samples = speech(7.0 to false), texts = listOf("Hello."))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(5_100)
+        assertEquals(5, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(2_000) // 7.1 s
+        assertEquals(3, (s.state.value as SessionState.Recording).stopsInSec)
+
+        audio.more(speech(1.0 to true, 1.0 to false)) // the user starts talking
+        advanceTimeBy(500)
+        assertEquals(null, (s.state.value as SessionState.Recording).stopsInSec)
+        advanceTimeBy(30_000)
+        assertTrue(s.state.value is SessionState.Recording)
+        s.stop()
+        advanceUntilIdle()
+        assertEquals(SessionState.Done("Hello."), s.state.value)
+    }
+
+    @Test
+    fun stop_mid_countdown_finishes_as_usual() = runTest {
+        profile = profile!!.copy(noSpeechSec = 10)
+        segmented(samples = speech(12.0 to false))
+        val s = session()
+        s.start("en", editor)
+        advanceTimeBy(7_100)
+        assertEquals(3, (s.state.value as SessionState.Recording).stopsInSec)
+        s.stop()
+        assertEquals(SessionState.Finishing(Engine.Remote(server)), s.state.value)
+        advanceUntilIdle()
+        assertEquals(DictationSession.NOTHING_HEARD, (s.state.value as SessionState.Kept).reason)
     }
 
     @Test
@@ -769,6 +1065,73 @@ class DictationSessionTest {
         assertEquals(SessionState.Finishing(Engine.Remote(server), 2, 3), s.state.value)
         advanceUntilIdle()
         assertEquals(SessionState.Done("Hello there. how are you?"), s.state.value)
+    }
+
+    @Test
+    fun stop_waiting_keeps_the_segments_so_far_as_a_pending_draft() = runTest {
+        profile = profile!!.copy(mode = MODE_STREAM)
+        segmented()
+        val texts = listOf("Hello there.", "how are you")
+        var call = 0
+        remote = {
+            if (call == 2) delay(60_000) // the last segment hangs
+            texts[call++]
+        }
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        advanceTimeBy(1000)
+        assertEquals(SessionState.Finishing(Engine.Remote(server), 2, 3), s.state.value)
+
+        s.stopWaiting()
+        val kept = s.state.value as SessionState.Kept
+        assertEquals(DictationSession.STOPPED_WAITING, kept.reason)
+        assertEquals("Hello there. how are you", kept.draft.text)
+        assertTrue(editor.commits.isEmpty())
+        assertEquals("", editor.composing) // the composing text went with it
+        val d = onlyDraft()
+        assertEquals(DraftStatus.PENDING, d.status)
+        assertEquals("Hello there. how are you", d.text)
+        assertEquals(server, d.engine)
+        assertEquals(threeSegments.size, WavFiles.readSamples(d.audio).size)
+        advanceUntilIdle() // the late answer changes nothing
+        assertEquals(kept, s.state.value)
+        assertEquals(Delivery.TYPED, s.deliver(kept.draft, editor))
+    }
+
+    @Test
+    fun stop_waiting_with_nothing_transcribed_keeps_it_for_retry() = runTest {
+        remote = {
+            delay(60_000)
+            "too late"
+        }
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stop()
+        advanceTimeBy(1000)
+        s.stopWaiting()
+        assertEquals(DictationSession.STOPPED_WAITING, (s.state.value as SessionState.Kept).reason)
+        val d = onlyDraft()
+        assertEquals(DraftStatus.PENDING, d.status)
+        assertNull(d.text)
+        assertEquals(listOf(d), drafts.pending())
+        advanceUntilIdle()
+        assertTrue(editor.commits.isEmpty())
+    }
+
+    @Test
+    fun stop_waiting_only_while_finishing() = runTest {
+        val s = session()
+        s.start("en", editor)
+        advanceUntilIdle()
+        s.stopWaiting()
+        assertTrue(s.state.value is SessionState.Recording)
+        s.stop()
+        advanceUntilIdle()
+        s.stopWaiting()
+        assertEquals(SessionState.Done("hello world"), s.state.value)
     }
 
     @Test

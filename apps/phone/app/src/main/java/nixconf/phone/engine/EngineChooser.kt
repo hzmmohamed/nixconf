@@ -38,7 +38,8 @@ private enum class Check { UP, ON_BATTERY, DOWN }
  * later one answers sooner. A server [onBattery] says runs on battery is
  * passed over (and not probed: a probe loads its model) for the next one, or
  * for the on-phone model if it is ready and speaks [language]; it is used
- * only when nothing else can transcribe. [onBattery]: null when unknown (no
+ * only when nothing else can transcribe, and not at all without
+ * [onBatteryLastResort]. [onBattery]: null when unknown (no
  * power status for that server, or it did not answer). None at all: the
  * on-phone model, else [Engine.Unavailable].
  */
@@ -49,6 +50,7 @@ suspend fun chooseEngine(
     localLanguage: String,
     where: Where = Where.AUTO,
     onBattery: suspend (String) -> Boolean? = { null },
+    onBatteryLastResort: Boolean = true,
     probe: suspend (String) -> Boolean,
 ): Engine {
     val localOk = localReady && language == localLanguage
@@ -74,6 +76,7 @@ suspend fun chooseEngine(
         when {
             winner >= 0 -> Engine.Remote(servers[winner])
             localOk -> Engine.Local
+            !onBatteryLastResort -> Engine.Unavailable
             // Every check finished (none won): the servers on battery, in order.
             else -> servers.filterIndexed { i, _ -> checks[i].await() == Check.ON_BATTERY }
                 .firstOrNull { safely(false) { probe(it) } }
