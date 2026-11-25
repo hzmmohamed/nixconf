@@ -5,10 +5,16 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.security.MessageDigest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import nixconf.phone.drafts.SegmentConf
+import nixconf.phone.drafts.WordConf
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -18,14 +24,57 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Response
 
+/** A server's answer: the raw text and, from verbose_json, how sure Whisper was. */
+data class Transcript(val text: String, val conf: SegmentConf? = null)
+
 // What the dictation session needs from a server (a fake in its tests).
 fun interface RemoteTranscriber {
-    suspend fun transcribe(url: String, wav: File, language: String, prompt: String): String
+    suspend fun transcribe(url: String, wav: File, language: String, prompt: String): Transcript
+}
+
+/** Which Whisper prompt a draft used: the first 12 hex of its SHA-256 (as dictate-stream's prompt_sha). */
+fun promptSha(prompt: String): String =
+    MessageDigest.getInstance("SHA-256").digest(prompt.toByteArray()).joinToString("") { "%02x".format(it) }.take(12)
+
+/**
+ * whisper-server's answer: the text, plus (verbose_json) the worst segment's
+ * avg_logprob and no_speech_prob, every word with its probability and the
+ * detected language. Null without `text`; conf is null without segments.
+ */
+fun parseInference(body: String): Transcript? {
+    val o = try {
+        Json.parseToJsonElement(body).jsonObject
+    } catch (e: IllegalArgumentException) {
+        return null
+    }
+    val text = o["text"]?.jsonPrimitive?.contentOrNull ?: return null
+    val segments = try {
+        o["segments"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+    } catch (e: IllegalArgumentException) {
+        emptyList()
+    }
+    if (segments.isEmpty()) return Transcript(text)
+    fun JsonObject.num(key: String) = this[key]?.jsonPrimitive?.doubleOrNull ?: 0.0
+    val words = segments.flatMap { seg ->
+        seg["words"]?.jsonArray.orEmpty().map { it.jsonObject }.map {
+            WordConf(it["word"]?.jsonPrimitive?.contentOrNull.orEmpty(), it.num("probability"), it.num("start"), it.num("end"))
+        }
+    }
+    return Transcript(
+        text,
+        SegmentConf(
+            avgLogprob = segments.minOf { it.num("avg_logprob") },
+            noSpeechProb = segments.maxOf { it.num("no_speech_prob") },
+            words = words,
+            lang = o["detected_language"]?.jsonPrimitive?.contentOrNull,
+            langP = o["detected_language_probability"]?.jsonPrimitive?.doubleOrNull,
+        ),
+    )
 }
 
 // whisper.cpp's server as run by dictation-server: `GET /` is the readiness
 // probe (and starts the socket-activated server), `POST /inference` takes a
-// 16 kHz mono WAV and answers {"text": …}.
+// 16 kHz mono WAV and answers {"text": …, "segments": […]} (verbose_json).
 class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
     /**
      * As the desktop `dictate`: a host that is not there fails at connect
@@ -48,7 +97,7 @@ class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
     }
 
     /** The raw transcript; throws [IOException] on a non-2xx answer or one without `text`. */
-    override suspend fun transcribe(url: String, wav: File, language: String, prompt: String): String {
+    override suspend fun transcribe(url: String, wav: File, language: String, prompt: String): Transcript {
         val client = http.newBuilder()
             .readTimeout(TIMEOUT_S, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
@@ -56,7 +105,7 @@ class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("file", wav.name, wav.asRequestBody("audio/wav".toMediaType()))
             .addFormDataPart("language", language)
-            .addFormDataPart("response_format", "json")
+            .addFormDataPart("response_format", "verbose_json")
             .addFormDataPart("prompt", prompt)
             .addFormDataPart("temperature", "0.0")
             .addFormDataPart("temperature_inc", "0.2")
@@ -66,11 +115,7 @@ class WhisperClient(private val http: OkHttpClient) : RemoteTranscriber {
             if (!response.isSuccessful) throw IOException("$url: HTTP ${response.code}")
             response.body?.string().orEmpty()
         }
-        return try {
-            Json.parseToJsonElement(answer).jsonObject["text"]?.jsonPrimitive?.contentOrNull
-        } catch (e: IllegalArgumentException) {
-            null
-        } ?: throw IOException("$url: answer has no text")
+        return parseInference(answer) ?: throw IOException("$url: answer has no text")
     }
 
     private fun endpoint(url: String, path: String) = url.trimEnd('/') + "/" + path
