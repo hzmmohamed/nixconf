@@ -57,7 +57,8 @@
       ./agent-env/agent_devshell.py [pkgs.direnv pkgs.git pkgs.systemd agentNet];
 
     # The one Markdown file every agent reads (Claude via a CLAUDE.md import
-    # line, OpenCode via its `instructions` config). Store path, world-readable
+    # line, OpenCode via its `instructions` config, Codex CLI as its global
+    # ~/.codex/AGENTS.md: Codex has no imports). Store path, world-readable
     # like the rest of $XDG_CONFIG_HOME.
     guidelinesFile = ./agent-env/guidelines.md;
 
@@ -94,6 +95,8 @@
         home.packages = [agentNet agentGit agentPush nx agentDevshell claudeDevshell opencodeDevshell];
 
         xdg.configFile."agents/guidelines.md".source = guidelinesFile;
+        # Codex reads $CODEX_HOME/AGENTS.md (default ~/.codex) verbatim.
+        home.file.".codex/AGENTS.md".source = guidelinesFile;
 
         # (NixOS lib has no lib.hm: spell out the DAG entry, like agent-common's
         # claudeSettingsMerge.)
