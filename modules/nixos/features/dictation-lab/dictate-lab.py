@@ -25,6 +25,9 @@ the correction game, vocabulary/rules, a dataset) read one schema:
       drop full audio older than N days (text and segments stay)
   dictate-lab analyse --data-dir D --vocab V.json [--hunspell H --dict D] [--all]
       heuristic suspects of new or re-uploaded drafts -> <data>/suspects.jsonl
+  dictate-lab mine --lab URL --sessions ~/.claude/projects [--days 3]
+      (any agent host) match recent drafts to the messages sent from this
+      host's agent sessions; post the user's edits as suspects
 
 Only loopback and the user's own untagged tailnet devices get in
 (`tailscale whois`); anything else, or a whois that fails, gets 403 before
@@ -32,6 +35,7 @@ a byte is written. Transcript text is never logged. Python stdlib only.
 """
 
 import argparse
+import difflib
 import fcntl
 import hashlib
 import json
@@ -43,6 +47,8 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -232,6 +238,148 @@ def _finish(data_dir, origin, ident):
     _replace_dir(tmp, drafts / ident)
     shutil.rmtree(inc)
     return meta
+
+
+# --- mine: the user's edits to dictated agent prompts -------------------------
+# A draft pasted into Claude Code (or T3, whose Claude threads land in the
+# same logs) and edited before sending: the edits are near-certain
+# corrections. Only diffs locally; no model.
+MIN_WORDS = 4
+MIN_COVERAGE = 0.6
+MAX_EDIT = 4
+WINDOW_BEFORE_MS = 60_000
+WINDOW_AFTER_MS = 30 * 60_000
+
+
+def _ts_ms(stamp):
+    return int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() * 1000)
+
+
+def sent_messages(sessions_dir, since_ms):
+    """(ts_ms, text) of the messages the user typed into agent sessions
+    (~/.claude/projects/*/*.jsonl) since since_ms: no tool results, meta
+    lines, subagent prompts or slash commands."""
+    out = []
+    for f in sorted(Path(sessions_dir).glob("*/*.jsonl")):
+        try:
+            if f.stat().st_mtime * 1000 < since_ms:
+                continue
+            lines = f.read_bytes()
+        except OSError:
+            continue
+        for line in _jsonl(lines):
+            if not isinstance(line, dict) or line.get("type") != "user" or line.get("userType") != "external" \
+                    or line.get("isMeta") or line.get("isSidechain"):
+                continue
+            content = (line.get("message") or {}).get("content")
+            if isinstance(content, list):
+                if any(not isinstance(c, dict) or c.get("type") != "text" for c in content):
+                    continue
+                content = "\n".join(str(c.get("text") or "") for c in content)
+            if not isinstance(content, str) or not content.strip() or content.lstrip().startswith("<"):
+                continue
+            try:
+                ts = _ts_ms(line["timestamp"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ts >= since_ms:
+                out.append((ts, content))
+    return out
+
+
+def _keys(text):
+    return [k for k in (norm(t) for _, _, t in tokens(text)) if k]
+
+
+def match(draft, messages):
+    """The sent message the draft most likely became: (ts_ms, text,
+    coverage), coverage being the share of the draft's words found in it."""
+    keys = _keys(draft.get("text"))
+    created = draft.get("created_ms")
+    if len(keys) < MIN_WORDS or not isinstance(created, (int, float)):
+        return None
+    last = created + (draft.get("duration") or 0) * 1000 + WINDOW_AFTER_MS
+    best = None
+    for ts, text in messages:
+        if not created - WINDOW_BEFORE_MS <= ts <= last:
+            continue
+        sm = difflib.SequenceMatcher(None, keys, _keys(text), autojunk=False)
+        coverage = sum(b.size for b in sm.get_matching_blocks()) / len(keys)
+        if coverage >= MIN_COVERAGE and (best is None or coverage > best[2]):
+            best = (ts, text, coverage)
+    return best
+
+
+def _draft_tokens(draft):
+    """(segment, start, end, raw) of the draft's words, offsets into their
+    segment's text (or meta text with segment None)."""
+    segs = [s for s in draft.get("segments") or [] if s.get("ok", True) and (s.get("text") or "").strip()]
+    if not segs:
+        segs = [{"i": None, "text": draft.get("text") or ""}]
+    return [(s["i"], a, b, t) for s in segs for a, b, t in tokens(s["text"]) if norm(t)]
+
+
+def _seg_text(draft, segment):
+    if segment is None:
+        return draft.get("text") or ""
+    return next(s.get("text", "") for s in draft.get("segments") or [] if s.get("i") == segment)
+
+
+def diff_suspects(draft, message):
+    """The user's edits as suspects (no id/text/found_ms yet): replacements
+    and deletions of at most MAX_EDIT words a side, and case/punctuation
+    changes on matched words. Words the user added are not suspects."""
+    dt = _draft_tokens(draft)
+    mt = [t for _, _, t in tokens(message) if norm(t)]
+    sm = difflib.SequenceMatcher(None, [norm(t[3]) for t in dt], [norm(t) for t in mt], autojunk=False)
+    ops = sm.get_opcodes()
+    out = []
+
+    def span(i1, i2, kind, score, suggestion):
+        first = dt[i1]
+        same = [t for t in dt[i1:i2] if t[0] == first[0]]
+        out.append({"draft": draft.get("draft"), "segment": first[0], "start": first[1], "end": same[-1][2],
+                    "suggestion": suggestion, "kind": kind, "source": "agent-diff", "score": score})
+
+    for n, (op, i1, i2, j1, j2) in enumerate(ops):
+        if op == "equal":
+            for k in range(i2 - i1):
+                if dt[i1 + k][3] != mt[j1 + k]:
+                    span(i1 + k, i1 + k + 1, "punct", 0.3, mt[j1 + k])
+        elif op == "replace" and i2 - i1 <= MAX_EDIT and j2 - j1 <= MAX_EDIT:
+            words = mt[j1:j2]
+            bare = [w.strip(PUNCT) for w in words]
+            term = any(re.search(r"[\d\-_./]", w) or any(c.isupper() for c in w[1:]) for w in bare)
+            span(i1, i2, "term" if term else "other", 0.9, " ".join(words))
+        elif op == "delete" and i2 - i1 <= MAX_EDIT and 0 < n < len(ops) - 1:
+            span(i1, i2, "other", 0.6, "")
+    return out
+
+
+def mine(lab_url, sessions_dir, days, now_ms, timeout=20):
+    """Match the lab's recent drafts to the messages sent from this host's
+    agent sessions and post the edits back. Raises OSError if the lab is
+    unreachable."""
+    since = now_ms - days * 86_400_000
+    with urllib.request.urlopen(f"{lab_url}/api/drafts?since={since}", timeout=timeout) as r:
+        drafts = json.loads(r.read())["drafts"]
+    messages = sent_messages(sessions_dir, since)
+    suspects, matches = [], []
+    for d in drafts:
+        m = match(d, messages)
+        if not m:
+            continue
+        matches.append({"draft": d["draft"], "app": d.get("app"), "tier": d.get("tier") or "personal",
+                        "sent_ms": m[0], "coverage": round(m[2], 3)})
+        suspects.extend(diff_suspects(d, m[1]))
+    added = 0
+    if matches:
+        body = json.dumps({"suspects": suspects, "matches": matches}).encode()
+        req = urllib.request.Request(f"{lab_url}/api/mined", data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            added = json.loads(r.read())["added"]
+    return {"drafts": len(drafts), "matched": len(matches), "added": added}
 
 
 MINED_MAX = 16 * 1024 * 1024
@@ -680,6 +828,10 @@ def main():
     a.add_argument("--hunspell")
     a.add_argument("--dict")
     a.add_argument("--all", action="store_true")
+    m = sub.add_parser("mine")
+    m.add_argument("--lab", required=True)
+    m.add_argument("--sessions", required=True, type=Path)
+    m.add_argument("--days", type=int, default=3)
     args = ap.parse_args()
     if args.cmd == "serve":
         args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -692,6 +844,13 @@ def main():
         r = analyse(args.data_dir, vocab, hunspell_oov(args.hunspell, args.dict), int(time.time() * 1000),
                     redo=args.all)
         log(f"analysed {r['drafts']} drafts, {r['added']} new suspects")
+    elif args.cmd == "mine":
+        try:
+            r = mine(args.lab.rstrip("/"), args.sessions, args.days, int(time.time() * 1000))
+        except (OSError, ValueError, KeyError) as err:
+            log(f"mine: lab unavailable ({type(err).__name__}); the next run retries")
+            return
+        log(f"mine: {r['drafts']} drafts, {r['matched']} matched a sent message, {r['added']} new suspects")
     else:
         n = prune(args.data_dir, args.audio_days, args.keep_lang, int(time.time() * 1000))
         log(f"pruned the audio of {n} drafts")
