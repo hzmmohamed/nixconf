@@ -28,6 +28,8 @@ the correction game, vocabulary/rules, a dataset) read one schema:
   dictate-lab mine --lab URL --sessions ~/.claude/projects [--days 3]
       (any agent host) match recent drafts to the messages sent from this
       host's agent sessions; post the user's edits as suspects
+  dictate-lab census --data-dir D [--weeks N] [--origin O] [--tier T] [--lang L] [--pairs]
+      counts per week (suspects per 100 words); --pairs adds repeated edits
 
 Only loopback and the user's own untagged tailnet devices get in
 (`tailscale whois`); anything else, or a whois that fails, gets 403 before
@@ -380,6 +382,90 @@ def mine(lab_url, sessions_dir, days, now_ms, timeout=20):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             added = json.loads(r.read())["added"]
     return {"drafts": len(drafts), "matched": len(matches), "added": added}
+
+
+# --- census -------------------------------------------------------------------
+def _rows(data_dir, name):
+    path = Path(data_dir) / name
+    try:
+        return [r for r in _jsonl(path.read_bytes()) if isinstance(r, dict)] if path.exists() else []
+    except OSError:
+        return []
+
+
+def _week(ms):
+    year, week, _ = datetime.fromtimestamp(ms / 1000).isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def census(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
+    """Counts only (no transcript text): per local ISO week, drafts, words and
+    suspects per 100 words by source; suspects by kind; apps whose personal
+    drafts turned up in agent sessions (a hint for the work list)."""
+    now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    since = now_ms - weeks * 7 * 86_400_000
+    drafts = {}
+    for key, meta, _ in iter_drafts(data_dir):
+        created = meta.get("created_ms")
+        if not isinstance(created, (int, float)) or created < since:
+            continue
+        if (origin and meta.get("origin") != origin) or (tier and meta.get("tier") != tier) \
+                or (lang and meta.get("lang") != lang):
+            continue
+        drafts[key] = (_week(created), len(tokens(meta.get("text"))))
+    table = {}
+    for week, words in drafts.values():
+        w = table.setdefault(week, {"week": week, "drafts": 0, "words": 0, "heuristic": 0, "agent-diff": 0,
+                                    "matched": 0})
+        w["drafts"] += 1
+        w["words"] += words
+    kinds = {}
+    for s in _rows(data_dir, "suspects.jsonl"):
+        if s.get("draft") in drafts:
+            w = table[drafts[s["draft"]][0]]
+            if s.get("source") in ("heuristic", "agent-diff"):
+                w[s["source"]] += 1
+            kinds[s.get("kind")] = kinds.get(s.get("kind"), 0) + 1
+    personal_apps = {}
+    for m in _rows(data_dir, "matches.jsonl"):
+        if m.get("draft") in drafts:
+            table[drafts[m["draft"]][0]]["matched"] += 1
+            if m.get("tier") == "personal" and m.get("app"):
+                personal_apps[m["app"]] = personal_apps.get(m["app"], 0) + 1
+
+    def rate(n, words):
+        return round(n / words * 100, 1) if words else 0
+
+    rows = [{"week": w["week"], "drafts": w["drafts"], "words": w["words"],
+             "heuristic_per_100w": rate(w["heuristic"], w["words"]),
+             "agent_diff_per_100w": rate(w["agent-diff"], w["words"]), "matched": w["matched"]}
+            for w in sorted(table.values(), key=lambda w: w["week"])]
+    return {"weeks": rows, "kinds": kinds, "personal_apps": personal_apps}
+
+
+def pairs(data_dir, min_count=2):
+    """(text, suggestion, n) of the user's repeated agent-prompt edits."""
+    counts = {}
+    for s in _rows(data_dir, "suspects.jsonl"):
+        if s.get("source") == "agent-diff" and s.get("kind") != "punct":
+            k = (s.get("text"), s.get("suggestion"))
+            counts[k] = counts.get(k, 0) + 1
+    return sorted(((t, g, n) for (t, g), n in counts.items() if n >= min_count), key=lambda x: (-x[2], x[0] or ""))
+
+
+def print_census(c, top_pairs=None):
+    print(f"{'week':<9} {'drafts':>6} {'words':>7} {'heur/100w':>9} {'edits/100w':>10} {'matched':>7}")
+    for w in c["weeks"]:
+        print(f"{w['week']:<9} {w['drafts']:>6} {w['words']:>7} {w['heuristic_per_100w']:>9} "
+              f"{w['agent_diff_per_100w']:>10} {w['matched']:>7}")
+    kinds = sorted(c["kinds"].items(), key=lambda kv: -kv[1])
+    print("by kind: " + (" · ".join(f"{k} {n}" for k, n in kinds) or "none yet"))
+    apps = sorted(c["personal_apps"].items(), key=lambda kv: -kv[1])
+    print("personal drafts seen in agent sessions: " + (", ".join(f"{a} {n}" for a, n in apps) or "none"))
+    if top_pairs is not None:
+        print("repeated edits (you changed → to):")
+        for text, suggestion, n in top_pairs:
+            print(f"  {n:>3}×  {text!r} → {suggestion!r}")
 
 
 MINED_MAX = 16 * 1024 * 1024
@@ -832,6 +918,13 @@ def main():
     m.add_argument("--lab", required=True)
     m.add_argument("--sessions", required=True, type=Path)
     m.add_argument("--days", type=int, default=3)
+    c = sub.add_parser("census")
+    c.add_argument("--data-dir", required=True, type=Path)
+    c.add_argument("--weeks", type=int, default=8)
+    c.add_argument("--origin")
+    c.add_argument("--tier", choices=["work", "personal"])
+    c.add_argument("--lang")
+    c.add_argument("--pairs", action="store_true", help="also print your repeated edits (transcript text)")
     args = ap.parse_args()
     if args.cmd == "serve":
         args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -844,6 +937,9 @@ def main():
         r = analyse(args.data_dir, vocab, hunspell_oov(args.hunspell, args.dict), int(time.time() * 1000),
                     redo=args.all)
         log(f"analysed {r['drafts']} drafts, {r['added']} new suspects")
+    elif args.cmd == "census":
+        print_census(census(args.data_dir, args.weeks, args.origin, args.tier, args.lang),
+                     pairs(args.data_dir) if args.pairs else None)
     elif args.cmd == "mine":
         try:
             r = mine(args.lab.rstrip("/"), args.sessions, args.days, int(time.time() * 1000))
