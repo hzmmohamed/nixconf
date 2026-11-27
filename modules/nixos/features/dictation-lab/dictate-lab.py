@@ -28,6 +28,7 @@ a byte is written. Transcript text is never logged. Python stdlib only.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -317,6 +318,152 @@ def make_server(data_dir, port, peers, host="0.0.0.0"):
             self.reply(200, {"ok": True, "id": ident})
 
     return ThreadingHTTPServer((host, port), Handler)
+
+
+# --- suspects -----------------------------------------------------------------
+# A suspect is a span of one segment's text (character offsets, half-open;
+# segment None = offsets into meta.text) that is likely mis-transcribed.
+KINDS = ("term", "punct", "language", "hallucination", "grammar", "other")
+LOW_P = 0.35
+NO_SPEECH = 0.6
+REPEAT = 3
+STOCK = {"thank you.", "thanks for watching!", "thank you for watching.", "you"}
+ARABIC = re.compile(r"[؀-ۿ]")
+LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
+PUNCT = ".,;:!?\"'()[]،؛؟"
+
+
+def tokens(text):
+    return [(m.start(), m.end(), m.group()) for m in re.finditer(r"\S+", text or "")]
+
+
+def norm(token):
+    return token.strip(PUNCT).lower()
+
+
+def suspect_id(draft, segment, start, end, source):
+    return hashlib.sha1(f"{draft}|{segment}|{start}|{end}|{source}".encode()).hexdigest()[:12]
+
+
+def make_suspect(draft, segment, seg_text, start, end, kind, source, score, suggestion=None, now_ms=None):
+    return {"id": suspect_id(draft, segment, start, end, source), "draft": draft, "segment": segment,
+            "start": start, "end": end, "text": seg_text[start:end], "suggestion": suggestion,
+            "kind": kind, "source": source, "score": score,
+            "found_ms": now_ms if now_ms is not None else int(time.time() * 1000)}
+
+
+def levenshtein(a, b):
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _whole(text):
+    """The span of a segment's text without its surrounding whitespace."""
+    start = len(text) - len(text.lstrip())
+    return start, len(text.rstrip())
+
+
+def heuristic_suspects(meta, segments, vocab, oov, now_ms):
+    """Rule-based suspects for one draft: low word probability, near a
+    vocabulary entry, out of dictionary (Latin-script words of English
+    drafts), text over silence, stock phrases, repeats, wrong script. One
+    suspect per span; the highest score wins."""
+    draft = f"{meta.get('origin')}/{meta.get('id')}"
+    lang = meta.get("lang")
+    if segments:
+        segs = [s for s in segments if s.get("ok", True) and (s.get("text") or "").strip()]
+    else:
+        segs = [{"i": None, "text": meta.get("text") or ""}] if (meta.get("text") or "").strip() else []
+    vocab_words = {w.lower() for e in vocab for w in e.split()}
+
+    def candidate(tok):
+        n = norm(tok)
+        return n if LATIN_WORD.fullmatch(n) and n not in vocab_words else None
+
+    unknown = set()
+    if lang == "en":
+        words = sorted({c for s in segs for _, _, t in tokens(s["text"]) if (c := candidate(t))})
+        unknown = oov(words) if words else set()
+
+    found = {}
+
+    def add(s, start, end, kind, score, suggestion=None):
+        if start >= end:
+            return
+        key = (s["i"], start, end)
+        if key not in found or score > found[key]["score"]:
+            found[key] = make_suspect(draft, s["i"], s["text"], start, end, kind, "heuristic", score,
+                                      suggestion, now_ms)
+
+    for s in segs:
+        text = s["text"]
+        toks = tokens(text)
+        conf = s.get("conf") if isinstance(s.get("conf"), dict) else {}
+        whole = _whole(text)
+
+        cursor = 0
+        for w in conf.get("words") or []:
+            word = str(w.get("w") or "").strip()
+            p = w.get("p")
+            if not word or not isinstance(p, (int, float)):
+                continue
+            at = text.find(word, cursor)
+            if at < 0:
+                continue
+            cursor = at + len(word)
+            if p < LOW_P:
+                first = bool(toks) and at == toks[0][0]
+                term = ((word[:1].isupper() and not first) or re.search(r"[\d\-_./]", word)
+                        or norm(word) in unknown)
+                add(s, at, at + len(word), "term" if term else "other", 1 - p)
+
+        for entry in vocab:
+            if len(entry) <= 3:
+                continue  # "Nix" vs "six": too short to guess at
+            n = len(entry.split())
+            limit = 1 if len(entry) <= 5 else 2
+            for k in range(len(toks) - n + 1):
+                gram = toks[k:k + n]
+                key = " ".join(norm(t) for _, _, t in gram)
+                if not key or key == entry.lower() or (n == 1 and key in vocab_words):
+                    continue
+                if levenshtein(key, entry.lower()) <= limit:
+                    add(s, gram[0][0], gram[-1][1], "term", 0.8, entry)
+
+        for start, end, t in toks:
+            if candidate(t) in unknown:
+                add(s, start, end, "term", 0.5)
+
+        nsp = conf.get("no_speech_prob")
+        if isinstance(nsp, (int, float)) and nsp > NO_SPEECH:
+            add(s, *whole, "hallucination", nsp)
+        if text.strip().lower() in STOCK:
+            add(s, *whole, "hallucination", 0.7)
+
+        keys = [norm(t) for _, _, t in toks]
+        for n in range(1, 5):
+            k = 0
+            while k + n <= len(keys):
+                gram = keys[k:k + n]
+                reps = 1
+                while keys[k + reps * n:k + (reps + 1) * n] == gram:
+                    reps += 1
+                if reps >= REPEAT and all(gram):
+                    add(s, toks[k][0], toks[k + reps * n - 1][1], "hallucination", 0.9)
+                    k += reps * n
+                else:
+                    k += 1
+
+        has_arabic = bool(ARABIC.search(text))
+        if (lang == "en" and has_arabic) or (lang == "ar" and not has_arabic):
+            add(s, *whole, "language", 0.6)
+
+    return list(found.values())
 
 
 # --- retention ----------------------------------------------------------------
