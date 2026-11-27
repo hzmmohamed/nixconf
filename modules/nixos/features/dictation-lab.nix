@@ -3,6 +3,9 @@
 # (Pollen, `dictate` on the laptops) is uploaded here and normalized into
 # ~/<dataDir>/drafts/<origin>/<id>/ (meta.json, segments.jsonl, audio.opus);
 # later stages (suspects, the correction game, vocabulary and rules) read it.
+# `dictate-lab analyse` (hourly) adds heuristic suspects; `dictate-lab mine`
+# (the dictation feature, on every host with a labUrl) adds the user's edits
+# to dictated agent prompts; `dictate-lab census` prints the counts.
 #
 # Reach: the tailnet only. The port is not in preferences.trustedNetworks,
 # and the server itself lets in loopback and the user's own untagged
@@ -21,9 +24,8 @@
     user = config.preferences.user.name;
     home = config.users.users.${user}.home;
 
-    lab = pkgs.writers.writePython3Bin "dictate-lab" {
-      flakeIgnore = ["E501" "W503"];
-    } (builtins.readFile ./dictation-lab/dictate-lab.py);
+    lab = self.packages.${pkgs.stdenv.hostPlatform.system}.dictate-lab;
+    vocabFile = pkgs.writeText "dictation-vocabulary.json" (builtins.toJSON self.dictationVocabulary);
 
     path = lib.makeBinPath [config.services.tailscale.package pkgs.opus-tools];
     dataDir = "${home}/${cfg.dataDir}";
@@ -64,6 +66,7 @@
 
     config = {
       home-manager.users.${user} = {
+        home.packages = [lab]; # dictate-lab census
         systemd.user.services.dictation-lab = {
           Unit.Description = "Dictation training lab: inbox for drafts (tailnet only)";
           Service = {
@@ -82,6 +85,23 @@
             ExecStart = "${lib.getExe lab} prune --data-dir ${dataDir} --audio-days ${toString cfg.audioDays} --keep-lang ${lib.escapeShellArgs cfg.keepAudioLanguages}";
           };
         };
+        # Heuristic suspects of new drafts (no model; plan 3).
+        systemd.user.services.dictation-lab-analyse = {
+          Unit.Description = "Dictation training lab: find likely transcription mistakes";
+          Service = {
+            Type = "oneshot";
+            Nice = 10;
+            ExecStart = "${lib.getExe lab} analyse --data-dir ${dataDir} --vocab ${vocabFile} --hunspell ${pkgs.hunspell}/bin/hunspell --dict ${pkgs.hunspellDicts.en_US}/share/hunspell/en_US";
+          };
+        };
+        systemd.user.timers.dictation-lab-analyse = {
+          Unit.Description = "Find likely dictation mistakes hourly";
+          Timer = {
+            OnCalendar = "hourly";
+            Persistent = true;
+          };
+          Install.WantedBy = ["timers.target"];
+        };
         systemd.user.timers.dictation-lab-prune = {
           Unit.Description = "Drop old dictation lab audio daily";
           Timer = {
@@ -97,11 +117,17 @@
     };
   };
 
-  # dictate-lab's inbox and retention: dictation-lab/tests, stdlib unittest.
+  # The package (also used by `dictation` for `mine`), and its tests:
+  # dictation-lab/tests, stdlib unittest, with a real hunspell.
   perSystem = {pkgs, ...}: {
-    checks.dictation-lab = pkgs.runCommand "dictation-lab-check" {nativeBuildInputs = [pkgs.python3 pkgs.opus-tools];} ''
+    packages.dictate-lab = pkgs.writers.writePython3Bin "dictate-lab" {
+      flakeIgnore = ["E501" "W503"];
+    } (builtins.readFile ./dictation-lab/dictate-lab.py);
+
+    checks.dictation-lab = pkgs.runCommand "dictation-lab-check" {nativeBuildInputs = [pkgs.python3 pkgs.opus-tools pkgs.hunspell];} ''
       cp -r ${./dictation-lab} dictation-lab
       export HOME=$TMPDIR
+      export DICTATE_TEST_HUNSPELL_DICT=${pkgs.hunspellDicts.en_US}/share/hunspell/en_US
       python3 -m unittest discover -s dictation-lab/tests -v
       touch $out
     '';

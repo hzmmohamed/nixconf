@@ -713,7 +713,8 @@ def _whole(text):
 
 def heuristic_suspects(meta, segments, vocab, oov, now_ms):
     """Rule-based suspects for one draft: low word probability, near a
-    vocabulary entry, out of dictionary (Latin-script words of English
+    vocabulary entry (in English drafts only with an unknown word in it),
+    out of dictionary (Latin-script words of English
     drafts), text over silence, stock phrases, repeats, wrong script. One
     suspect per span; the highest score wins."""
     draft = f"{meta.get('origin')}/{meta.get('id')}"
@@ -775,6 +776,8 @@ def heuristic_suspects(meta, segments, vocab, oov, now_ms):
                 key = " ".join(norm(t) for _, _, t in gram)
                 if not key or key == entry.lower() or (n == 1 and key in vocab_words):
                     continue
+                if lang == "en" and not any(candidate(t) in unknown for _, _, t in gram):
+                    continue  # "say" is a word, not a misheard "Sway"
                 if levenshtein(key, entry.lower()) <= limit:
                     add(s, gram[0][0], gram[-1][1], "term", 0.8, entry)
 
