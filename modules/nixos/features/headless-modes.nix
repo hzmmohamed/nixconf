@@ -155,7 +155,10 @@
       {
         systemd.services.headless-mode-apply = {
           description = "Apply the headless mode (desk / headless / bag)";
-          after = lib.optional ppd "power-profiles-daemon.service";
+          # ppd orders itself after multi-user.target; without a direct
+          # ordering here, the target's implicit After= on what it wants
+          # closes an unbreakable cycle (failed switches, ppd never started).
+          after = ["multi-user.target"] ++ lib.optional ppd "power-profiles-daemon.service";
           wants = lib.optional ppd "power-profiles-daemon.service";
           wantedBy = ["multi-user.target"];
           serviceConfig = {

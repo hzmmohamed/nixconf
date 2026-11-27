@@ -34,7 +34,10 @@
     systemd.services.lact-monitor = {
       enable = true;
       description = "Monitor PowerProfiles and update LACT profile";
-      after = ["network.target" "lactd.service" "power-profiles-daemon.service"];
+      # lactd and ppd order themselves after multi-user.target: order after it
+      # directly, or its implicit After= on what it wants closes a cycle and
+      # systemd drops this unit at boot.
+      after = ["multi-user.target" "network.target" "lactd.service" "power-profiles-daemon.service"];
       wants = ["lactd.service" "power-profiles-daemon.service"];
       serviceConfig = {
         Type = "simple";
