@@ -121,7 +121,12 @@
         systemd.user.services.wallpaper-restore = {
           Unit = {
             Description = "Restore the wallpaper (set-wallpaper --restore)";
-            After = ["awww.service"];
+            # After the session target too: without a direct ordering, the
+            # target's implicit After= on what it wants closes a cycle
+            # (target -> restore -> awww -> target); systemd then dropped
+            # awww's start job, and the target (so waybar) waited out this
+            # oneshot's 30 s timeout with no wallpaper.
+            After = ["awww.service" hm.config.wayland.systemd.target];
             Wants = ["awww.service"];
             PartOf = [hm.config.wayland.systemd.target];
             # Only inside a graphical session: a home-manager activation from
