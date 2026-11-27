@@ -16,7 +16,10 @@ alerts):
 
 Plugging in closes the overlay at once and replaces the warning with a short
 "Charging" notification (plus a rising chime after warning/critical). The
-tiers re-arm after 30 s on AC, so a loose cable does not replay everything.
+tiers re-arm after 30 s on AC, so a loose cable does not replay everything,
+and each one also once the charge is back above it (charged while suspended:
+the daemon may never see the 30 s on AC). The overlay follows the state, not
+the plug-in moment: it is up only while on battery with critical fired.
 A remote host that drops off the network while on battery gets one
 "unreachable" notification (it may have shut down).
 
@@ -41,6 +44,7 @@ from pathlib import Path
 PS = Path("/sys/class/power_supply")
 BASE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "battery-alert"
 REARM_AFTER = 30  # s on AC before the tiers fire again
+REARM_MARGIN = 3  # % above a tier before it fires again (charged while asleep)
 LOST_AFTER = 3  # failed remote polls before "unreachable"
 LAPTOP = "\U000f0322"  # nf-md-laptop
 
@@ -290,6 +294,10 @@ def daemon(cfg):
         failures, lost_since, lost_notified, last = 0, None, False, s
         pct, left = s["pct"], left_text(s.get("minutes"))
         shutdown = s.get("shutdown", cfg["shutdown"]) if remote else cfg["shutdown"]
+        recharged = {n for n, t in tiers if pct > t + REARM_MARGIN}
+        if "critical" in fired & recharged:
+            mute.unlink(missing_ok=True)
+        fired -= recharged
 
         if s["on_battery"]:
             ac_since = None
@@ -324,7 +332,6 @@ def daemon(cfg):
             if ac_since is None:
                 ac_since = now
                 if fired:
-                    overlay.close()
                     notify("low", f"{host + ' charging' if remote else 'Charging'} · {pct}%",
                            left.capitalize(), "battery-good-charging", 4000)
                     if fired & {"warning", "critical"}:
@@ -332,6 +339,9 @@ def daemon(cfg):
             if fired and now - ac_since >= REARM_AFTER:
                 fired.clear()
                 mute.unlink(missing_ok=True)
+
+        if not (s["on_battery"] and "critical" in fired):
+            overlay.close()
 
         tier = next((n for n in ("critical", "warning", "low") if n in fired), "")
         publish({"reachable": True, "pct": pct, "minutes": s.get("minutes"),
