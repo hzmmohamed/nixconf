@@ -682,6 +682,25 @@
             Install.WantedBy = ["timers.target"];
           };
 
+          # Training lab: match recent drafts to the messages sent from this
+          # host's agent sessions; the user's edits become suspects (no model).
+          systemd.user.services.dictate-lab-mine = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Dictation lab: mine agent prompts for your edits";
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.dictate-lab} mine --lab ${cfg.labUrl} --sessions %h/.claude/projects --days 3";
+            };
+          };
+          systemd.user.timers.dictate-lab-mine = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Mine agent prompts for dictation edits hourly";
+            Timer = {
+              OnCalendar = "hourly";
+              Persistent = true;
+              RandomizedDelaySec = "5m";
+            };
+            Install.WantedBy = ["timers.target"];
+          };
+
           home.file = lib.mkIf cfg.t3code.provideModels t3ModelFiles;
         };
 
