@@ -32,7 +32,7 @@ def none(_words):
 def write_draft(data, ident, segments, received_ms=1000, origin="hazel", lang="en", **extra):
     d = Path(data) / "drafts" / origin / ident
     d.mkdir(parents=True, exist_ok=True)
-    text = " ".join(s["text"].strip() for s in segments)
+    text = " ".join(str(s["text"]).strip() for s in segments)
     meta = {"id": ident, "origin": origin, "created_ms": 1000, "lang": lang, "tier": "personal",
             "app": None, "text": text, "duration": 1.0, "received_ms": received_ms, **extra}
     (d / "meta.json").write_text(json.dumps(meta))
@@ -84,6 +84,29 @@ class Analyse(unittest.TestCase):
         (broken / "meta.json").write_text("{")
         self.assertEqual([k for k, _, _ in lab.iter_drafts(self.data)], [])
         self.assertEqual(lab.analyse(self.data, [], none, NOW), {"drafts": 0, "added": 0})
+
+    def test_skips_old_dirs(self):
+        write_draft(self.data, "x.old", [seg(0, " go go go")])
+        self.assertEqual([k for k, _, _ in lab.iter_drafts(self.data)], [])
+
+    def test_torn_multibyte_line_is_skipped(self):
+        torn = "مرحبا".encode()[:3]
+        self.assertEqual(lab._jsonl(b'{"a": 1}\n{"t": "' + torn), [{"a": 1}])
+        self.suspects.write_bytes(b'{"id": "a"}\n{"id": "b", "t": "' + torn)
+        self.assertEqual(lab.append_unique(self.data, "suspects.jsonl", [{"id": "c"}]), 1)
+        self.assertEqual([r["id"] for r in lab._jsonl(self.suspects.read_bytes())], ["a", "c"])
+
+    def test_one_malformed_draft_does_not_stop_analyse(self):
+        bad = seg(0, " go go go")
+        bad["conf"] = {"words": "nope", "no_speech_prob": 0.1}
+        write_draft(self.data, "a0", [bad, {"i": 1, "text": 7, "ok": True}])
+        write_draft(self.data, "a1", [seg(0, " go go go")])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            r = lab.analyse(self.data, [], none, NOW)
+        self.assertEqual(r["drafts"], 2)
+        self.assertGreaterEqual(r["added"], 1)
+        self.assertIn("hazel/a1", [json.loads(x)["draft"] for x in lines(self.suspects)])
 
     def test_append_unique_under_concurrency(self):
         rows = [{"id": f"{i:012x}", "n": i} for i in range(50)]

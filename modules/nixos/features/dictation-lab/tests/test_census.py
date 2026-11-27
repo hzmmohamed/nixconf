@@ -99,6 +99,10 @@ class Census(unittest.TestCase):
                 sys.argv = old
             return out.getvalue()
 
+        suspects(self.data, [("hazel/p1", "agent-diff", "other", "SECRETWORD", "x"),
+                             ("hazel/p1", "agent-diff", "other", "SECRETWORD", "x")])
+        self.assertNotIn("SECRETWORD", cli("--tier", "work", "--pairs"))
+        self.assertIn("SECRETWORD", cli("--tier", "personal", "--pairs"))
         plain = cli()
         self.assertIn("by kind:", plain)
         self.assertNotIn("QUIXOTIC", plain)

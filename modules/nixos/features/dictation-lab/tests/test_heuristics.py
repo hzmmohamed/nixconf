@@ -66,9 +66,25 @@ class Heuristics(unittest.TestCase):
         out = run([seg(0, "open the swey config")], vocab=["Sway"], oov=lambda w: {"swey"})
         self.assertEqual([(s["text"], s["suggestion"], s["score"]) for s in out], [("swey", "Sway", 0.8)])
 
-    def test_near_vocabulary_without_dictionary_for_other_languages(self):
-        out = run([seg(0, " مرحبا swey")], vocab=["Sway"], m=meta("مرحبا swey", lang="ar"))
-        self.assertIn(("swey", "Sway"), [(s["text"], s["suggestion"]) for s in out])
+    def test_near_vocabulary_gate_applies_to_every_language(self):
+        def oov(words):
+            return {"swey"} & set(words)
+
+        out = run([seg(0, " مرحبا say swey")], vocab=["Sway"], oov=oov, m=meta("مرحبا say swey", lang="ar"))
+        self.assertEqual([(s["text"], s["suggestion"]) for s in out if s["suggestion"]], [("swey", "Sway")])
+        self.assertFalse([s for s in out if s["score"] == 0.5])  # out-of-dictionary suspects: English only
+
+    def test_dictionary_sees_original_case(self):
+        asked = []
+
+        def oov(words):  # en_US knows "London", "Monday", "I'm", not their lowercase forms
+            asked.extend(words)
+            return {w for w in words if w not in {"London", "Monday", "I'm", "going", "to", "on"}}
+
+        out = run([seg(0, " I'm going to London on Monday.")], oov=oov)
+        self.assertIn("London", asked)
+        self.assertIn("Monday", asked)
+        self.assertEqual(out, [])
 
     def test_short_vocabulary_entries_match_exactly_only(self):
         self.assertEqual(run([seg(0, "six of one")], vocab=["Nix"]), [])
@@ -108,7 +124,7 @@ class Heuristics(unittest.TestCase):
 
     def test_ids_stable_and_one_per_span(self):
         def oov(_words):
-            return {"zorbly"}
+            return {"Zorbly"}  # hunspell answers in the case it was asked
 
         segments = [seg(0, " Zorbly", conf([(" Zorbly", 0.1)]))]
         a = run(segments, oov=oov)
