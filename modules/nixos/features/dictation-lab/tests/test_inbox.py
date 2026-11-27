@@ -245,5 +245,75 @@ class Inbox(unittest.TestCase):
         c.close()
 
 
+def store_draft(data, origin, ident, created_ms, text):
+    d = Path(data) / "drafts" / origin / ident
+    d.mkdir(parents=True, exist_ok=True)
+    meta = {"id": ident, "origin": origin, "created_ms": created_ms, "lang": "en", "tier": "work",
+            "app": "kitty", "text": text, "duration": 2.0, "received_ms": created_ms + 1}
+    (d / "meta.json").write_text(json.dumps(meta))
+    (d / "segments.jsonl").write_text(json.dumps({"i": 0, "start": 0, "end": 16000, "text": " " + text,
+                                                  "ok": True, "conf": {"avg_logprob": -0.1}}) + "\n")
+
+
+class Api(unittest.TestCase):
+    start = Inbox.start
+    req = Inbox.req
+
+    def mined(self, suspects, matches=(), server=None):
+        body = json.dumps({"suspects": suspects, "matches": list(matches)}).encode()
+        return self.req("POST", "/api/mined", body, server, {"Content-Length": str(len(body))})
+
+    def suspect(self, **kw):
+        s = {"draft": "hazel/d2", "segment": 0, "start": 1, "end": 8, "text": "ignored",
+             "suggestion": "harmonia", "kind": "other", "source": "agent-diff", "score": 0.9}
+        s.update(kw)
+        return s
+
+    def setUp(self):
+        Inbox.setUp(self)
+        store_draft(self.data, "hazel", "d1", 1000, "an early line")
+        store_draft(self.data, "hazel", "d2", 5000, "hormonia restarts")
+
+    def test_drafts_since(self):
+        status, body = self.req("GET", "/api/drafts?since=2000")
+        self.assertEqual(status, 200)
+        drafts = json.loads(body)["drafts"]
+        self.assertEqual([d["draft"] for d in drafts], ["hazel/d2"])
+        self.assertEqual(drafts[0]["segments"], [{"i": 0, "text": " hormonia restarts", "ok": True}])
+        self.assertEqual({k: drafts[0][k] for k in ("created_ms", "tier", "app", "lang", "text")},
+                         {"created_ms": 5000, "tier": "work", "app": "kitty", "lang": "en",
+                          "text": "hormonia restarts"})
+        self.assertEqual(self.req("GET", "/api/drafts")[0], 400)
+        self.assertEqual(self.req("GET", "/api/drafts?since=soon")[0], 400)
+
+    def test_api_refuses_strangers(self):
+        strict = self.start(lab.PeerCheck(lambda ip: None, ME, allow_loopback=False))
+        self.assertEqual(self.req("GET", "/api/drafts?since=0", server=strict)[0], 403)
+        self.assertEqual(self.mined([self.suspect()], server=strict)[0], 403)
+        self.assertFalse((self.data / "suspects.jsonl").exists())
+
+    def test_mined_validates_and_dedups(self):
+        match = {"draft": "hazel/d2", "app": "kitty", "tier": "work", "sent_ms": 6000, "coverage": 0.9}
+        status, body = self.mined([self.suspect()], [match])
+        self.assertEqual((status, json.loads(body)), (200, {"added": 1}))
+        self.assertEqual(json.loads(self.mined([self.suspect()], [match])[1]), {"added": 0})
+        before = (self.data / "suspects.jsonl").read_text()
+        for bad in (self.suspect(source="claude"), self.suspect(draft="hazel/nope"),
+                    self.suspect(start=8, end=8), self.suspect(kind="vibes"), self.suspect(segment="0"),
+                    self.suspect(draft="../x/d2")):
+            self.assertEqual(self.mined([self.suspect(start=0, end=1), bad])[0], 400, bad)
+        self.assertEqual((self.data / "suspects.jsonl").read_text(), before)
+        self.assertEqual(len((self.data / "matches.jsonl").read_text().splitlines()), 1)
+
+    def test_mined_text_from_store(self):
+        self.mined([self.suspect()])
+        row = json.loads((self.data / "suspects.jsonl").read_text())
+        self.assertEqual(row["text"], "hormoni")
+        self.assertEqual(row["id"], lab.suspect_id("hazel/d2", 0, 1, 8, "agent-diff"))
+
+    def test_mined_empty_body_is_400(self):
+        self.assertEqual(self.req("POST", "/api/mined", None)[0], 400)
+
+
 if __name__ == "__main__":
     unittest.main()
