@@ -21,6 +21,8 @@ the correction game, vocabulary/rules, a dataset) read one schema:
       GET  /health
   dictate-lab prune --data-dir D --audio-days N [--keep-lang ar ...]
       drop full audio older than N days (text and segments stay)
+  dictate-lab analyse --data-dir D --vocab V.json [--hunspell H --dict D] [--all]
+      heuristic suspects of new or re-uploaded drafts -> <data>/suspects.jsonl
 
 Only loopback and the user's own untagged tailnet devices get in
 (`tailscale whois`); anything else, or a whois that fails, gets 403 before
@@ -28,6 +30,7 @@ a byte is written. Transcript text is never logged. Python stdlib only.
 """
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -466,6 +469,76 @@ def heuristic_suspects(meta, segments, vocab, oov, now_ms):
     return list(found.values())
 
 
+def iter_drafts(data_dir):
+    """("<origin>/<id>", meta, segments) for every stored draft; dirs mid-swap
+    (.tmp) and drafts whose meta does not parse are skipped."""
+    for meta_file in sorted(Path(data_dir).glob("drafts/*/*/meta.json")):
+        d = meta_file.parent
+        if d.name.endswith(".tmp"):
+            continue
+        try:
+            meta = json.loads(meta_file.read_text())
+            seg_file = d / "segments.jsonl"
+            segments = _jsonl(seg_file.read_bytes()) if seg_file.exists() else []
+        except (OSError, ValueError):
+            continue
+        if isinstance(meta, dict):
+            yield f"{d.parent.name}/{d.name}", meta, [s for s in segments if isinstance(s, dict)]
+
+
+def append_unique(data_dir, name, rows, key="id"):
+    """Append the rows whose `key` is not in <data_dir>/<name> yet, under an
+    exclusive lock shared by the server and analyse. Returns how many."""
+    data_dir = Path(data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with open(data_dir / "suspects.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        path = data_dir / name
+        seen = {r.get(key) for r in _jsonl(path.read_bytes())} if path.exists() else set()
+        new = []
+        for r in rows:
+            if r.get(key) not in seen:
+                seen.add(r.get(key))
+                new.append(r)
+        if new:
+            with open(path, "a") as f:
+                f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in new))
+        return len(new)
+
+
+def hunspell_oov(hunspell, dic):
+    """words -> the ones hunspell does not know (`hunspell -l -d dic`). Without
+    hunspell or a dictionary, nothing is out of dictionary."""
+    def oov(words):
+        if not hunspell or not dic or not words:
+            return set()
+        out = subprocess.run([hunspell, "-l", "-d", dic], input="\n".join(words), capture_output=True,
+                             text=True, check=True, timeout=60)
+        return set(out.stdout.split())
+    return oov
+
+
+def analyse(data_dir, vocab, oov, now_ms, redo=False):
+    """Heuristic suspects for drafts new or re-uploaded since the last run
+    (every draft with redo) into suspects.jsonl."""
+    state_file = Path(data_dir) / "analysed.json"
+    try:
+        state = json.loads(state_file.read_text()) if state_file.exists() and not redo else {}
+    except ValueError:
+        state = {}
+    drafts = added = 0
+    for key, meta, segments in iter_drafts(data_dir):
+        if not redo and state.get(key) == meta.get("received_ms"):
+            continue
+        added += append_unique(data_dir, "suspects.jsonl", heuristic_suspects(meta, segments, vocab, oov, now_ms))
+        state[key] = meta.get("received_ms")
+        drafts += 1
+    tmp = state_file.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state))
+    os.replace(tmp, state_file)
+    return {"drafts": drafts, "added": added}
+
+
 # --- retention ----------------------------------------------------------------
 def prune(data_dir, audio_days, keep_lang, now_ms):
     """Delete audio.opus of drafts received more than audio_days ago, unless
@@ -495,6 +568,12 @@ def main():
     p.add_argument("--data-dir", required=True, type=Path)
     p.add_argument("--audio-days", type=int, default=90)
     p.add_argument("--keep-lang", nargs="*", default=["ar"])
+    a = sub.add_parser("analyse")
+    a.add_argument("--data-dir", required=True, type=Path)
+    a.add_argument("--vocab", required=True, type=Path)
+    a.add_argument("--hunspell")
+    a.add_argument("--dict")
+    a.add_argument("--all", action="store_true")
     args = ap.parse_args()
     if args.cmd == "serve":
         args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -502,6 +581,11 @@ def main():
                              host=args.host)
         log(f"serving on {args.host}:{args.port}, data in {args.data_dir}")
         server.serve_forever()
+    elif args.cmd == "analyse":
+        vocab = json.loads(args.vocab.read_text())
+        r = analyse(args.data_dir, vocab, hunspell_oov(args.hunspell, args.dict), int(time.time() * 1000),
+                    redo=args.all)
+        log(f"analysed {r['drafts']} drafts, {r['added']} new suspects")
     else:
         n = prune(args.data_dir, args.audio_days, args.keep_lang, int(time.time() * 1000))
         log(f"pruned the audio of {n} drafts")
