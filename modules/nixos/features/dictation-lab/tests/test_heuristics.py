@@ -56,9 +56,19 @@ class Heuristics(unittest.TestCase):
         self.assertEqual(s["found_ms"], NOW)
 
     def test_near_vocabulary(self):
-        out = run([seg(0, "open sway and claud code")], vocab=["Sway", "Claude Code"])
-        self.assertEqual([(s["text"], s["suggestion"], s["kind"]) for s in out],
+        out = run([seg(0, "open sway and claud code")], vocab=["Sway", "Claude Code"], oov=lambda w: {"claud"})
+        self.assertEqual([(s["text"], s["suggestion"], s["kind"]) for s in out if s["suggestion"]],
                          [("claud code", "Claude Code", "term")])
+
+    def test_near_vocabulary_skips_dictionary_words_in_english(self):
+        # "say", "way", "the code" are words: only an unknown word near an entry is a suspect.
+        self.assertEqual(run([seg(0, "they say it goes that way with the code")], vocab=["Sway", "T3 Code"]), [])
+        out = run([seg(0, "open the swey config")], vocab=["Sway"], oov=lambda w: {"swey"})
+        self.assertEqual([(s["text"], s["suggestion"], s["score"]) for s in out], [("swey", "Sway", 0.8)])
+
+    def test_near_vocabulary_without_dictionary_for_other_languages(self):
+        out = run([seg(0, " مرحبا swey")], vocab=["Sway"], m=meta("مرحبا swey", lang="ar"))
+        self.assertIn(("swey", "Sway"), [(s["text"], s["suggestion"]) for s in out])
 
     def test_short_vocabulary_entries_match_exactly_only(self):
         self.assertEqual(run([seg(0, "six of one")], vocab=["Nix"]), [])
