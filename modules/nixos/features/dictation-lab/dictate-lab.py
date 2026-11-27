@@ -74,9 +74,11 @@ def valid(origin, ident):
 # --- normalization ------------------------------------------------------------
 def _jsonl(data):
     out = []
-    for line in (data or b"").decode().splitlines():
+    for line in (data or b"").split(b"\n"):
+        if not line.strip():
+            continue
         try:
-            out.append(json.loads(line))
+            out.append(json.loads(line.decode()))
         except ValueError:
             pass  # a line torn by a kill: skip it
     return out
@@ -249,6 +251,7 @@ def _finish(data_dir, origin, ident):
 MIN_WORDS = 4
 MIN_COVERAGE = 0.6
 MAX_EDIT = 4
+MAX_REGION = 2  # the matched part of a message is at most twice the draft
 WINDOW_BEFORE_MS = 60_000
 WINDOW_AFTER_MS = 30 * 60_000
 
@@ -306,8 +309,12 @@ def match(draft, messages):
         if not created - WINDOW_BEFORE_MS <= ts <= last:
             continue
         sm = difflib.SequenceMatcher(None, keys, _keys(text), autojunk=False)
-        coverage = sum(b.size for b in sm.get_matching_blocks()) / len(keys)
-        if coverage >= MIN_COVERAGE and (best is None or coverage > best[2]):
+        blocks = [b for b in sm.get_matching_blocks() if b.size]
+        if not blocks:
+            continue
+        coverage = sum(b.size for b in blocks) / len(keys)
+        region = blocks[-1].b + blocks[-1].size - blocks[0].b  # message words the draft spans
+        if coverage >= MIN_COVERAGE and region <= MAX_REGION * len(keys) and (best is None or coverage > best[2]):
             best = (ts, text, coverage)
     return best
 
@@ -398,10 +405,8 @@ def _week(ms):
     return f"{year}-W{week:02d}"
 
 
-def census(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
-    """Counts only (no transcript text): per local ISO week, drafts, words and
-    suspects per 100 words by source; suspects by kind; apps whose personal
-    drafts turned up in agent sessions (a hint for the work list)."""
+def select(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
+    """{"<origin>/<id>": (week, words)} of the drafts a census covers."""
     now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
     since = now_ms - weeks * 7 * 86_400_000
     drafts = {}
@@ -413,6 +418,14 @@ def census(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
                 or (lang and meta.get("lang") != lang):
             continue
         drafts[key] = (_week(created), len(tokens(meta.get("text"))))
+    return drafts
+
+
+def census(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
+    """Counts only (no transcript text): per local ISO week, drafts, words and
+    suspects per 100 words by source; suspects by kind; apps whose personal
+    drafts turned up in agent sessions (a hint for the work list)."""
+    drafts = select(data_dir, weeks, origin, tier, lang, now_ms)
     table = {}
     for week, words in drafts.values():
         w = table.setdefault(week, {"week": week, "drafts": 0, "words": 0, "heuristic": 0, "agent-diff": 0,
@@ -443,11 +456,12 @@ def census(data_dir, weeks=8, origin=None, tier=None, lang=None, now_ms=None):
     return {"weeks": rows, "kinds": kinds, "personal_apps": personal_apps}
 
 
-def pairs(data_dir, min_count=2):
-    """(text, suggestion, n) of the user's repeated agent-prompt edits."""
+def pairs(data_dir, min_count=2, drafts=None):
+    """(text, suggestion, n) of the user's repeated agent-prompt edits, in
+    `drafts` (keys) only when given."""
     counts = {}
     for s in _rows(data_dir, "suspects.jsonl"):
-        if s.get("source") == "agent-diff" and s.get("kind") != "punct":
+        if s.get("source") == "agent-diff" and s.get("kind") != "punct" and (drafts is None or s.get("draft") in drafts):
             k = (s.get("text"), s.get("suggestion"))
             counts[k] = counts.get(k, 0) + 1
     return sorted(((t, g, n) for (t, g), n in counts.items() if n >= min_count), key=lambda x: (-x[2], x[0] or ""))
@@ -713,7 +727,7 @@ def _whole(text):
 
 def heuristic_suspects(meta, segments, vocab, oov, now_ms):
     """Rule-based suspects for one draft: low word probability, near a
-    vocabulary entry (in English drafts only with an unknown word in it),
+    vocabulary entry (only with an out-of-dictionary word in it),
     out of dictionary (Latin-script words of English
     drafts), text over silence, stock phrases, repeats, wrong script. One
     suspect per span; the highest score wins."""
@@ -726,13 +740,14 @@ def heuristic_suspects(meta, segments, vocab, oov, now_ms):
     vocab_words = {w.lower() for e in vocab for w in e.split()}
 
     def candidate(tok):
-        n = norm(tok)
-        return n if LATIN_WORD.fullmatch(n) and n not in vocab_words else None
+        # hunspell sees the word as spoken-cased ("London", "I'm"), not lowercased
+        w = tok.strip(PUNCT)
+        return w if LATIN_WORD.fullmatch(w) and w.lower() not in vocab_words else None
 
-    unknown = set()
-    if lang == "en":
-        words = sorted({c for s in segs for _, _, t in tokens(s["text"]) if (c := candidate(t))})
-        unknown = oov(words) if words else set()
+    # Latin-script words of any draft; out-of-dictionary suspects only for
+    # English ones, the rest gates the near-vocabulary rule.
+    words = sorted({c for s in segs for _, _, t in tokens(s["text"]) if (c := candidate(t))})
+    unknown = oov(words) if words else set()
 
     found = {}
 
@@ -763,7 +778,7 @@ def heuristic_suspects(meta, segments, vocab, oov, now_ms):
             if p < LOW_P:
                 first = bool(toks) and at == toks[0][0]
                 term = ((word[:1].isupper() and not first) or re.search(r"[\d\-_./]", word)
-                        or norm(word) in unknown)
+                        or candidate(word) in unknown)
                 add(s, at, at + len(word), "term" if term else "other", 1 - p)
 
         for entry in vocab:
@@ -776,13 +791,13 @@ def heuristic_suspects(meta, segments, vocab, oov, now_ms):
                 key = " ".join(norm(t) for _, _, t in gram)
                 if not key or key == entry.lower() or (n == 1 and key in vocab_words):
                     continue
-                if lang == "en" and not any(candidate(t) in unknown for _, _, t in gram):
+                if not any(candidate(t) in unknown for _, _, t in gram):
                     continue  # "say" is a word, not a misheard "Sway"
                 if levenshtein(key, entry.lower()) <= limit:
                     add(s, gram[0][0], gram[-1][1], "term", 0.8, entry)
 
         for start, end, t in toks:
-            if candidate(t) in unknown:
+            if lang == "en" and candidate(t) in unknown:
                 add(s, start, end, "term", 0.5)
 
         nsp = conf.get("no_speech_prob")
@@ -817,7 +832,7 @@ def iter_drafts(data_dir):
     (.tmp) and drafts whose meta does not parse are skipped."""
     for meta_file in sorted(Path(data_dir).glob("drafts/*/*/meta.json")):
         d = meta_file.parent
-        if d.name.endswith(".tmp"):
+        if d.name.endswith((".tmp", ".old")):
             continue
         try:
             meta = json.loads(meta_file.read_text())
@@ -844,7 +859,10 @@ def append_unique(data_dir, name, rows, key="id"):
                 seen.add(r.get(key))
                 new.append(r)
         if new:
+            torn = path.exists() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
             with open(path, "a") as f:
+                if torn:  # a row cut short by a kill: don't glue the next one to it
+                    f.write("\n")
                 f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in new))
         return len(new)
 
@@ -873,7 +891,12 @@ def analyse(data_dir, vocab, oov, now_ms, redo=False):
     for key, meta, segments in iter_drafts(data_dir):
         if not redo and state.get(key) == meta.get("received_ms"):
             continue
-        added += append_unique(data_dir, "suspects.jsonl", heuristic_suspects(meta, segments, vocab, oov, now_ms))
+        try:
+            found = heuristic_suspects(meta, segments, vocab, oov, now_ms)
+        except (AttributeError, TypeError, ValueError, KeyError) as err:
+            log(f"{key}: skipped, malformed ({type(err).__name__})")  # not retried until re-uploaded
+            found = []
+        added += append_unique(data_dir, "suspects.jsonl", found)
         state[key] = meta.get("received_ms")
         drafts += 1
     tmp = state_file.with_suffix(".json.tmp")
@@ -941,8 +964,8 @@ def main():
                     redo=args.all)
         log(f"analysed {r['drafts']} drafts, {r['added']} new suspects")
     elif args.cmd == "census":
-        print_census(census(args.data_dir, args.weeks, args.origin, args.tier, args.lang),
-                     pairs(args.data_dir) if args.pairs else None)
+        scope = (args.data_dir, args.weeks, args.origin, args.tier, args.lang)
+        print_census(census(*scope), pairs(args.data_dir, drafts=select(*scope)) if args.pairs else None)
     elif args.cmd == "mine":
         try:
             r = mine(args.lab.rstrip("/"), args.sessions, args.days, int(time.time() * 1000))

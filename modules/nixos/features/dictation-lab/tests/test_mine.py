@@ -82,6 +82,14 @@ class Match(unittest.TestCase):
         self.assertIsNone(lab.match(d, [(T0 + 5 * MIN, "an unrelated note about lunch plans and the weather")]))
         self.assertIsNone(lab.match(draft("yes please"), [(T0 + MIN, "yes please")]))
 
+    def test_generic_draft_does_not_match_a_long_unrelated_message(self):
+        d = draft("and then we can do the things")
+        filler = " ".join(f"word{i}" for i in range(6))
+        message = f"and {filler} then {filler} we {filler} can {filler} do {filler} the {filler} things"
+        self.assertIsNone(lab.match(d, [(T0 + MIN, message)]))
+        typed_around = "Some context first. And then we can do the things. And more after that, typed."
+        self.assertIsNotNone(lab.match(d, [(T0 + MIN, typed_around)]))
+
     def test_best_match_wins(self):
         d = draft("please open the sway config and fix the bar")
         far = (T0 + 2 * MIN, "please open the sway config now")
