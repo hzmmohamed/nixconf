@@ -19,6 +19,8 @@ the correction game, vocabulary/rules, a dataset) read one schema:
                                          audio.pcm (s16le 16 kHz) | audio.opus
       POST /inbox/<origin>/<id>/done     normalize, replace any earlier copy
       GET  /health
+      GET  /api/drafts?since=<ms>        recent drafts' text and segments (for mine)
+      POST /api/mined                    {"suspects": [...], "matches": [...]} from mine
   dictate-lab prune --data-dir D --audio-days N [--keep-lang ar ...]
       drop full audio older than N days (text and segments stay)
   dictate-lab analyse --data-dir D --vocab V.json [--hunspell H --dict D] [--all]
@@ -40,6 +42,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -231,6 +234,69 @@ def _finish(data_dir, origin, ident):
     return meta
 
 
+MINED_MAX = 16 * 1024 * 1024
+DRAFT_KEY = re.compile(r"^([^/]+)/([^/]+)$")
+
+
+def _stored(data_dir, draft):
+    """meta and segments of a stored draft "<origin>/<id>", or ValueError."""
+    m = DRAFT_KEY.match(draft) if isinstance(draft, str) else None
+    if not m or not valid(m.group(1), m.group(2)):
+        raise ValueError("bad draft")
+    d = Path(data_dir) / "drafts" / m.group(1) / m.group(2)
+    if not (d / "meta.json").exists():
+        raise ValueError("no such draft")
+    seg_file = d / "segments.jsonl"
+    return json.loads((d / "meta.json").read_text()), _jsonl(seg_file.read_bytes()) if seg_file.exists() else []
+
+
+def drafts_since(data_dir, since_ms):
+    out = []
+    for key, meta, segments in iter_drafts(data_dir):
+        created = meta.get("created_ms")
+        if isinstance(created, (int, float)) and created >= since_ms:
+            out.append({"draft": key, **{k: meta.get(k) for k in ("created_ms", "duration", "tier", "app", "lang", "text")},
+                        "segments": [{"i": s.get("i"), "text": s.get("text", ""), "ok": s.get("ok", True)} for s in segments]})
+    return out
+
+
+def mined_rows(data_dir, body, now_ms):
+    """Validated suspects and matches from a `mine` post; ValueError if any
+    is invalid. Ids, found_ms and the span text come from the store."""
+    if not isinstance(body, dict) or not isinstance(body.get("suspects", []), list) \
+            or not isinstance(body.get("matches", []), list):
+        raise ValueError("bad body")
+    suspects = []
+    for s in body.get("suspects", []):
+        if not isinstance(s, dict) or s.get("source") != "agent-diff" or s.get("kind") not in KINDS:
+            raise ValueError("bad suspect")
+        meta, segments = _stored(data_dir, s.get("draft"))
+        seg, start, end, score = s.get("segment"), s.get("start"), s.get("end"), s.get("score")
+        if seg is None:
+            text = meta.get("text") or ""
+        elif type(seg) is int:
+            text = next((x.get("text", "") for x in segments if x.get("i") == seg), None)
+            if text is None:
+                raise ValueError("no such segment")
+        else:
+            raise ValueError("bad segment")
+        if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text):
+            raise ValueError("bad span")
+        if not isinstance(score, (int, float)) or not isinstance(s.get("suggestion"), (str, type(None))):
+            raise ValueError("bad suspect")
+        suspects.append(make_suspect(s["draft"], seg, text, start, end, s["kind"], "agent-diff", float(score),
+                                     s.get("suggestion"), now_ms))
+    matches = []
+    for m in body.get("matches", []):
+        if not isinstance(m, dict) or m.get("tier") not in ("work", "personal") \
+                or not isinstance(m.get("app"), (str, type(None))) or type(m.get("sent_ms")) is not int \
+                or not isinstance(m.get("coverage"), (int, float)):
+            raise ValueError("bad match")
+        _stored(data_dir, m.get("draft"))
+        matches.append({k: m[k] for k in ("draft", "app", "tier", "sent_ms", "coverage")})
+    return suspects, matches
+
+
 def make_server(data_dir, port, peers, host="0.0.0.0"):
     data_dir = Path(data_dir)
 
@@ -266,6 +332,18 @@ def make_server(data_dir, port, peers, host="0.0.0.0"):
         def do_GET(self):
             if self.path == "/health":
                 self.reply(200, {"ok": True})
+            elif self.path.startswith("/api/"):
+                if not peers.allowed(self.client_address[0]):
+                    self.reply(403, {"error": "not one of your devices"})
+                    return
+                url = urllib.parse.urlsplit(self.path)
+                since = urllib.parse.parse_qs(url.query).get("since", [""])[0]
+                if url.path != "/api/drafts":
+                    self.reply(404, {"error": "no such route"})
+                elif not re.fullmatch(r"\d{1,16}", since):
+                    self.reply(400, {"error": "since=<ms> required"})
+                else:
+                    self.reply(200, {"drafts": drafts_since(data_dir, int(since))})
             else:
                 self.reply(404, {"error": "no such route"})
 
@@ -303,7 +381,35 @@ def make_server(data_dir, port, peers, host="0.0.0.0"):
             os.replace(part, inc / name)
             self.reply(204)
 
+        def api_post(self):
+            if not peers.allowed(self.client_address[0]):
+                self.reply(403, {"error": "not one of your devices"})
+                return
+            if self.path != "/api/mined":
+                self.reply(404, {"error": "no such route"})
+                return
+            length = self.headers.get("Content-Length")
+            if length is None:
+                self.reply(411, {"error": "Content-Length required"})
+                return
+            if int(length) > MINED_MAX:
+                self.reply(413, {"error": "too large"})
+                return
+            try:
+                suspects, matches = mined_rows(data_dir, json.loads(self.rfile.read(int(length)) or b"null"),
+                                               int(time.time() * 1000))
+            except (ValueError, KeyError, TypeError, OSError) as err:
+                self.reply(400, {"error": str(err) if isinstance(err, ValueError) else type(err).__name__})
+                return
+            added = append_unique(data_dir, "suspects.jsonl", suspects)
+            append_unique(data_dir, "matches.jsonl", matches, key="draft")
+            log(f"mined: {len(suspects)} suspects ({added} new), {len(matches)} matches")
+            self.reply(200, {"added": added})
+
         def do_POST(self):
+            if self.path.startswith("/api/"):
+                self.api_post()
+                return
             r = self.route()
             if not r:
                 return
