@@ -131,4 +131,14 @@ class ProfileTest {
         val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"workApps\":[\"a.b\"],"))
         assertEquals(listOf("a.b"), p.workApps)
     }
+
+    @Test
+    fun lab_fields_default() {
+        val old = parseProfile(full)
+        assertNull(old.lab)
+        assertEquals(30, old.unsentDays)
+        val p = parseProfile(full.replace("\"keepDays\":7,", "\"keepDays\":7,\"lab\":\"http://b.example.ts.net:8181\",\"unsentDays\":14,"))
+        assertEquals("http://b.example.ts.net:8181", p.lab)
+        assertEquals(14, p.unsentDays)
+    }
 }

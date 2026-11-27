@@ -68,6 +68,7 @@
       self.nixosModules.memory-guard
       self.nixosModules.dictation
       self.nixosModules.dictation-server
+      self.nixosModules.dictation-lab
       self.nixosModules.openrgb
       self.nixosModules.activitywatch
       self.nixosModules.spotify
@@ -134,9 +135,11 @@
     # loaded on demand, unloaded after 15 min), also serving hazel over the
     # cable/tailnet; Parakeet on the CPU if the server is down.
     preferences.dictation.servers = ["http://127.0.0.1:8178"];
+    preferences.dictation.labUrl = "http://127.0.0.1:${toString config.preferences.dictation-lab.port}";
     preferences.dictation-server.vulkanDriverFiles = "/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json";
     # The phone's profile, Parakeet files and APKs (Nixconf app, apps/phone/).
     preferences.dictation-server.phone.enable = true;
+    preferences.dictation-server.phone.lab = config.preferences.dictation-lab.url;
 
     # Auto-place apps on fixed workspaces (2 files/office, 3 audio, 4 browser,
     # 5 editor, 6 QGIS) — see modules/nixos/features/sway-workspaces.nix.
