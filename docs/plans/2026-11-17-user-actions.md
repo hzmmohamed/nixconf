@@ -886,3 +886,24 @@ the phone and butternut. Commands are fish.
 
   It shows up in the web UI with the right length and plays. If the upload fails or
   restarts forever, report the app's error and the journal lines.
+
+## attn: first deploy (hazel, butternut)
+
+attn replaces ActivityWatch (`features/attn.nix`). The flake input is private: evaluate
+and deploy from a shell with your GitHub SSH key loaded. Then, on each host:
+
+- [ ] Deploy (`just deploy hazel`, `just deploy butternut`), then check the units:
+
+  ```fish
+  systemctl status attn-daemon
+  systemctl --user status attn-sensor awatcher
+  curl -s http://127.0.0.1:5600/api/0/info
+  ```
+
+  The sensor's unit sets `PrivateTmp`, which may fail in a user manager: if
+  `attn-sensor` is failed with a namespace error, report it (the fix goes in attn's
+  `device.nix`).
+  If `attn-daemon` is failed with "address in use" (ActivityWatch still held port
+  5600 during the switch): `doas systemctl restart attn-daemon`.
+- [ ] The old ActivityWatch data (`~/.local/share/activitywatch`) is no longer read;
+      keep or delete it as you like.

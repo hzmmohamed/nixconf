@@ -215,4 +215,55 @@ class DraftStoreTest {
         assertNotNull(segs[0].conf)
         assertNull(segs[1].conf)
     }
+
+    // --- training lab uploads ---
+
+    @Test
+    fun to_upload_lists_delivered_not_uploaded() {
+        store.create("en") // pending
+        store.create("en").also { store.update(it.copy(status = DraftStatus.CANCELLED)) }
+        now += 1000
+        val delivered = store.create("en").also { store.update(it.copy(status = DraftStatus.DELIVERED, text = "a")) }
+        store.create("en").also { store.update(it.copy(status = DraftStatus.DELIVERED, text = "b", uploadedMs = 5)) }
+        assertEquals(listOf(delivered.id), store.toUpload().map { it.id })
+    }
+
+    @Test
+    fun uploaded_round_trips() {
+        val d = store.create("en")
+        store.update(d.copy(status = DraftStatus.DELIVERED, uploadedMs = 1234))
+        assertEquals(1234L, store.load(d.id)!!.uploadedMs)
+    }
+
+    @Test
+    fun prune_keeps_unsent_delivered_until_unsent_days() {
+        val day = 24L * 3_600_000
+        val unsent = store.create("en").also { store.update(it.copy(status = DraftStatus.DELIVERED)) }
+        val sent = store.create("en").also { store.update(it.copy(status = DraftStatus.DELIVERED, uploadedMs = 1)) }
+        now += 10 * day
+        store.prune(keepDays = 7, unsentDays = 30)
+        assertTrue(File(tmp.root, unsent.id).exists())
+        assertFalse(File(tmp.root, sent.id).exists())
+        now += 21 * day
+        store.prune(keepDays = 7, unsentDays = 30)
+        assertFalse(File(tmp.root, unsent.id).exists())
+    }
+
+    @Test
+    fun prune_without_lab_ignores_upload_state() {
+        val day = 24L * 3_600_000
+        val unsent = store.create("en").also { store.update(it.copy(status = DraftStatus.DELIVERED)) }
+        now += 10 * day
+        store.prune(keepDays = 7)
+        assertFalse(File(tmp.root, unsent.id).exists())
+    }
+
+    @Test
+    fun files_are_meta_segments_and_audio() {
+        val d = store.create("en")
+        WavWriter(d.audio).close()
+        assertEquals(listOf("meta.json", "audio.wav"), store.files(d).map { it.name })
+        store.addSegment(d, SegmentText(0, 0, 10, "x"))
+        assertEquals(listOf("meta.json", "segments.jsonl", "audio.wav"), store.files(d).map { it.name })
+    }
 }

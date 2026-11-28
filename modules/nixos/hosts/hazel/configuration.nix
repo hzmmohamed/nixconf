@@ -43,7 +43,7 @@
       self.nixosModules.office
       self.nixosModules.rbw
       self.nixosModules.vault
-      self.nixosModules.activitywatch
+      self.nixosModules.attn
       self.nixosModules.kdeconnect
       self.nixosModules.shared-zotero
       self.nixosModules.gimp
@@ -86,6 +86,9 @@
       self.diskoConfigurations.hostHazel
     ];
 
+    # attn device id: an identifier, not a secret.
+    services.attn.device.deviceId = "56cc07c4-6dd9-4934-b0bb-2b3e2ce365c4";
+
     boot = {
       kernelPackages = pkgs.linuxPackages_latest;
 
@@ -123,6 +126,8 @@
     # Dictation (Mod4+d): butternut's GPU server when reachable (cable
     # first, then the tailnet), else Parakeet/Whisper on this CPU/iGPU.
     preferences.dictation.servers = ["http://butternut-cable:8178" "http://butternut:8178"];
+    # Training lab: delivered drafts go to butternut's inbox (tailnet).
+    preferences.dictation.labUrl = "http://butternut.${self.tailnet.domain}:8181";
 
     networking = {
       hostName = "hazel";

@@ -26,7 +26,8 @@
 #                     names, sizes, sha256 and URLs) and how recordings are
 #                     cut and delivered (pauseMs, maxSegmentSec: the laptops'
 #                     values; mode), when a recording without speech stops
-#                     itself (noSpeechSec), which apps are work tier (workApps)
+#                     itself (noSpeechSec), which apps are work tier (workApps),
+#                     the training lab inbox drafts go to (lab, unsentDays)
 #                     (`phone.profile`; its shape is checked
 #                     against the app by checks.phone-profile)
 #   models/parakeet/  the Parakeet int8 files (self.dictationModels, the same
@@ -127,7 +128,7 @@
         modelUrl = "${phoneUrl}/models/parakeet";
         base = builtins.toJSON {
           version = 1;
-          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec power workApps;
+          inherit (phone) servers defaultLanguage languages prompt keepDays pauseMs maxSegmentSec mode noSpeechSec power workApps lab unsentDays;
           localModel = {
             name = "parakeet-tdt-0.6b-v2-int8";
             language = "en";
@@ -332,6 +333,23 @@
             (`power.json` of that host's phone profile). A server without an
             entry counts as plugged in.
           '';
+        };
+
+        lab = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "http://butternut.example.ts.net:8181";
+          description = ''
+            Dictation training lab inbox URL the phone uploads delivered
+            drafts to, on unmetered networks (MagicDNS FQDN; dictation-lab
+            feature). null: no uploads.
+          '';
+        };
+
+        unsentDays = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 30;
+          description = "With a lab, days the phone keeps a delivered draft the lab has not received (instead of keepDays).";
         };
 
         workApps = lib.mkOption {

@@ -229,6 +229,8 @@
       inherit (cfg) servers threads output prompt;
       inherit (cfg) mode;
       keep_days = cfg.drafts.keepDays;
+      unsent_days = cfg.drafts.unsentDays;
+      lab_url = cfg.labUrl;
       default_lang = cfg.defaultLanguage;
       local_lang = "en";
       whisper_model = lib.optionalString cfg.localMultilingual "${whisperSmall}";
@@ -356,6 +358,26 @@
           Delivered and cancelled drafts (Opus audio + transcript) are kept
           this long, so a mis-delivered text can still be recovered.
           Undelivered drafts are never pruned.
+        '';
+      };
+
+      drafts.unsentDays = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 30;
+        description = ''
+          With a training lab (`labUrl`), a delivered draft not uploaded yet
+          is kept this long instead of `keepDays` (butternut may be off).
+        '';
+      };
+
+      labUrl = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "http://butternut.example.ts.net:8181";
+        description = ''
+          Dictation training lab inbox (dictation-lab feature): delivered
+          drafts are uploaded there after each session and hourly. null: no
+          uploads.
         '';
       };
 
@@ -637,6 +659,44 @@
               OnCalendar = "daily";
               Persistent = true;
               RandomizedDelaySec = "1h";
+            };
+            Install.WantedBy = ["timers.target"];
+          };
+
+          # Training lab: retry uploads hourly (each session also pushes its
+          # own draft when it ends).
+          systemd.user.services.dictate-drafts-push = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Dictation drafts: upload delivered ones to the training lab";
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe' stream "dictate-stream"} push --all";
+            };
+          };
+          systemd.user.timers.dictate-drafts-push = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Upload dictation drafts to the training lab hourly";
+            Timer = {
+              OnCalendar = "hourly";
+              Persistent = true;
+              RandomizedDelaySec = "5m";
+            };
+            Install.WantedBy = ["timers.target"];
+          };
+
+          # Training lab: match recent drafts to the messages sent from this
+          # host's agent sessions; the user's edits become suspects (no model).
+          systemd.user.services.dictate-lab-mine = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Dictation lab: mine agent prompts for your edits";
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.dictate-lab} mine --lab ${cfg.labUrl} --sessions %h/.claude/projects --days 3";
+            };
+          };
+          systemd.user.timers.dictate-lab-mine = lib.mkIf (cfg.labUrl != null) {
+            Unit.Description = "Mine agent prompts for dictation edits hourly";
+            Timer = {
+              OnCalendar = "hourly";
+              Persistent = true;
+              RandomizedDelaySec = "5m";
             };
             Install.WantedBy = ["timers.target"];
           };

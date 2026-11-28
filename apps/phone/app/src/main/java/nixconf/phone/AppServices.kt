@@ -23,6 +23,7 @@ import nixconf.phone.engine.PowerClient
 import nixconf.phone.engine.SileroVad
 import nixconf.phone.engine.Where
 import nixconf.phone.engine.WhisperClient
+import nixconf.phone.lab.LabUploader
 import nixconf.phone.model.ModelDownloader
 import nixconf.phone.profile.Profile
 import nixconf.phone.profile.ProfileStore
@@ -99,6 +100,14 @@ class AppServices private constructor(context: Context) {
         vad = context.assets.takeIf(SileroVad::bundled)?.let { assets -> { SileroVad(assets) } },
     )
 
+    /** Sends delivered drafts to the training lab (profile `lab`), on unmetered networks only. */
+    private val labUploader = LabUploader(http, drafts, System::currentTimeMillis)
+    private var uploadJob: Job? = null
+    private val mutableUnsent = MutableStateFlow(0)
+
+    /** Delivered drafts the training lab has not received yet (shown on the app screen). */
+    val unsent: StateFlow<Int> = mutableUnsent.asStateFlow()
+
     val updater = Updater(http, File(context.cacheDir, "updates")) { installApk(context, it) }
 
     private val mutablePending = MutableStateFlow<List<Draft>>(emptyList())
@@ -114,7 +123,10 @@ class AppServices private constructor(context: Context) {
 
     init {
         scope.launch {
-            session.state.collect { if (it is SessionState.Done || it is SessionState.Kept) reloadPending() }
+            session.state.collect {
+                if (it is SessionState.Done || it is SessionState.Kept) reloadPending()
+                if (it is SessionState.Done) uploadToLab()
+            }
         }
     }
 
@@ -130,10 +142,11 @@ class AppServices private constructor(context: Context) {
                 profiles.refreshIfStale(profileUrl, if (force) 0 else PROFILE_MAX_AGE_MS)
             }
             mutableProfile.value = p
-            withContext(Dispatchers.IO) { drafts.prune(p?.keepDays ?: 7) }
+            withContext(Dispatchers.IO) { drafts.prune(p?.keepDays ?: 7, p?.unsentDays?.takeIf { p.lab != null }) }
             refreshModelStatus()
             if (mutableModelStatus.value is ModelStatus.Missing) downloadModel(force = false)
             loadPending()
+            uploadToLab()
             // Not part of this job: Test waits for the profile, not for transcriptions.
             retryPending(p)
         }.also { openJob = it }
@@ -142,6 +155,19 @@ class AppServices private constructor(context: Context) {
     /** At mic press: a stale profile is refetched in the background; the session uses what is cached. */
     fun refreshProfileIfStale() {
         onOpen()
+    }
+
+    /**
+     * Uploads delivered drafts to the training lab when the profile names one
+     * and the network is unmetered (audio is ~2 MB a minute); one run at a time.
+     */
+    fun uploadToLab() {
+        if (uploadJob?.isActive == true) return
+        val lab = profile.value?.lab
+        uploadJob = scope.launch {
+            if (lab != null && isUnmetered()) labUploader.uploadAll(lab)
+            mutableUnsent.value = if (lab == null) 0 else withContext(Dispatchers.IO) { drafts.toUpload().size }
+        }
     }
 
     fun reloadPending() {
