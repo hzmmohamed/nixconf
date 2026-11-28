@@ -73,6 +73,60 @@ private class FakeAudioSource : AudioSource {
     }
 }
 
+/**
+ * Like [FakeAudioSource], but [start] itself runs the whole push-and-flush loop
+ * synchronously (as Recorder's own thread would, start to finish) instead of waiting
+ * for a separate call - so a failure DiaryRecording reports from inside [PcmSink.flush]
+ * (storage full mid-recording) happens on this "recorder thread" stack, the same way it
+ * would on a device, including the reentrant [AudioSource.stop] that follows.
+ */
+private class SelfFlushingAudioSource(private val samples: ShortArray, private val chunk: Int, private val flushEvery: Int) : AudioSource {
+    override val level = MutableStateFlow(0f)
+    var running = false
+
+    override fun start(out: PcmSink, tap: ((ShortArray, Int) -> Unit)?) {
+        running = true
+        var pos = 0
+        var sinceFlush = 0
+        while (pos < samples.size && running) {
+            val n = minOf(chunk, samples.size - pos)
+            out.write(samples.copyOfRange(pos, pos + n), n)
+            pos += n
+            sinceFlush += n
+            if (sinceFlush >= flushEvery) {
+                out.flush()
+                sinceFlush = 0
+            }
+        }
+    }
+
+    override fun stop() {
+        running = false
+    }
+}
+
+/** Wraps a real [AudioEncoder] but counts [close] calls - used to assert an encoder is closed exactly once. */
+private class CountingCloseEncoder(private val delegate: AudioEncoder = PcmPassthrough()) : AudioEncoder {
+    var closeCalls = 0
+    override val codec get() = delegate.codec
+    override val config get() = delegate.config
+    override fun encode(samples: ShortArray, n: Int) = delegate.encode(samples, n)
+    override fun drain() = delegate.drain()
+    override fun close() {
+        closeCalls++
+        delegate.close()
+    }
+}
+
+/** An encoder that always blows up: simulates MediaCodec dying mid-recording (IllegalStateException/CodecException). */
+private class ThrowingEncoder : AudioEncoder {
+    override val codec = Codec.pcm_s16le
+    override val config: ByteArray? = null
+    override fun encode(samples: ShortArray, n: Int): List<ByteArray> = throw IllegalStateException("codec died (test)")
+    override fun drain(): List<ByteArray> = emptyList()
+    override fun close() = Unit
+}
+
 class DiaryRecordingTest {
     companion object {
         private lateinit var device: KeyPair
@@ -91,8 +145,9 @@ class DiaryRecordingTest {
     private val now = 1_795_000_000_000L
     private val sampleRate = 16000
 
-    // 3 s of a 440 Hz tone: deterministic, non-silent, easy to compare byte for byte.
-    private val samples = ShortArray(3 * sampleRate) { i -> (sin(2 * PI * 440 * i / sampleRate) * 10000).toInt().toShort() }
+    // A deterministic, non-silent tone: easy to compare byte for byte.
+    private fun sine(n: Int) = ShortArray(n) { i -> (sin(2 * PI * 440 * i / sampleRate) * 10000).toInt().toShort() }
+    private val samples = sine(3 * sampleRate) // 3 s
 
     private fun newStore() = EntryStore(tmp.root, { listOf(Recipient("device:diary-device-v1", device.public)) }, { now })
 
@@ -181,5 +236,43 @@ class DiaryRecordingTest {
 
         rec.stop()
         assertEquals(1, store.list(device.private).size)
+    }
+
+    @Test
+    fun flush_failure_on_recorder_thread_closes_encoder() {
+        val store = newStore()
+        // 1st appendAudio (header + frame-0: calls 1-3, at the 2 s flush) succeeds; the
+        // 2nd appendAudio's first raw write (frame-1's length prefix, call 4, at the
+        // 4 s flush - still inside SelfFlushingAudioSource.start()) fails.
+        store.openAudioStream = { f -> DiaryFailingAfterWrites(f, failOnCall = 4) }
+        val encoder = CountingCloseEncoder()
+        val audio = SelfFlushingAudioSource(sine(5 * sampleRate), chunk = 1600, flushEvery = 2 * sampleRate)
+        val rec = DiaryRecording(store, audio, { encoder }, { "Africa/Cairo" }, flushMs = 2000, now = { now })
+
+        rec.start() // runs the whole recording (including the failing flush) synchronously
+
+        val state = rec.state.value
+        assertTrue(state is RecState.Failed)
+        assertEquals("Storage is full: the recording was saved up to here", (state as RecState.Failed).message)
+        assertFalse(audio.running)
+        assertEquals(1, encoder.closeCalls)
+
+        rec.stop() // already failed: a no-op, must not close the encoder again
+        assertEquals(1, encoder.closeCalls)
+    }
+
+    @Test
+    fun encoder_exception_fails_cleanly() {
+        val store = newStore()
+        val audio = FakeAudioSource()
+        val rec = DiaryRecording(store, audio, { ThrowingEncoder() }, { "Africa/Cairo" }, now = { now })
+
+        rec.start()
+        audio.push(samples, chunk = 1600, flushEvery = 2 * sampleRate) // encode() throws on the first chunk
+
+        val state = rec.state.value
+        assertTrue(state is RecState.Failed)
+        assertEquals("Recording stopped: the audio encoder failed", (state as RecState.Failed).message)
+        assertFalse(audio.running)
     }
 }

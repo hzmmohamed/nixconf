@@ -73,6 +73,10 @@ android {
     // phone check are what gate this app.
     lint { checkReleaseBuilds = false }
 
+    // android.util.Log (diary logging: entry id + codec only, never content)
+    // is a stub on the JVM test runner; without this it throws "not mocked".
+    testOptions { unitTests.isReturnDefaultValues = true }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

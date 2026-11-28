@@ -8,9 +8,10 @@ import java.nio.ByteOrder
 
 // What DiaryRecording feeds PCM16 through before sealing it. [config] is
 // the codec-specific data a reader needs before any packet makes sense
-// (Opus: OpusHead/pre-skip/seek-preroll as MediaCodec emits it; PCM: none).
-// Encoded packets are returned in call order; the caller frames/concatenates
-// them per the on-disk format (see DiaryRecording).
+// (Opus: every CODEC_CONFIG buffer the codec has emitted so far,
+// concatenated - see [opusHeadOf] for what that actually contains; PCM:
+// none). Encoded packets are returned in call order; the caller frames/
+// concatenates them per the on-disk format (see DiaryRecording).
 interface AudioEncoder {
     val codec: Codec
     val config: ByteArray?
@@ -35,15 +36,53 @@ class PcmPassthrough : AudioEncoder {
     override fun close() = Unit
 }
 
+private val OPUS_HEAD_MAGIC = "OpusHead".toByteArray(Charsets.US_ASCII)
+private val AOPUSHDR_MAGIC = "AOPUSHDR".toByteArray(Charsets.US_ASCII)
+
+/**
+ * The raw OpusHead to store in [Entry.codecConfig], out of whatever a
+ * MediaCodec audio/opus encoder emitted as its codec-config data ([AudioEncoder.config]):
+ * either a config buffer that already *is* a raw OpusHead, or AOSP's
+ * codec2 marker format - "AOPUSHDR" | u64 LE length | OpusHead, optionally
+ * followed by "AOPUSDLY"/"AOPUSPRL" blocks (pre-skip/seek-preroll in ns)
+ * this function has no use for and ignores. Null for anything else
+ * (unrecognised, truncated, or a length that doesn't fit): the caller logs
+ * a warning and stores no codecConfig rather than bytes a reader might
+ * mistake for a real OpusHead. A pure function so it is JVM-testable even
+ * though the encoder that produces its input is not (see OpusHeadTest).
+ */
+fun opusHeadOf(config: ByteArray): ByteArray? {
+    if (startsWith(config, OPUS_HEAD_MAGIC)) return config
+    if (!startsWith(config, AOPUSHDR_MAGIC)) return null
+    val lenStart = AOPUSHDR_MAGIC.size
+    val payloadStart = lenStart + 8
+    if (config.size < payloadStart) return null
+    val len = readU64LE(config, lenStart)
+    if (len < 0 || len > config.size - payloadStart) return null
+    return config.copyOfRange(payloadStart, payloadStart + len.toInt())
+}
+
+private fun startsWith(bytes: ByteArray, prefix: ByteArray): Boolean =
+    bytes.size >= prefix.size && bytes.copyOfRange(0, prefix.size).contentEquals(prefix)
+
+private fun readU64LE(bytes: ByteArray, offset: Int): Long {
+    var v = 0L
+    for (i in 0 until 8) v = v or ((bytes[offset + i].toLong() and 0xFF) shl (8 * i))
+    // A length that doesn't fit a positive Int (a corrupt/hostile length prefix) is never
+    // a real AOPUSHDR block: callers reject anything outside a sane range.
+    return if (v < 0 || v > Int.MAX_VALUE) -1L else v
+}
+
 /**
  * Opus via the platform's MediaCodec, 16 kHz mono. Not JVM-testable (no
  * MediaCodec on the JVM test runner) - kept small and a direct translation
  * of the MediaCodec encoder contract, so it is reviewable by inspection:
  * feed PCM16 into input buffers, drain output buffers in order, and keep
- * the one BUFFER_FLAG_CODEC_CONFIG buffer as [config] rather than a packet.
+ * every BUFFER_FLAG_CODEC_CONFIG buffer (concatenated) as [config] rather
+ * than a packet - see [opusHeadOf] for what DiaryRecording extracts from it.
  */
 class MediaCodecOpusEncoder(
-    sampleRate: Int = 16000,
+    private val sampleRate: Int = 16000,
     bitrate: Int = 32000,
     @Suppress("UNUSED_PARAMETER") frameMs: Int = 20,
 ) : AudioEncoder {
@@ -52,12 +91,25 @@ class MediaCodecOpusEncoder(
     @Volatile private var mutableConfig: ByteArray? = null
     override val config: ByteArray? get() = mutableConfig
 
-    private val mediaCodec: MediaCodec = MediaCodec.createEncoderByType(MIME).apply {
-        val format = MediaFormat.createAudioFormat(MIME, sampleRate, 1).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+    // Presentation timestamp of the next input buffer, in samples fed so far.
+    private var samplesFed = 0L
+
+    @Volatile private var closed = false
+
+    private val mediaCodec: MediaCodec = run {
+        val codec = MediaCodec.createEncoderByType(MIME)
+        try {
+            val format = MediaFormat.createAudioFormat(MIME, sampleRate, 1).apply {
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+            }
+            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+            codec
+        } catch (e: Exception) {
+            // Nothing usable was returned to the caller: release what MediaCodec did allocate.
+            codec.release()
+            throw e
         }
-        configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        start()
     }
 
     override fun encode(samples: ShortArray, n: Int): List<ByteArray> {
@@ -74,25 +126,41 @@ class MediaCodecOpusEncoder(
     }
 
     override fun close() {
-        mediaCodec.stop()
-        mediaCodec.release()
+        if (closed) return
+        closed = true
+        try {
+            mediaCodec.stop()
+        } finally {
+            mediaCodec.release()
+        }
     }
 
-    // Queues [bytes] into as many input buffers as the codec will accept right now.
+    // Queues [bytes] into as many input buffers as the codec will accept, draining
+    // output in between to make room, until every byte (or, with [endOfStream], the
+    // end-of-stream marker itself) has actually been queued. Bounded: no input buffer
+    // becoming free for DEADLINE_NS straight gives up loudly (an encoder this stuck is
+    // not going to recover) rather than silently dropping audio or spinning forever.
     private fun feed(bytes: ByteArray, endOfStream: Boolean) {
         var offset = 0
-        while (true) {
+        var deadline = System.nanoTime() + NO_PROGRESS_NS
+        while (offset < bytes.size || (endOfStream && offset == 0 && bytes.isEmpty())) {
             val index = mediaCodec.dequeueInputBuffer(TIMEOUT_US)
-            if (index < 0) return
-            val buffer = mediaCodec.getInputBuffer(index) ?: return
-            val remaining = bytes.size - offset
-            val toWrite = minOf(remaining, buffer.capacity())
+            if (index < 0) {
+                drainAvailable(waitForEnd = false) // may free an input buffer
+                check(System.nanoTime() < deadline) { "MediaCodec: no input buffer available" }
+                continue
+            }
+            deadline = System.nanoTime() + NO_PROGRESS_NS
+            val buffer = checkNotNull(mediaCodec.getInputBuffer(index)) { "MediaCodec: no input buffer at index $index" }
+            val toWrite = minOf(bytes.size - offset, buffer.capacity())
             buffer.clear()
             if (toWrite > 0) buffer.put(bytes, offset, toWrite)
-            val flags = if (endOfStream) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
-            mediaCodec.queueInputBuffer(index, 0, toWrite, 0, flags)
+            val presentationUs = samplesFed * 1_000_000L / sampleRate
+            val eos = endOfStream && offset + toWrite >= bytes.size
+            mediaCodec.queueInputBuffer(index, 0, toWrite, presentationUs, if (eos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
+            samplesFed += toWrite / 2 // PCM16 mono: 2 bytes/sample
             offset += toWrite
-            if (offset >= bytes.size) return
+            if (eos) return // end-of-stream queued
         }
     }
 
@@ -102,21 +170,21 @@ class MediaCodecOpusEncoder(
     private fun drainAvailable(waitForEnd: Boolean): List<ByteArray> {
         val packets = mutableListOf<ByteArray>()
         val info = MediaCodec.BufferInfo()
-        var idleRounds = 0
+        var deadline = System.nanoTime() + NO_PROGRESS_NS
         while (true) {
             val index = mediaCodec.dequeueOutputBuffer(info, TIMEOUT_US)
             if (index < 0) {
-                if (waitForEnd && idleRounds++ < MAX_IDLE_ROUNDS) continue
+                if (waitForEnd && System.nanoTime() < deadline) continue
                 return packets
             }
-            idleRounds = 0
+            deadline = System.nanoTime() + NO_PROGRESS_NS
             val buffer = mediaCodec.getOutputBuffer(index)
             if (buffer != null && info.size > 0) {
                 val bytes = ByteArray(info.size)
                 buffer.position(info.offset)
                 buffer.get(bytes)
                 if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                    mutableConfig = bytes
+                    mutableConfig = (mutableConfig ?: ByteArray(0)) + bytes
                 } else {
                     packets += bytes
                 }
@@ -129,7 +197,7 @@ class MediaCodecOpusEncoder(
     private companion object {
         const val MIME = "audio/opus"
         const val TIMEOUT_US = 10_000L
-        const val MAX_IDLE_ROUNDS = 50 // ~0.5 s of polling before giving up on end-of-stream
+        const val NO_PROGRESS_NS = 1_000_000_000L // ~1 s of no progress before giving up
     }
 }
 

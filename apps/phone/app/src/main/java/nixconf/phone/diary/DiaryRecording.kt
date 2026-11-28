@@ -1,5 +1,6 @@
 package nixconf.phone.diary
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.Base64
@@ -17,7 +18,18 @@ sealed interface RecState {
     data class Failed(val entryId: String?, val message: String) : RecState
 }
 
+private const val TAG = "DiaryRecording"
 private const val SAMPLE_RATE = 16000
+
+// User-facing failure copy: fixed text, never the underlying exception's message (that may
+// leak paths or otherwise not be meant for a person to read). Storage failures (appendAudio,
+// or the meta rewrite that writes codecConfig - both are EntryStore I/O) get the "saved up to
+// here" copy; an encoder throwing (MediaCodec dying) gets a different one, since nothing about
+// disk space is at fault there.
+private const val STORAGE_FAILED_MESSAGE = "Storage is full: the recording was saved up to here"
+private const val ENCODER_FAILED_MESSAGE = "Recording stopped: the audio encoder failed"
+private const val START_FAILED_MESSAGE = "Could not start a diary entry"
+private const val MIC_FAILED_MESSAGE = "Could not start the microphone"
 
 /**
  * Records one diary entry. Implements [PcmSink]: it is what [AudioSource.start]
@@ -25,18 +37,21 @@ private const val SAMPLE_RATE = 16000
  * and [stop] run on the main thread - [lock] guards the encoder and the
  * not-yet-sealed byte buffer, the only state both sides touch.
  *
- * [write] only encodes and buffers; it never touches the store, so it never
- * fails. [flush] (called by [audio] roughly every [flushMs], and once more
- * at [stop]) seals whatever is buffered as one audio frame - skipped if
- * nothing is buffered. The encoder's codec-config (Opus CSD, base64) is
- * written to the entry's meta via [EntryStore.OpenEntry.update] as soon as
- * the encoder produces it, at or before the first frame.
+ * [write] only encodes and buffers; it never touches the store on its own, but the
+ * encoder it calls can still throw (MediaCodec dying) - handled the same way as a
+ * storage failure, just with a different message. [flush] (called by [audio] roughly
+ * every [flushMs], and once more at [stop]) seals whatever is buffered as one audio
+ * frame - skipped if nothing is buffered. The encoder's codec-config (Opus CSD) is
+ * written to the entry's meta, as its raw OpusHead ([opusHeadOf]) base64-encoded, as
+ * soon as the encoder has produced one - at or before the first frame.
  *
- * On a storage failure (appendAudio throwing IOException): the audio source
- * is stopped, the entry is finished with the duration captured so far
- * (best-effort - a second failure there is ignored), and the state becomes
- * [RecState.Failed] with a fixed, user-facing message. Whatever was already
- * sealed (earlier frames) stays on disk and readable.
+ * On any failure (appendAudio/the meta rewrite throwing IOException, or the encoder
+ * throwing): the audio source is stopped, the encoder is closed, the entry is finished
+ * with the duration captured so far (best-effort - a second failure there is ignored),
+ * and the state becomes [RecState.Failed] with a fixed, user-facing message. Whatever
+ * was already sealed (earlier frames) stays on disk and readable. [fail] is idempotent
+ * (and the only place that closes the encoder on a failure path), so it is safe to call
+ * from more than one of [write]/[flush]/[stop] without double-closing or double-reporting.
  */
 class DiaryRecording(
     private val store: EntryStore,
@@ -67,9 +82,10 @@ class DiaryRecording(
             store.create(Kind.spoken, enc.codec, zone())
         } catch (e: IOException) {
             enc.close()
-            mutableState.value = RecState.Failed(null, "Storage is full: the recording was saved up to here")
+            mutableState.value = RecState.Failed(null, START_FAILED_MESSAGE)
             return
         }
+        Log.i(TAG, "entry ${openEntry.entry.id}: codec ${enc.codec}")
         synchronized(lock) {
             open = openEntry
             activeEncoder = enc
@@ -81,15 +97,14 @@ class DiaryRecording(
         try {
             audio.start(this)
         } catch (e: Exception) {
-            val durationMs = samplesWritten * 1000 / SAMPLE_RATE
+            synchronized(lock) { open = null; activeEncoder = null }
             try {
-                openEntry.finish(durationMs)
+                openEntry.finish(0)
             } catch (ignored: IOException) {
                 // Best-effort: the start failure itself is what matters.
             }
-            synchronized(lock) { open = null; activeEncoder = null }
             enc.close()
-            mutableState.value = RecState.Failed(openEntry.entry.id, e.message ?: "Could not start recording")
+            mutableState.value = RecState.Failed(openEntry.entry.id, MIC_FAILED_MESSAGE)
         }
     }
 
@@ -99,14 +114,22 @@ class DiaryRecording(
             val c = activeEncoder ?: return
             e to c
         }
-        val packets = enc.encode(samples, n)
-        synchronized(lock) {
-            // start() may have been superseded (stopped/failed) while encode() ran.
+        val packets = try {
+            enc.encode(samples, n)
+        } catch (e: IOException) {
+            fail(entry, ENCODER_FAILED_MESSAGE)
+            return
+        } catch (e: RuntimeException) {
+            fail(entry, ENCODER_FAILED_MESSAGE)
+            return
+        }
+        val config = synchronized(lock) {
             if (open !== entry) return
             samplesWritten += n
-            maybeCaptureConfig(entry, enc)
             for (p in packets) appendToBuffer(enc.codec, p)
+            pendingConfig(enc)
         }
+        if (config != null) writeConfig(entry, config)
     }
 
     override fun flush() {
@@ -118,7 +141,7 @@ class DiaryRecording(
         try {
             entry.appendAudio(bytes)
         } catch (e: IOException) {
-            fail(entry)
+            fail(entry, STORAGE_FAILED_MESSAGE)
         }
     }
 
@@ -127,33 +150,42 @@ class DiaryRecording(
         val entry = synchronized(lock) { open } ?: return
         audio.stop()
         val enc = synchronized(lock) { activeEncoder } ?: return
+        val packets = try {
+            enc.drain()
+        } catch (e: IOException) {
+            fail(entry, ENCODER_FAILED_MESSAGE)
+            return
+        } catch (e: RuntimeException) {
+            fail(entry, ENCODER_FAILED_MESSAGE)
+            return
+        }
+        val config = synchronized(lock) {
+            if (open !== entry) return
+            for (p in packets) appendToBuffer(enc.codec, p)
+            pendingConfig(enc)
+        }
+        if (config != null && !writeConfig(entry, config)) return // writeConfig already failed us
+        val bytes = synchronized(lock) {
+            if (open !== entry) return
+            if (buffer.size() == 0) null else buffer.toByteArray().also { buffer = ByteArrayOutputStream() }
+        }
         try {
-            val packets = enc.drain()
-            synchronized(lock) {
-                maybeCaptureConfig(entry, enc)
-                for (p in packets) appendToBuffer(enc.codec, p)
-            }
-            val bytes = synchronized(lock) {
-                if (buffer.size() == 0) null else buffer.toByteArray().also { buffer = ByteArrayOutputStream() }
-            }
             bytes?.let { entry.appendAudio(it) }
             val durationMs = samplesWritten * 1000 / SAMPLE_RATE
             entry.finish(durationMs)
-            enc.close()
             synchronized(lock) { open = null; activeEncoder = null }
+            enc.close()
             mutableState.value = RecState.Saved(entry.entry.id, durationMs)
         } catch (e: IOException) {
-            enc.close()
-            fail(entry)
+            fail(entry, STORAGE_FAILED_MESSAGE)
         }
     }
 
-    // Must be called holding [lock].
-    private fun maybeCaptureConfig(entry: EntryStore.OpenEntry, enc: AudioEncoder) {
-        if (configWritten) return
-        val config = enc.config ?: return
-        configWritten = true
-        entry.update { it.copy(codecConfig = Base64.getEncoder().encodeToString(config)) }
+    // Must be called holding [lock]. The encoder's config, if it has produced one and
+    // [configWritten] is still false - null otherwise (nothing yet, or already handled).
+    private fun pendingConfig(enc: AudioEncoder): ByteArray? {
+        if (configWritten) return null
+        return enc.config
     }
 
     // Must be called holding [lock]. Opus packets are length-prefixed (u16 BE) so the frame can hold several;
@@ -166,7 +198,40 @@ class DiaryRecording(
         buffer.write(packet)
     }
 
-    private fun fail(entry: EntryStore.OpenEntry) {
+    // Writes [rawConfig]'s OpusHead (see opusHeadOf) to the entry's meta, outside [lock]
+    // (a meta rewrite, like appendAudio, is storage I/O - never done while holding it), and
+    // marks configWritten on success so later calls stop checking. An unrecognised config
+    // (opusHeadOf returns null) still marks configWritten - there is nothing more sensible to
+    // try for this encoder - and logs a warning instead of storing bytes a reader might
+    // mistake for a real OpusHead. False only on a storage failure, which already called [fail].
+    private fun writeConfig(entry: EntryStore.OpenEntry, rawConfig: ByteArray): Boolean {
+        val head = opusHeadOf(rawConfig)
+        if (head == null) {
+            Log.w(TAG, "entry ${entry.entry.id}: unrecognised opus codec-config (${rawConfig.size} bytes), storing none")
+            synchronized(lock) { configWritten = true }
+            return true
+        }
+        return try {
+            entry.update { it.copy(codecConfig = Base64.getEncoder().encodeToString(head)) }
+            synchronized(lock) { configWritten = true }
+            true
+        } catch (e: IOException) {
+            fail(entry, STORAGE_FAILED_MESSAGE)
+            false
+        }
+    }
+
+    // Idempotent: a second call for an [entry] already handled (open no longer points at
+    // it) does nothing, so write()/flush()/stop() can each reach a failure for the same
+    // recording without double-closing the encoder or double-reporting the state.
+    private fun fail(entry: EntryStore.OpenEntry, message: String) {
+        val enc = synchronized(lock) {
+            if (open !== entry) return
+            val e = activeEncoder
+            open = null
+            activeEncoder = null
+            e
+        }
         audio.stop()
         val durationMs = samplesWritten * 1000 / SAMPLE_RATE
         try {
@@ -174,7 +239,7 @@ class DiaryRecording(
         } catch (ignored: IOException) {
             // Best-effort: the original failure is what the state reports.
         }
-        synchronized(lock) { open = null; activeEncoder = null }
-        mutableState.value = RecState.Failed(entry.entry.id, "Storage is full: the recording was saved up to here")
+        enc?.close()
+        mutableState.value = RecState.Failed(entry.entry.id, message)
     }
 }
