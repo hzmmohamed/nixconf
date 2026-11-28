@@ -321,7 +321,8 @@
         # On the agent's PATH but not an allowed command (/bin/sh would be: it is the terminal shell).
         status, err = machine.execute(brokered("agent-brokered /run/current-system/sw/bin/true 2>&1"))
         assert status == 125 and "not allowed" in err, (status, err)
-        status, err = machine.execute(brokered("fake-brokered exit 0 2>&1", user="op"))
+        # op is not in the socket group (and could not even enter the worktree).
+        status, err = machine.execute(brokered("fake-brokered exit 0 2>&1", user="op", cwd="/tmp"))
         assert status == 126 and "cannot reach the broker" in err, (status, err)
         # beta has no Claude: a run there must not get a config dir.
         out = kv(machine.succeed(brokered("fake-brokered probe", cwd="/var/lib/t3code/projects/beta")))
