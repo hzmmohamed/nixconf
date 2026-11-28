@@ -180,17 +180,27 @@ class EntryStoreTest {
         val open = store.create(Kind.spoken, Codec.opus, "Africa/Cairo")
         val id = open.entry.id
 
-        // Fail on the 4th raw write(): header (1), frame-0 length+ciphertext (2, 3), then the
-        // length prefix of frame 1 (4) - so frame 0 is fully on disk and frame 1 never starts.
-        store.openAudioStream = { f -> FailingAfterWrites(f, failOnCall = 4) }
+        // Fail on the 5th raw write(): header (1), frame-0 length+ciphertext (2, 3), frame-1
+        // length prefix (4, succeeds - these bytes really land on disk), then frame-1's
+        // ciphertext (5). So the failure hits after real bytes of frame 1 are written, which
+        // is what actually exercises the truncate-back-to-position path (failing on call 4
+        // instead would leave nothing of frame 1 to truncate, and the test would pass even
+        // with truncation removed).
+        store.openAudioStream = { f -> FailingAfterWrites(f, failOnCall = 5) }
 
         open.appendAudio("chunk-0".toByteArray())
+        val audioFile = File(File(tmp.root, id), "audio.pdy")
+        val lengthBeforeFailedAppend = audioFile.length()
+
         try {
             open.appendAudio("chunk-1".toByteArray())
             fail("expected the injected write failure to propagate")
         } catch (e: IOException) {
             // expected
         }
+        // Frame 1's length prefix really hit disk (call 4) before ciphertext failed (call 5);
+        // the file must be truncated back, not merely left un-appended-to further.
+        assertEquals(lengthBeforeFailedAppend, audioFile.length())
 
         // The entry is closed for writing: no retry, no reused frame index/nonce.
         try {
@@ -203,6 +213,35 @@ class EntryStoreTest {
         // Exactly one (unreadable-as-garbage) frame made it to disk.
         val frames = store.openForRead(id, device.private).useAudioFrames { seq -> seq.map { String(it) }.toList() }
         assertEquals(listOf("chunk-0"), frames)
+    }
+
+    @Test
+    fun failed_header_write_leaves_no_audio_file() {
+        val store = newStore()
+        val open = store.create(Kind.spoken, Codec.opus, "Africa/Cairo")
+        val id = open.entry.id
+
+        // Fail on the very first raw write(): the audio.pdy header itself.
+        store.openAudioStream = { f -> FailingAfterWrites(f, failOnCall = 1) }
+
+        try {
+            open.appendAudio("chunk-0".toByteArray())
+            fail("expected the injected header-write failure to propagate")
+        } catch (e: IOException) {
+            // expected
+        }
+
+        assertFalse(File(File(tmp.root, id), "audio.pdy").isFile)
+        val frames = store.openForRead(id, device.private).useAudioFrames { seq -> seq.toList() }
+        assertTrue(frames.isEmpty())
+
+        // The entry is closed for writing: no retry.
+        try {
+            open.appendAudio("chunk-1".toByteArray())
+            fail("expected appendAudio to fail fast after a write failure")
+        } catch (e: IOException) {
+            assertEquals("entry closed after a write failure", e.message)
+        }
     }
 
     @Test

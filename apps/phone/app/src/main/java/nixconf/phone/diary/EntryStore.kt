@@ -170,16 +170,20 @@ class EntryStore(private val root: File, private val recipients: () -> List<Reci
             if (failed) throw IOException("entry closed after a write failure")
             if (audioWriter == null) {
                 val key = EntryKey.new(recipients())
-                val out = openAudioStream(File(dir, AUDIO_FILE))
+                val file = File(dir, AUDIO_FILE)
+                val out = openAudioStream(file)
                 try {
                     out.write(key.header())
                     out.fd.sync()
+                    fsyncDir(dir)
                 } catch (e: Exception) {
+                    // Nothing usable made it to disk (or the dir fsync itself failed): drop the
+                    // file rather than leave a header-only audio.pdy a later read can't open.
                     failed = true
                     closeQuietly(out)
+                    file.delete()
                     throw e
                 }
-                fsyncDir(dir)
                 audioOut = out
                 audioWriter = FrameWriter(out, key, ROLE_AUDIO)
             }
