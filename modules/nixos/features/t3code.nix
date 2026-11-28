@@ -59,7 +59,7 @@
       # The CLI signs itself in by opening the server's files (0700), so it
       # has to run as that user. Usage: t3ctl pair --label phone; t3ctl auth
       # session list; t3ctl project add <path>; t3ctl thread start <project> "<msg>".
-      exec ${lib.getExe' pkgs.doas "doas"} -u ${cfg.user} ${lib.getExe' pkgs.coreutils "env"} -i \
+      exec /run/wrappers/bin/doas -u ${cfg.user} ${lib.getExe' pkgs.coreutils "env"} -i \
         ${lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") serviceEnv)} \
         ${t3} --base-dir ${baseDir} "$@"
     '';
