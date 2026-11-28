@@ -43,8 +43,16 @@
         "age1favv7nunf736jmccarlxgc3lqrvpschs6m4xqs733jxdh09z65wqd8xkvk"
       ];
       # Holds bulk uploads on a metered link.
+      # Known gap: the daemon (system user, ProtectHome) can't see the
+      # user's `agent-net set` override, only NetworkManager's metered flag.
+      # Harmless with the dir:// sink; matters once uploads go to S3.
       networkStatusPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.agent-net;
     };
+
+    # On the first deploy ActivityWatch's aw-server (a user unit) may still
+    # hold 127.0.0.1:5600 for a moment; the default 100 ms restart delay
+    # would hit the start limit and leave the daemon failed.
+    systemd.services.attn-daemon.serviceConfig.RestartSec = 5;
 
     services.attn.sensor = {
       enable = true;
@@ -61,6 +69,11 @@
           resumeCommand = idleCommands.active;
         }
       ];
+
+      # A swayidle (re)start (caffeine ending, a switch, a crash) drops any
+      # pending resume, which would leave the sensor's idle flag on while
+      # the user works. Clear it on start; `-`: never block swayidle on it.
+      systemd.user.services.swayidle.Service.ExecStartPre = "-${idleCommands.active}";
 
       # Bound to sway-session.target, not graphical-session.target's start:
       # it needs WAYLAND_DISPLAY, which sway exports only once it runs (the

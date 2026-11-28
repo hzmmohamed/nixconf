@@ -903,5 +903,7 @@ and deploy from a shell with your GitHub SSH key loaded. Then, on each host:
   The sensor's unit sets `PrivateTmp`, which may fail in a user manager: if
   `attn-sensor` is failed with a namespace error, report it (the fix goes in attn's
   `device.nix`).
+  If `attn-daemon` is failed with "address in use" (ActivityWatch still held port
+  5600 during the switch): `doas systemctl restart attn-daemon`.
 - [ ] The old ActivityWatch data (`~/.local/share/activitywatch`) is no longer read;
       keep or delete it as you like.

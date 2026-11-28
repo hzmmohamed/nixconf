@@ -67,6 +67,11 @@
           lib.any (t: t.timeout == 180 && t.command == sensor.idleCommands.idle && t.resumeCommand == sensor.idleCommands.active)
           hm.services.swayidle.timeouts;
         "awatcher user service" = hm.systemd.user.services ? awatcher;
+        # A swayidle restart drops a pending resume: clear the flag on start.
+        "swayidle start clears the sensor's idle flag" =
+          lib.elem "-${sensor.idleCommands.active}" (lib.toList (hm.systemd.user.services.swayidle.Service.ExecStartPre or []));
+        # First deploy: aw-server may still hold 5600 for a moment.
+        "daemon restarts slowly enough to outlast a port clash" = (c.systemd.services.attn-daemon.serviceConfig.RestartSec or null) == 5;
         "no ActivityWatch units" =
           !hm.services.activitywatch.enable
           && !(lib.any (lib.hasPrefix "activitywatch") (lib.attrNames hm.systemd.user.services));
