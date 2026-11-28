@@ -46,6 +46,12 @@ jobs:
         with:
           name: test-results
           path: apps/phone/app/build/test-results/testDebugUnitTest/*.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diary-golden
+          path: apps/phone/app/build/diary-golden/
+          if-no-files-found: ignore
       - name: Alpha signing key (stable across runs, from secrets)
         env:
           KEYSTORE: ${{ secrets.POLLEN_ALPHA_KEYSTORE }}
