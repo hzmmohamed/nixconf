@@ -252,7 +252,9 @@
             UMask = "0002";
           };
           script = ''
-            install -d -m 700 /var/lib/t3code/.t3/userdata/attachments /var/lib/t3code/.t3/userdata/secrets
+            # T3 makes attachments/ with its umask (0002) and secrets/ 0700.
+            install -d -m 775 /var/lib/t3code/.t3/userdata/attachments
+            install -d -m 700 /var/lib/t3code/.t3/userdata/secrets
             echo hi > /var/lib/t3code/.t3/userdata/attachments/x.txt
           '';
         };
