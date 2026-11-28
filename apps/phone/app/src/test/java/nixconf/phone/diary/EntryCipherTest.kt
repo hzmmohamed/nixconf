@@ -202,6 +202,34 @@ class EntryCipherTest {
         assertEquals(1, out.size)
     }
 
+    // Device recipients wrap with OAEP_DEVICE (MGF1-SHA1, what AndroidKeyStore supports
+    // before API 34); everyone else (recovery) keeps OAEP_SHA256. Each must unwrap with
+    // its own spec, and the wrong one fails - not silently succeed with garbage.
+    @Test
+    fun per_recipient_oaep_roundtrip() {
+        val recipients = listOf(
+            Recipient("device:diary-device-v1", device.public, OAEP_DEVICE),
+            Recipient("recovery:abcd", recovery.public, OAEP_SHA256),
+        )
+        val key = EntryKey.new(recipients)
+        val bytes = sealed(key, ROLE_META, frames(1)).toByteArray()
+
+        val deviceInput = ByteArrayInputStream(bytes)
+        val deviceKey = EntryKey.open(readHeader(deviceInput), device.private, "device:", OAEP_DEVICE)
+        assertEquals("frame-0-payload", String(FrameReader(deviceInput, deviceKey, ROLE_META).next()))
+
+        val recoveryInput = ByteArrayInputStream(bytes)
+        val recoveryKey = EntryKey.open(readHeader(recoveryInput), recovery.private, "recovery:", OAEP_SHA256)
+        assertEquals("frame-0-payload", String(FrameReader(recoveryInput, recoveryKey, ROLE_META).next()))
+
+        try {
+            EntryKey.open(readHeader(ByteArrayInputStream(bytes)), device.private, "device:", OAEP_SHA256)
+            assertFalse("expected the wrong OAEP spec to fail to unwrap", true)
+        } catch (e: KeyUnavailable) {
+            // expected
+        }
+    }
+
     @Test(expected = IllegalStateException::class)
     fun opened_key_cannot_write() {
         val key = EntryKey.new(recipients())

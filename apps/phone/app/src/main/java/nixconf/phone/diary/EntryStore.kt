@@ -7,6 +7,7 @@ import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
 import java.security.PrivateKey
+import javax.crypto.spec.OAEPParameterSpec
 
 // One directory per entry: <root>/<id>/meta.pdy and <root>/<id>/audio.pdy
 // (sealed; audio only present once a frame has been written). Each file
@@ -39,7 +40,13 @@ private fun fsyncDir(dir: File) {
  * serialized through [metaLock] so two callers (e.g. the recording thread doing [OpenEntry.update]
  * and the UI thread calling [setHidden]) never race on the same meta.pdy.tmp.
  */
-class EntryStore(private val root: File, private val recipients: () -> List<Recipient>, private val now: () -> Long) {
+class EntryStore(
+    private val root: File,
+    private val recipients: () -> List<Recipient>,
+    private val now: () -> Long,
+    /** OAEP spec to unwrap the device recipient with (Task 6: [OAEP_DEVICE] in production); defaults to [OAEP_SHA256] so existing callers/tests, which wrap with that spec, keep working. */
+    private val openOaep: OAEPParameterSpec = OAEP_SHA256,
+) {
     /** The entry currently being recorded, if any. [list]/[openForRead] skip/un-interrupt it. */
     @Volatile var activeId: String? = null
 
@@ -143,7 +150,7 @@ class EntryStore(private val root: File, private val recipients: () -> List<Reci
     private fun decodeMeta(file: File, privateKey: PrivateKey): Entry =
         FileInputStream(file).use { input ->
             val header = readHeader(input)
-            val key = EntryKey.open(header, privateKey, DEVICE_PREFIX)
+            val key = EntryKey.open(header, privateKey, DEVICE_PREFIX, openOaep)
             val reader = FrameReader(input, key, ROLE_META)
             if (!reader.hasNext()) throw IOException("meta has no frame")
             DiaryJson.decodeFromString(Entry.serializer(), String(reader.next(), Charsets.UTF_8))
@@ -240,7 +247,7 @@ class EntryStore(private val root: File, private val recipients: () -> List<Reci
             if (!file.isFile) return block(emptySequence())
             return FileInputStream(file).use { input ->
                 val header = readHeader(input)
-                val key = EntryKey.open(header, privateKey, DEVICE_PREFIX)
+                val key = EntryKey.open(header, privateKey, DEVICE_PREFIX, openOaep)
                 block(FrameReader(input, key, ROLE_AUDIO).asSequence())
             }
         }

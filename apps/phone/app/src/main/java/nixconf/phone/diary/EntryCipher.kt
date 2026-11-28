@@ -42,10 +42,22 @@ private const val NONCE_PREFIX_LEN = 4
 private const val KEY_BYTES = 32
 private const val GCM_TAG_BITS = 128
 private const val GCM_TAG_BYTES = GCM_TAG_BITS / 8
-private val OAEP_SPEC = OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT)
 
-/** A public key an entry key is wrapped to; [id] e.g. "device:diary-device-v1" or "recovery:<fingerprint>". */
-class Recipient(val id: String, val publicKey: PublicKey)
+/**
+ * OAEP-SHA256/MGF1-SHA256: what the recovery key (and the golden fixture / Python recovery
+ * tool, which never change) use, and the default for [EntryKey.open] so existing callers that
+ * don't pass [EntryKey.open]'s oaep keep working.
+ */
+val OAEP_SHA256: OAEPParameterSpec = OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT)
+
+/**
+ * OAEP-SHA256/MGF1-SHA1: what AndroidKeyStore supports for RSA-OAEP before API 34 (minSdk is
+ * 31) - the device key's recipients use this spec instead of [OAEP_SHA256].
+ */
+val OAEP_DEVICE: OAEPParameterSpec = OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT)
+
+/** A public key an entry key is wrapped to; [id] e.g. "device:diary-device-v1" or "recovery:<fingerprint>". [oaep] is the spec this recipient's wrap/unwrap must use (device recipients use [OAEP_DEVICE]; everyone else, [OAEP_SHA256]). */
+class Recipient(val id: String, val publicKey: PublicKey, val oaep: OAEPParameterSpec = OAEP_SHA256)
 
 /** The header as parsed off the wire: each recipient's still-wrapped key, and the file's nonce prefix. */
 class Header(val recipients: Map<String, ByteArray>, val noncePrefix: ByteArray)
@@ -119,7 +131,7 @@ class EntryKey private constructor(
             val wrapped = LinkedHashMap<String, ByteArray>()
             for (r in recipients) {
                 val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
-                cipher.init(Cipher.ENCRYPT_MODE, r.publicKey, OAEP_SPEC)
+                cipher.init(Cipher.ENCRYPT_MODE, r.publicKey, r.oaep)
                 wrapped[r.id] = cipher.doFinal(secret)
             }
             return EntryKey(secret, noncePrefix, wrapped, canEncrypt = true)
@@ -128,15 +140,17 @@ class EntryKey private constructor(
         /**
          * Unwraps the entry key from [header] using [privateKey], trying every
          * recipient whose id starts with [idPrefix] ("device:" or "recovery:").
+         * [oaep] must match how that recipient's key was wrapped ([OAEP_DEVICE] for
+         * a device recipient, [OAEP_SHA256] - the default - for everyone else).
          * Throws [KeyUnavailable] when none of them unwrap.
          */
-        fun open(header: Header, privateKey: PrivateKey, idPrefix: String): EntryKey {
+        fun open(header: Header, privateKey: PrivateKey, idPrefix: String, oaep: OAEPParameterSpec = OAEP_SHA256): EntryKey {
             var lastError: Throwable? = null
             for ((id, w) in header.recipients) {
                 if (!id.startsWith(idPrefix)) continue
                 try {
                     val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
-                    cipher.init(Cipher.DECRYPT_MODE, privateKey, OAEP_SPEC)
+                    cipher.init(Cipher.DECRYPT_MODE, privateKey, oaep)
                     val secret = cipher.doFinal(w)
                     return EntryKey(secret, header.noncePrefix, header.recipients, canEncrypt = false)
                 } catch (e: Exception) {
