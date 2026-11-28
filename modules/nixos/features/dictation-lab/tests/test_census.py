@@ -9,6 +9,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -108,6 +109,22 @@ class Census(unittest.TestCase):
         self.assertNotIn("QUIXOTIC", plain)
         self.assertNotIn("hormonia", plain)
         self.assertIn("QUIXOTIC", cli("--pairs"))
+
+    def test_data_dir_defaults_to_env(self):
+        out = io.StringIO()
+        old_argv, sys.argv = sys.argv, ["dictate-lab", "census"]
+        old_env = os.environ.get("DICTATE_LAB_DATA")
+        os.environ["DICTATE_LAB_DATA"] = self.data
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                lab.main()
+        finally:
+            sys.argv = old_argv
+            if old_env is None:
+                os.environ.pop("DICTATE_LAB_DATA")
+            else:
+                os.environ["DICTATE_LAB_DATA"] = old_env
+        self.assertIn("by kind:", out.getvalue())
 
 
 if __name__ == "__main__":

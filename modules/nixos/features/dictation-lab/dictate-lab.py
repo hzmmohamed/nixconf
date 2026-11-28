@@ -945,7 +945,10 @@ def main():
     m.add_argument("--sessions", required=True, type=Path)
     m.add_argument("--days", type=int, default=3)
     c = sub.add_parser("census")
-    c.add_argument("--data-dir", required=True, type=Path)
+    # Default: the hub's store (dictation-lab.nix dataDir), so `dictate-lab
+    # census` works as typed on butternut.
+    c.add_argument("--data-dir", type=Path,
+                   default=Path(os.environ.get("DICTATE_LAB_DATA") or Path.home() / ".local/state/dictation/lab"))
     c.add_argument("--weeks", type=int, default=8)
     c.add_argument("--origin")
     c.add_argument("--tier", choices=["work", "personal"])
