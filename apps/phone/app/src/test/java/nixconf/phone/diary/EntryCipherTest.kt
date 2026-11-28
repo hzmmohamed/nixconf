@@ -118,22 +118,22 @@ class EntryCipherTest {
         val headerLen = key.header().size
 
         // Frame layout: each is u32 len | ct (ct = plaintext + 16-byte GCM tag).
+        // Swap the first two frames (index 0 and index 1).
         val frameLen = 4 + plains[0].size + 16
-        val frame1 = bytes.copyOfRange(headerLen, headerLen + frameLen)
-        val frame2 = bytes.copyOfRange(headerLen + frameLen, headerLen + 2 * frameLen)
+        val frame0 = bytes.copyOfRange(headerLen, headerLen + frameLen)
+        val frame1 = bytes.copyOfRange(headerLen + frameLen, headerLen + 2 * frameLen)
         val swapped = bytes.copyOf()
-        System.arraycopy(frame2, 0, swapped, headerLen, frameLen)
-        System.arraycopy(frame1, 0, swapped, headerLen + frameLen, frameLen)
+        System.arraycopy(frame1, 0, swapped, headerLen, frameLen)
+        System.arraycopy(frame0, 0, swapped, headerLen + frameLen, frameLen)
 
         val input = ByteArrayInputStream(swapped)
         val header = readHeader(input)
         val readKey = EntryKey.open(header, device.private, "device:")
         val out = FrameReader(input, readKey, ROLE_AUDIO).asSequence().toList()
 
-        // Frame 0 is untouched and still reads; the swapped index-1 slot now
-        // holds what was encrypted under AAD index 2, so it fails there.
-        assertEquals(1, out.size)
-        assertEquals(String(plains[0]), String(out[0]))
+        // Frame index 0's slot now holds what was encrypted under AAD index 1,
+        // so even the first frame fails authentication: nothing is yielded.
+        assertEquals(0, out.size)
     }
 
     @Test
