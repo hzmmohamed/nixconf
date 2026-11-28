@@ -143,7 +143,7 @@
 
     # Python helpers shared by both scripts.
     pyCommon = ''
-      import json, re, time
+      import json
 
       def as_user(user, cmd):
           return f"runuser -u {user} -- sh -c {json.dumps(cmd)}"
