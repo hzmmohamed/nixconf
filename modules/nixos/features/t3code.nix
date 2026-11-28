@@ -61,7 +61,7 @@
       # session list; t3ctl project add <path>; t3ctl thread start <project> "<msg>".
       exec /run/wrappers/bin/doas -u ${cfg.user} ${lib.getExe' pkgs.coreutils "env"} -i \
         ${lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") serviceEnv)} \
-        ${t3} --base-dir ${baseDir} "$@"
+        ${t3} "$@"
     '';
   in {
     options.services.t3code = {
