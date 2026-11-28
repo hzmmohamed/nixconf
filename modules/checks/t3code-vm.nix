@@ -305,10 +305,11 @@
         machine.succeed(as_user("agent-alpha", "grep -q 'directory = /var/lib/t3code/projects/alpha' ~/.gitconfig"))
 
         # 6: lifetime. Killing the wrapper's process group as t3 stops the unit.
-        machine.succeed(brokered("setsid fake-brokered sleep 300 </dev/null >/dev/null 2>&1 & sleep 3"))
-        machine.succeed("systemctl list-units --no-legend 'agent-alpha-*' | grep -q service")
+        # The wrapper runs where T3 would run it: as t3, in its own cgroup (a stand-in for T3's scope).
+        machine.succeed(f"systemd-run --unit=t3-stand-in --uid=t3 --working-directory={wt} -- fake-brokered sleep 300")
+        machine.wait_until_succeeds("systemctl list-units --no-legend 'agent-alpha-*' | grep -q service", timeout=30)
         machine.succeed("pgrep -u agent-alpha -x sleep")
-        machine.succeed("pkill -KILL -u t3 -f agent-brokered")
+        machine.succeed("systemctl kill -s KILL t3-stand-in.service")
         machine.wait_until_fails("systemctl list-units --no-legend 'agent-alpha-*' | grep -q service", timeout=30)
         machine.wait_until_fails("pgrep -u agent-alpha -x sleep", timeout=30)
 
