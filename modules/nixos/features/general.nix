@@ -36,6 +36,12 @@
           $6$cH3.3pfi3t/.1q.y$xsVbp6gVp2OtOTDsJaPZga1wvHCBOrMwOEu.Cn/gGQRII8sqs5pOIprNY4Lobkax5PmodprHGhDtPVvIk6IIi1'';
     };
 
+    # Yama: ptrace only of your own descendants, so one process of the user
+    # can't attach to another (an agent to the browser, an editor, ssh-agent).
+    # 1 is already the kernel default; pinned so nothing lowers it quietly.
+    # A debugger attaches by starting the program (`gdb ./prog`), or via doas.
+    boot.kernel.sysctl."kernel.yama.ptrace_scope" = 1;
+
     persistance.data.directories = [
       "nixconf"
 

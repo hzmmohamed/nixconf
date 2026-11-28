@@ -25,6 +25,7 @@
     agents = config.preferences.agents;
     cfg = agents.opencode;
     user = config.preferences.user.name;
+    home = config.users.users.${user}.home;
     system = pkgs.stdenv.hostPlatform.system;
     llm = inputs.llm-agents.packages.${system};
     # Same Claude Code as the VSCodium extension and the HM `claude` (unwrapped:
@@ -150,7 +151,7 @@
       default_agent = "build";
       instructions = ["${guidelinesFile}"];
 
-      # Last match wins; unmatched = ask. Mirrors agent-common's Claude denies.
+      # Last match wins; unmatched = ask.
       permissions = [
         {
           action = "external_directory";
@@ -179,21 +180,32 @@
         }
       ];
       # Policies can only turn an effect into deny and outrank projects and
-      # "allow always".
-      policies =
-        map (cmd: {
+      # "allow always". Same lists as Claude's managed denies
+      # (preferences.agents.deny). A policy matches "<action>:<resource>"
+      # with `*` = any text; a read/edit resource is the absolute path
+      # (relative only inside the session's project), and policies don't
+      # expand `~`, so paths are spelled out here.
+      policies = let
+        deny = resource: {
           action = "tool.use";
-          resource = "shell:${cmd}";
+          inherit resource;
           effect = "deny";
-        }) [
-          "sudo *"
-          "doas *"
-          "rm -r *"
-          "rm -rf *"
-          "nix copy *"
-          "git push --force*"
-          "git push -f *"
-        ];
+        };
+        abs = p:
+          if lib.hasPrefix "~/" p
+          then "${home}/${lib.removePrefix "~/" p}"
+          else p;
+        glob = p:
+          if lib.hasInfix "*" p
+          then abs p
+          else "${abs p}/*";
+      in
+        map (cmd: deny "shell:${cmd}") (agents.deny.commands
+          ++ [
+            "git push --force*"
+            "git push -f *"
+          ])
+        ++ lib.concatMap (p: [(deny "read:${glob p}") (deny "edit:${glob p}")]) agents.deny.paths;
 
       compaction = {
         auto = true;
