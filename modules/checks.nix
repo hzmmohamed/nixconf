@@ -13,6 +13,11 @@
 # has exactly the shape the app parses (data classes of apps/phone/…/
 # profile/Profile.kt, walked by dictation/phone-profile-check.py) and the
 # values it relies on (version, servers, four hashed Parakeet files).
+#
+# attn-wiring: hazel and butternut run attn instead of ActivityWatch (the
+# attn feature): daemon + sensor, a dir:// sink, agent-net for the metered
+# policy, swayidle's extra idle/resume entry, awatcher, the fish cwd hook,
+# SWAYSOCK in the user manager, distinct device ids, no ActivityWatch units.
 {
   lib,
   self,
@@ -43,6 +48,41 @@
       };
     # butternut serves the phone profile (dictation-server, phone.enable).
     phoneProfile = self.nixosConfigurations.butternut.config.preferences.dictation-server.phone.profile;
+
+    attnHosts = ["hazel" "butternut"];
+    attnAsserts = h: let
+      c = self.nixosConfigurations.${h}.config;
+      hm = c.home-manager.users.${c.preferences.user.name};
+      dev = c.services.attn.device;
+      sensor = c.services.attn.sensor;
+      noCtx = builtins.unsafeDiscardStringContext;
+      checks = {
+        "daemon and sensor enabled" = dev.enable && sensor.enable;
+        "sink is the local dir" = dev.sink == "dir:///var/lib/attn/sink";
+        "at least one recipient" = dev.recipients != [];
+        "agent-net on the daemon's PATH" = lib.any (p: (p.pname or p.name) == "agent-net") c.systemd.services.attn-daemon.path;
+        "daemon may open AF_NETLINK" = lib.hasInfix "AF_NETLINK" (noCtx c.systemd.units."attn-daemon.service".text);
+        "swayidle keeps lock + screen-off and adds attn" = builtins.length hm.services.swayidle.timeouts == 3;
+        "swayidle tells the sensor about idle" =
+          lib.any (t: t.timeout == 180 && t.command == sensor.idleCommands.idle && t.resumeCommand == sensor.idleCommands.active)
+          hm.services.swayidle.timeouts;
+        "awatcher user service" = hm.systemd.user.services ? awatcher;
+        # A swayidle restart drops a pending resume: clear the flag on start.
+        "swayidle start clears the sensor's idle flag" =
+          lib.elem "-${sensor.idleCommands.active}" (lib.toList (hm.systemd.user.services.swayidle.Service.ExecStartPre or []));
+        # First deploy: aw-server may still hold 5600 for a moment.
+        "daemon restarts slowly enough to outlast a port clash" = (c.systemd.services.attn-daemon.serviceConfig.RestartSec or null) == 5;
+        "no ActivityWatch units" =
+          !hm.services.activitywatch.enable
+          && !(lib.any (lib.hasPrefix "activitywatch") (lib.attrNames hm.systemd.user.services));
+        "Clockify extension gone" = !(lib.any (e: e.id == "pmjeegjhjdlccodhacdgbgfagbpmccpe") hm.programs.chromium.extensions);
+        "SWAYSOCK imported into the user manager" =
+          hm.wayland.windowManager.sway.systemd.enable && lib.elem "SWAYSOCK" hm.wayland.windowManager.sway.systemd.variables;
+        "fish cwd hook" = lib.hasInfix "attn-sensor.sock" (noCtx c.programs.fish.interactiveShellInit);
+      };
+    in
+      lib.mapAttrsToList (name: ok: lib.assertMsg ok "attn-wiring: ${h}: ${name}") checks;
+    attnDeviceIds = map (h: self.nixosConfigurations.${h}.config.services.attn.device.deviceId) attnHosts;
   in {
     checks =
       lib.mapAttrs' (name: nixos:
@@ -102,6 +142,10 @@
               ${phoneProfile}
             cp ${phoneProfile} $out
           '';
+
+        attn-wiring = assert lib.all lib.id (lib.concatMap attnAsserts attnHosts);
+        assert lib.assertMsg (lib.unique attnDeviceIds == attnDeviceIds) "attn-wiring: device ids must differ between hosts";
+          pkgs.runCommand "attn-wiring" {} "touch $out";
       };
   };
 }

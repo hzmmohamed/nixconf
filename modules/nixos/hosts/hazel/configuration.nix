@@ -43,7 +43,7 @@
       self.nixosModules.office
       self.nixosModules.rbw
       self.nixosModules.vault
-      self.nixosModules.activitywatch
+      self.nixosModules.attn
       self.nixosModules.kdeconnect
       self.nixosModules.shared-zotero
       self.nixosModules.gimp
@@ -85,6 +85,9 @@
       inputs.disko.nixosModules.disko
       self.diskoConfigurations.hostHazel
     ];
+
+    # attn device id: an identifier, not a secret.
+    services.attn.device.deviceId = "56cc07c4-6dd9-4934-b0bb-2b3e2ce365c4";
 
     boot = {
       kernelPackages = pkgs.linuxPackages_latest;

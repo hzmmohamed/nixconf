@@ -4,7 +4,7 @@
 # `flake.nixosModules.agent-common` (see agent-common.nix for the rest of
 # that module; files are merged the same way modules/nixos/hosts/butternut/*.nix
 # all contribute to `hostButternut`).
-{...}: {
+{self, ...}: {
   flake.nixosModules.agent-common = {
     config,
     lib,
@@ -27,7 +27,8 @@
       '';
     mkTool = mkToolWith [];
 
-    agentNet = mkTool "agent-net" ./agent-env/agent_net.py [pkgs.networkmanager pkgs.iproute2];
+    # A flake package (modules/packages/agent-net.nix): attn takes it too.
+    agentNet = self.packages.${pkgs.stdenv.hostPlatform.system}.agent-net;
     # agent-git: where an agent stands in git (worktree/branch/dirty) for the
     # SessionStart hook, a Stop hook that catches uncommitted thread work,
     # and `agent-push` (thread branch only) since `git push` stays denied.
