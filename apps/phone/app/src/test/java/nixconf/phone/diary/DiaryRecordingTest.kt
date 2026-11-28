@@ -23,7 +23,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /** A FileOutputStream that throws on its [failOnCall]-th raw write() call; see EntryStoreTest for the raw-write accounting. */
-private class FailingAfterWrites(file: File, private val failOnCall: Int) : FileOutputStream(file) {
+private class DiaryFailingAfterWrites(file: File, private val failOnCall: Int) : FileOutputStream(file) {
     private var calls = 0
 
     override fun write(b: ByteArray, off: Int, len: Int) {
@@ -149,7 +149,7 @@ class DiaryRecordingTest {
         val store = newStore()
         // 1st appendAudio (header + frame-0 len/ct: calls 1-3) succeeds; the 2nd's
         // first raw write (frame-1's length prefix, call 4) fails.
-        store.openAudioStream = { f -> FailingAfterWrites(f, failOnCall = 4) }
+        store.openAudioStream = { f -> DiaryFailingAfterWrites(f, failOnCall = 4) }
         val audio = FakeAudioSource()
         val rec = DiaryRecording(store, audio, { PcmPassthrough() }, { "Africa/Cairo" }, flushMs = 2000, now = { now })
 
