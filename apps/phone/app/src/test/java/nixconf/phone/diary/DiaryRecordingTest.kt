@@ -17,6 +17,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
@@ -127,6 +128,15 @@ private class ThrowingEncoder : AudioEncoder {
     override fun close() = Unit
 }
 
+/** Like [ThrowingEncoder], but close() blows up too - fail()'s own cleanup must not let that escape or skip reporting Failed. */
+private class CloseThrowingEncoder : AudioEncoder {
+    override val codec = Codec.pcm_s16le
+    override val config: ByteArray? = null
+    override fun encode(samples: ShortArray, n: Int): List<ByteArray> = throw IllegalStateException("codec died (test)")
+    override fun drain(): List<ByteArray> = emptyList()
+    override fun close(): Unit = throw IllegalStateException("close also failed (test)")
+}
+
 class DiaryRecordingTest {
     companion object {
         private lateinit var device: KeyPair
@@ -141,6 +151,13 @@ class DiaryRecordingTest {
     }
 
     @get:Rule val tmp = TemporaryFolder()
+
+    // android.util.Log is a stub on the JVM test runner ("not mocked"); DiaryRecording logs
+    // through DiaryLog instead, so tests replace its sink rather than touch the real Log.
+    @Before
+    fun silenceDiaryLog() {
+        DiaryLog.sink = { _, _ -> }
+    }
 
     private val now = 1_795_000_000_000L
     private val sampleRate = 16000
@@ -274,5 +291,22 @@ class DiaryRecordingTest {
         assertTrue(state is RecState.Failed)
         assertEquals("Recording stopped: the audio encoder failed", (state as RecState.Failed).message)
         assertFalse(audio.running)
+    }
+
+    @Test
+    fun close_throwing_still_fails_cleanly() {
+        val store = newStore()
+        val audio = FakeAudioSource()
+        val rec = DiaryRecording(store, audio, { CloseThrowingEncoder() }, { "Africa/Cairo" }, now = { now })
+
+        rec.start()
+        // encode() throws -> fail() -> closing the encoder also throws: must not escape write()
+        // (it would otherwise propagate up through the recorder thread's own call stack), and
+        // Failed must still be reported.
+        audio.push(samples, chunk = 1600, flushEvery = 2 * sampleRate)
+
+        val state = rec.state.value
+        assertTrue(state is RecState.Failed)
+        assertEquals("Recording stopped: the audio encoder failed", (state as RecState.Failed).message)
     }
 }

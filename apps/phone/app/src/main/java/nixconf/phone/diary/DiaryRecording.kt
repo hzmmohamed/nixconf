@@ -1,6 +1,5 @@
 package nixconf.phone.diary
 
-import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.Base64
@@ -18,7 +17,6 @@ sealed interface RecState {
     data class Failed(val entryId: String?, val message: String) : RecState
 }
 
-private const val TAG = "DiaryRecording"
 private const val SAMPLE_RATE = 16000
 
 // User-facing failure copy: fixed text, never the underlying exception's message (that may
@@ -85,7 +83,7 @@ class DiaryRecording(
             mutableState.value = RecState.Failed(null, START_FAILED_MESSAGE)
             return
         }
-        Log.i(TAG, "entry ${openEntry.entry.id}: codec ${enc.codec}")
+        DiaryLog.i("entry ${openEntry.entry.id}: codec ${enc.codec}")
         synchronized(lock) {
             open = openEntry
             activeEncoder = enc
@@ -203,11 +201,13 @@ class DiaryRecording(
     // marks configWritten on success so later calls stop checking. An unrecognised config
     // (opusHeadOf returns null) still marks configWritten - there is nothing more sensible to
     // try for this encoder - and logs a warning instead of storing bytes a reader might
-    // mistake for a real OpusHead. False only on a storage failure, which already called [fail].
+    // mistake for a real OpusHead. False on a failure, which already called [fail] - storage
+    // for an IOException (a real disk failure), the encoder copy for anything else (a crash
+    // writing meta is not a disk-full story, but it is not a storage one either).
     private fun writeConfig(entry: EntryStore.OpenEntry, rawConfig: ByteArray): Boolean {
         val head = opusHeadOf(rawConfig)
         if (head == null) {
-            Log.w(TAG, "entry ${entry.entry.id}: unrecognised opus codec-config (${rawConfig.size} bytes), storing none")
+            DiaryLog.w("entry ${entry.entry.id}: unrecognised opus codec-config (${rawConfig.size} bytes), storing none")
             synchronized(lock) { configWritten = true }
             return true
         }
@@ -218,12 +218,19 @@ class DiaryRecording(
         } catch (e: IOException) {
             fail(entry, STORAGE_FAILED_MESSAGE)
             false
+        } catch (e: RuntimeException) {
+            fail(entry, ENCODER_FAILED_MESSAGE)
+            false
         }
     }
 
     // Idempotent: a second call for an [entry] already handled (open no longer points at
     // it) does nothing, so write()/flush()/stop() can each reach a failure for the same
-    // recording without double-closing the encoder or double-reporting the state.
+    // recording without double-closing the encoder or double-reporting the state. The state
+    // is set to Failed *before* closing the encoder: a second failure while closing (the
+    // encoder is already in a bad enough state to have failed once) must not stop the first
+    // one from ever being reported, and must not escape to whichever thread called [fail]
+    // (the recorder thread, for a failure from write()/flush()).
     private fun fail(entry: EntryStore.OpenEntry, message: String) {
         val enc = synchronized(lock) {
             if (open !== entry) return
@@ -239,7 +246,11 @@ class DiaryRecording(
         } catch (ignored: IOException) {
             // Best-effort: the original failure is what the state reports.
         }
-        enc?.close()
         mutableState.value = RecState.Failed(entry.entry.id, message)
+        try {
+            enc?.close()
+        } catch (e: RuntimeException) {
+            DiaryLog.w("entry ${entry.entry.id}: closing the encoder after a failure also failed: ${e.javaClass.simpleName}")
+        }
     }
 }

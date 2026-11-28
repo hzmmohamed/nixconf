@@ -52,7 +52,12 @@ private val AOPUSHDR_MAGIC = "AOPUSHDR".toByteArray(Charsets.US_ASCII)
  * though the encoder that produces its input is not (see OpusHeadTest).
  */
 fun opusHeadOf(config: ByteArray): ByteArray? {
-    if (startsWith(config, OPUS_HEAD_MAGIC)) return config
+    if (startsWith(config, OPUS_HEAD_MAGIC)) {
+        // A raw buffer has no declared length (unlike the marker format below): trim to the
+        // OpusHead's own length, in case the encoder padded the buffer or appended anything else.
+        val len = minOf(opusHeadLength(config), config.size)
+        return config.copyOfRange(0, len)
+    }
     if (!startsWith(config, AOPUSHDR_MAGIC)) return null
     val lenStart = AOPUSHDR_MAGIC.size
     val payloadStart = lenStart + 8
@@ -60,6 +65,18 @@ fun opusHeadOf(config: ByteArray): ByteArray? {
     val len = readU64LE(config, lenStart)
     if (len < 0 || len > config.size - payloadStart) return null
     return config.copyOfRange(payloadStart, payloadStart + len.toInt())
+}
+
+// The length of the OpusHead (RFC 7845 s.5.1) starting at offset 0 of [bytes]: the fixed
+// 19-byte header up to and including the channel mapping family byte, plus - only when
+// that family is non-zero - 2 bytes (stream count, coupled count) and one byte per channel.
+private fun opusHeadLength(bytes: ByteArray): Int {
+    if (bytes.size < 19) return bytes.size
+    val family = bytes[18].toInt() and 0xFF
+    if (family == 0) return 19
+    if (bytes.size < 20) return bytes.size
+    val channelCount = bytes[9].toInt() and 0xFF
+    return 21 + channelCount
 }
 
 private fun startsWith(bytes: ByteArray, prefix: ByteArray): Boolean =
@@ -115,14 +132,16 @@ class MediaCodecOpusEncoder(
     override fun encode(samples: ShortArray, n: Int): List<ByteArray> {
         val bytes = ByteArray(n * 2)
         ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(samples, 0, n)
-        feed(bytes, endOfStream = false)
-        return drainAvailable(waitForEnd = false)
+        // feed() may itself drain packets (to free an input buffer while stalled); those came
+        // first, in time, so they go ahead of what drainAvailable collects afterwards here.
+        val drainedWhileFeeding = feed(bytes, endOfStream = false)
+        return drainedWhileFeeding + drainAvailable(waitForEnd = false)
     }
 
     /** Signals end of stream and returns whatever packets the codec still had buffered. */
     override fun drain(): List<ByteArray> {
-        feed(ByteArray(0), endOfStream = true)
-        return drainAvailable(waitForEnd = true)
+        val drainedWhileFeeding = feed(ByteArray(0), endOfStream = true)
+        return drainedWhileFeeding + drainAvailable(waitForEnd = true)
     }
 
     override fun close() {
@@ -140,13 +159,16 @@ class MediaCodecOpusEncoder(
     // end-of-stream marker itself) has actually been queued. Bounded: no input buffer
     // becoming free for DEADLINE_NS straight gives up loudly (an encoder this stuck is
     // not going to recover) rather than silently dropping audio or spinning forever.
-    private fun feed(bytes: ByteArray, endOfStream: Boolean) {
+    // Returns whatever packets those in-between drains collected - they must not be
+    // dropped (a stall then recovering is not a reason to lose audio).
+    private fun feed(bytes: ByteArray, endOfStream: Boolean): List<ByteArray> {
+        val drained = mutableListOf<ByteArray>()
         var offset = 0
         var deadline = System.nanoTime() + NO_PROGRESS_NS
         while (offset < bytes.size || (endOfStream && offset == 0 && bytes.isEmpty())) {
             val index = mediaCodec.dequeueInputBuffer(TIMEOUT_US)
             if (index < 0) {
-                drainAvailable(waitForEnd = false) // may free an input buffer
+                drained += drainAvailable(waitForEnd = false) // may free an input buffer
                 check(System.nanoTime() < deadline) { "MediaCodec: no input buffer available" }
                 continue
             }
@@ -160,8 +182,9 @@ class MediaCodecOpusEncoder(
             mediaCodec.queueInputBuffer(index, 0, toWrite, presentationUs, if (eos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
             samplesFed += toWrite / 2 // PCM16 mono: 2 bytes/sample
             offset += toWrite
-            if (eos) return // end-of-stream queued
+            if (eos) return drained // end-of-stream queued
         }
+        return drained
     }
 
     // Drains every output buffer the codec has ready. With [waitForEnd], keeps

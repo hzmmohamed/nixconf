@@ -24,6 +24,26 @@ class OpusHeadTest {
     }
 
     @Test
+    fun raw_opushead_with_trailing_bytes_trims_to_the_header() {
+        // A raw buffer has no declared length, unlike the marker format: opusHeadOf must work
+        // out the real OpusHead length itself and trim, not return whatever padding/extra
+        // bytes the encoder's buffer happened to carry alongside it.
+        val config = head + byteArrayOf(9, 9, 9, 9)
+        assertArrayEquals(head, opusHeadOf(config))
+    }
+
+    @Test
+    fun raw_opushead_with_channel_mapping_includes_the_mapping_table() {
+        // Channel mapping family != 0: the header extends past the fixed 19 bytes with a
+        // stream count, a coupled count, and one mapping byte per channel (2, here).
+        val fixedPart = "OpusHead".toByteArray(Charsets.US_ASCII) + byteArrayOf(1, 2, 0, 1, 56, 1, 0, 0, 0, 0, 1)
+        val mappingTable = byteArrayOf(1, 0, 0, 1) // stream count, coupled count, 2-channel mapping
+        val expected = fixedPart + mappingTable
+        val config = expected + byteArrayOf(9, 9) // trailing bytes, as above
+        assertArrayEquals(expected, opusHeadOf(config))
+    }
+
+    @Test
     fun marker_format_extracts_opushead_payload() {
         // AOSP codec2's wrapped format: AOPUSHDR|len|OpusHead, then (ignored) AOPUSDLY/AOPUSPRL blocks.
         val hdrBlock = "AOPUSHDR".toByteArray(Charsets.US_ASCII) + u64le(head.size.toLong()) + head
