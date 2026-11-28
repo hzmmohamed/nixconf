@@ -69,6 +69,12 @@
 
     devenv.url = "github:cachix/devenv";
     treefmt-nix.url = "github:numtide/treefmt-nix";
+
+    # attn, the attention tracker (features/attn.nix). Private repo: fetched
+    # over the owner's GitHub SSH key. Deliberately NOT following our
+    # nixpkgs: attn's own package keeps the store path attn's CI builds, so a
+    # cache it pushes to can serve deploys.
+    attn.url = "git+ssh://git@github.com/hzmmohamed/attn";
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake {inherit inputs;} (inputs.import-tree ./modules);

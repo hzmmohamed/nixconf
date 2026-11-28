@@ -70,7 +70,7 @@
       self.nixosModules.dictation-server
       self.nixosModules.dictation-lab
       self.nixosModules.openrgb
-      self.nixosModules.activitywatch
+      self.nixosModules.attn
       self.nixosModules.spotify
       self.nixosModules.gis
       self.nixosModules.gaming
@@ -91,6 +91,9 @@
       inputs.disko.nixosModules.disko
       self.diskoConfigurations.hostButternut
     ];
+
+    # attn device id: an identifier, not a secret.
+    services.attn.device.deviceId = "793382ed-6717-438c-a445-71ae704742c1";
 
     boot = {
       # LTS kernel: NVIDIA 595 does not build against 7.3 (strncpy removal).
