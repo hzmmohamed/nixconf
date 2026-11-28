@@ -120,6 +120,7 @@
         after = ["systemd-tmpfiles-setup.service"];
         serviceConfig = {
           Type = "oneshot";
+          RemainAfterExit = true;
           User = "t3";
           UMask = "0002";
         };
@@ -194,9 +195,9 @@
         # The CLI through t3ctl (doas → t3) works; the same token works over HTTP from op's shell.
         tok = machine.succeed(as_user("op", "t3ctl auth session issue --scope orchestration:read --ttl 5m --token-only")).strip()
         assert len(tok) > 20, tok
-        code = machine.succeed(as_user("op", f"curl -s -o /dev/null -w '%{{http_code}}' -H 'Authorization: Bearer {tok}' http://127.0.0.1:3773/api/environment")).strip()
+        code = machine.succeed(as_user("op", f"curl -s -o /dev/null -w '%{{http_code}}' -H 'Authorization: Bearer {tok}' http://127.0.0.1:3773/api/orchestration/shell")).strip()
         assert code in ("200", "204"), code
-        code = machine.succeed(as_user("op", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3773/api/environment")).strip()
+        code = machine.succeed(as_user("op", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3773/api/orchestration/shell")).strip()
         assert code in ("401", "403"), code
 
         # A thread from the CLI reaches the provider as t3, in a T3-made worktree.
@@ -238,6 +239,7 @@
           after = ["t3code.service"];
           serviceConfig = {
             Type = "oneshot";
+            RemainAfterExit = true;
             User = "t3";
             UMask = "0002";
           };
