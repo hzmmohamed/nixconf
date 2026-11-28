@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CI test builds (build type alpha), told apart from the real Pollen. -->
+    <string name="app_name">Pollen α</string>
+</resources>

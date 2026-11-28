@@ -30,17 +30,24 @@ android {
     // Release key outside git: -PreleaseStoreFile=<jks> and
     // -PsigningProperties=<file with storePassword, keyAlias, keyPassword>
     // (a file, so the passwords never show up in a command line).
-    val releaseStore = providers.gradleProperty("releaseStoreFile").orNull
-    val signingProps = providers.gradleProperty("signingProperties").orNull?.let { path ->
+    // Alpha (CI test builds): the same with -PalphaStoreFile / -PalphaSigningProperties,
+    // a key of its own so alpha updates install over each other.
+    fun signingProps(name: String) = providers.gradleProperty(name).orNull?.let { path ->
         Properties().apply { file(path).inputStream().use { load(it) } }
     }
+    val releaseStore = providers.gradleProperty("releaseStoreFile").orNull
+    val releaseProps = signingProps("signingProperties")
+    val alphaStore = providers.gradleProperty("alphaStoreFile").orNull
+    val alphaProps = signingProps("alphaSigningProperties")
     signingConfigs {
-        if (releaseStore != null && signingProps != null) {
-            create("release") {
-                storeFile = file(releaseStore)
-                storePassword = signingProps.getProperty("storePassword")
-                keyAlias = signingProps.getProperty("keyAlias")
-                keyPassword = signingProps.getProperty("keyPassword")
+        for ((name, store, props) in listOf(Triple("release", releaseStore, releaseProps), Triple("alpha", alphaStore, alphaProps))) {
+            if (store != null && props != null) {
+                create(name) {
+                    storeFile = file(store)
+                    storePassword = props.getProperty("storePassword")
+                    keyAlias = props.getProperty("keyAlias")
+                    keyPassword = props.getProperty("keyPassword")
+                }
             }
         }
     }
@@ -50,6 +57,15 @@ android {
             signingConfig = signingConfigs.findByName("release")
             // sherpa-onnx is reached through JNI: no shrinking.
             isMinifyEnabled = false
+        }
+        // CI test builds ("Pollen α"): a debug build under its own application id,
+        // installed next to the real Pollen, so a test build never touches its data.
+        create("alpha") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".alpha"
+            versionNameSuffix = "-alpha"
+            signingConfig = signingConfigs.findByName("alpha") ?: signingConfigs.getByName("debug")
+            matchingFallbacks += "debug"
         }
     }
 

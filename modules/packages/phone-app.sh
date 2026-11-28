@@ -8,13 +8,16 @@ state=/var/lib/phone-profile
 
 usage() {
   cat >&2 <<EOF
-usage: phone-app build [--release] [--force] [-- <gradle args>]
+usage: phone-app build [--release | --alpha] [--force] [-- <gradle args>]
        phone-app test [--force] [-- <gradle args>]
        phone-app install
        phone-app publish
 
   build      debug APK → apps/phone/app/build/outputs/apk/debug/app-debug.apk
   --release  signed with ~/.config/phone-app/release.jks → …/apk/release/app-release.apk
+  --alpha    "Pollen α" (nixconf.phone.alpha, installs next to Pollen), signed with
+             ~/.config/phone-app/alpha.jks if present, else the debug key
+             → …/apk/alpha/app-alpha.apk (what CI builds)
   test       JVM unit tests (testDebugUnitTest)
   install    adb install -r the release APK (else the debug one) to the phone on USB
   publish    copy the release APK to $state/app/ and point app.json at it
@@ -33,11 +36,13 @@ cmd=$1
 shift
 
 release=0
+alpha=0
 force=0
 extra=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) release=1 ;;
+    --alpha) alpha=1 ;;
     --force) force=1 ;;
     --)
       shift
@@ -64,12 +69,15 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside the nixconf
 apks=$root/apps/phone/app/build/outputs/apk
 release_apk=$apks/release/app-release.apk
 debug_apk=$apks/debug/app-debug.apk
+alpha_apk=$apks/alpha/app-alpha.apk
 
 # Signing inputs, outside git (back them up in the vault: a lost key means
 # uninstalling the app, and its drafts, to install a new one).
 signing_dir=$HOME/.config/phone-app
 keystore=$signing_dir/release.jks
 signing_props=$signing_dir/signing.properties
+alpha_keystore=$signing_dir/alpha.jks
+alpha_props=$signing_dir/alpha.properties
 
 run_gradle() {
   export ANDROID_HOME=$android_home ANDROID_SDK_ROOT=$android_home JAVA_HOME=$java_home
@@ -118,6 +126,13 @@ case "$cmd" in
         "-PreleaseStoreFile=$keystore" "-PsigningProperties=$signing_props"
       [ -f "$release_apk" ] || die "no $release_apk (unsigned build?)"
       echo "phone-app: $release_apk"
+    elif [ "$alpha" = 1 ]; then
+      alpha_signing=()
+      if [ -f "$alpha_keystore" ] && [ -f "$alpha_props" ]; then
+        alpha_signing=("-PalphaStoreFile=$alpha_keystore" "-PalphaSigningProperties=$alpha_props")
+      fi
+      run_gradle :app:assembleAlpha $(version_args) "${alpha_signing[@]}"
+      echo "phone-app: $alpha_apk"
     else
       run_gradle :app:assembleDebug $(version_args)
       echo "phone-app: $debug_apk"

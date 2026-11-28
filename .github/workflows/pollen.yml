@@ -1,0 +1,88 @@
+name: pollen
+
+# Pollen (apps/phone/) on GitHub's link instead of the owner's metered one:
+# the Android toolchain (~1.3 GiB) is fetched here. Every push touching the
+# app runs its JVM tests and builds "Pollen α" (nixconf.phone.alpha, installs
+# next to the real Pollen); each branch keeps one pre-release holding its
+# latest alpha APK, replaced on every push, for the phone to download.
+on:
+  push:
+    paths:
+      - apps/phone/**
+      - modules/packages/phone-app.*
+      - flake.lock
+      - .github/workflows/pollen.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pollen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # versionCode is the commit count.
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - name: Gradle cache (AGP, Kotlin, AndroidX from Maven)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('apps/phone/**/*.gradle.kts', 'apps/phone/gradle/libs.versions.toml') }}
+          restore-keys: gradle-
+      - name: JVM tests
+        run: nix run .#phone-app -- test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: apps/phone/app/build/reports/tests/
+      - name: Alpha signing key (stable across runs, from secrets)
+        env:
+          KEYSTORE: ${{ secrets.POLLEN_ALPHA_KEYSTORE }}
+          PROPERTIES: ${{ secrets.POLLEN_ALPHA_PROPERTIES }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$PROPERTIES" ]; then
+            mkdir -p ~/.config/phone-app
+            printf '%s' "$KEYSTORE" | base64 -d > ~/.config/phone-app/alpha.jks
+            printf '%s\n' "$PROPERTIES" > ~/.config/phone-app/alpha.properties
+          else
+            echo "::warning::no POLLEN_ALPHA_KEYSTORE secret: signed with this run's debug key (updates need an uninstall of Pollen α)"
+          fi
+      - name: Build Pollen α
+        run: nix run .#phone-app -- build --alpha
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pollen-alpha-apk
+          path: apps/phone/app/build/outputs/apk/alpha/app-alpha.apk
+
+  prerelease:
+    if: github.event_name == 'push'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pollen-alpha-apk
+      - name: Replace this branch's pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          tag="pollen-alpha-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9._-' '-')"
+          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" app-alpha.apk \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Pollen α · $BRANCH · ${GITHUB_SHA::7}" \
+            --notes "Test build of branch $BRANCH at $GITHUB_SHA. Installs as \"Pollen α\" next to Pollen."
