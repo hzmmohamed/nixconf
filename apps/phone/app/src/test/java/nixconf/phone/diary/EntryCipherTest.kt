@@ -118,22 +118,23 @@ class EntryCipherTest {
         val headerLen = key.header().size
 
         // Frame layout: each is u32 len | ct (ct = plaintext + 16-byte GCM tag).
-        // Swap the first two frames (index 0 and index 1).
+        // Swap frames 1 and 2 (0-based); frame 0 is left untouched.
         val frameLen = 4 + plains[0].size + 16
-        val frame0 = bytes.copyOfRange(headerLen, headerLen + frameLen)
         val frame1 = bytes.copyOfRange(headerLen + frameLen, headerLen + 2 * frameLen)
+        val frame2 = bytes.copyOfRange(headerLen + 2 * frameLen, headerLen + 3 * frameLen)
         val swapped = bytes.copyOf()
-        System.arraycopy(frame1, 0, swapped, headerLen, frameLen)
-        System.arraycopy(frame0, 0, swapped, headerLen + frameLen, frameLen)
+        System.arraycopy(frame2, 0, swapped, headerLen + frameLen, frameLen)
+        System.arraycopy(frame1, 0, swapped, headerLen + 2 * frameLen, frameLen)
 
         val input = ByteArrayInputStream(swapped)
         val header = readHeader(input)
         val readKey = EntryKey.open(header, device.private, "device:")
         val out = FrameReader(input, readKey, ROLE_AUDIO).asSequence().toList()
 
-        // Frame index 0's slot now holds what was encrypted under AAD index 1,
-        // so even the first frame fails authentication: nothing is yielded.
-        assertEquals(0, out.size)
+        // Frame 0 still reads; the swapped index-1 slot now holds what was
+        // encrypted under AAD index 2, so it fails authentication there.
+        assertEquals(1, out.size)
+        assertEquals(String(plains[0]), String(out[0]))
     }
 
     @Test
@@ -167,5 +168,47 @@ class EntryCipherTest {
         } catch (e: java.io.IOException) {
             // expected
         }
+    }
+
+    // Overwrites frame 1's u32 length prefix in a 3-frame file, then checks the
+    // reader yields only frame 0 and never throws.
+    private fun withForgedLength(badLength: Int): List<ByteArray> {
+        val key = EntryKey.new(recipients())
+        val plains = frames(3)
+        val bytes = sealed(key, ROLE_AUDIO, plains).toByteArray()
+        val headerLen = key.header().size
+        val frameLen = 4 + plains[0].size + 16
+        val secondFrameStart = headerLen + frameLen
+
+        val forged = bytes.copyOf()
+        val lenBytes = java.nio.ByteBuffer.allocate(4).putInt(badLength).array()
+        System.arraycopy(lenBytes, 0, forged, secondFrameStart, 4)
+
+        val input = ByteArrayInputStream(forged)
+        val header = readHeader(input)
+        val readKey = EntryKey.open(header, device.private, "device:")
+        return FrameReader(input, readKey, ROLE_AUDIO).asSequence().toList()
+    }
+
+    @Test
+    fun huge_length_stops_cleanly() {
+        val out = withForgedLength(0x7FFFFFF0)
+        assertEquals(1, out.size)
+    }
+
+    @Test
+    fun short_length_stops_cleanly() {
+        val out = withForgedLength(5)
+        assertEquals(1, out.size)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun opened_key_cannot_write() {
+        val key = EntryKey.new(recipients())
+        val bytes = sealed(key, ROLE_META, frames(1)).toByteArray()
+        val header = readHeader(ByteArrayInputStream(bytes))
+        val opened = EntryKey.open(header, device.private, "device:")
+
+        FrameWriter(ByteArrayOutputStream(), opened, ROLE_META).write("x".toByteArray())
     }
 }

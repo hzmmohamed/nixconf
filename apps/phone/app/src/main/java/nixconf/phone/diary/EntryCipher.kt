@@ -9,7 +9,6 @@ import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
 import java.security.spec.MGF1ParameterSpec
-import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.OAEPParameterSpec
@@ -24,18 +23,25 @@ import javax.crypto.spec.SecretKeySpec
 //         | 4-byte nonce_prefix
 // frames: repeated  u32 ct_len | ct  (AES-256-GCM, nonce = nonce_prefix . u64 frame_index,
 //         AAD = "PDY1" . file_role byte (0x01 meta, 0x02 audio) . u64 frame_index)
+//         ct_len is capped at MAX_FRAME_CT (4 MiB) and must be at least 16
+//         (the GCM tag alone); outside that range a reader treats it as
+//         end of stream rather than trusting it as an allocation size.
 //
 // A meta file has exactly one frame; an audio file has one frame per flushed
-// chunk. Readers stop at the first frame that is short or fails authentication
-// and keep everything decoded before it (see FrameReader).
+// chunk. Readers stop at the first frame that is short, out of range or fails
+// authentication, and keep everything decoded before it (see FrameReader).
 
 const val ROLE_META: Byte = 1
 const val ROLE_AUDIO: Byte = 2
+
+/** Largest ciphertext a single frame may carry; a larger ct_len is rejected (write) or treated as end of stream (read). */
+const val MAX_FRAME_CT = 4_194_304
 
 private val MAGIC = byteArrayOf('P'.code.toByte(), 'D'.code.toByte(), 'Y'.code.toByte(), '1'.code.toByte())
 private const val NONCE_PREFIX_LEN = 4
 private const val KEY_BYTES = 32
 private const val GCM_TAG_BITS = 128
+private const val GCM_TAG_BYTES = GCM_TAG_BITS / 8
 private val OAEP_SPEC = OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT)
 
 /** A public key an entry key is wrapped to; [id] e.g. "device:diary-device-v1" or "recovery:<fingerprint>". */
@@ -51,11 +57,19 @@ class KeyUnavailable(cause: Throwable) : Exception(cause)
  * The per-entry AES-256-GCM key: unique per entry, wrapped with RSA-OAEP to
  * every recipient so either the device key or the recovery key opens it.
  * [header] is written once, up front; frames follow it.
+ *
+ * [canEncrypt] is true only for a key made by [new]. A key unwrapped by
+ * [open] is read-only: nothing it was ever used to encrypt has a frame
+ * index left for this process to know about, so letting it write risks
+ * nonce reuse against frames already on disk. [FrameWriter] enforces this.
+ * Task 3 re-seals an existing entry's meta from a fresh single-frame file
+ * written with its own [new]-made key, never by resuming an opened one.
  */
 class EntryKey private constructor(
     private val secret: ByteArray,
     private val noncePrefix: ByteArray,
     private val wrapped: Map<String, ByteArray>,
+    internal val canEncrypt: Boolean,
 ) {
     private val keySpec = SecretKeySpec(secret, "AES")
 
@@ -108,7 +122,7 @@ class EntryKey private constructor(
                 cipher.init(Cipher.ENCRYPT_MODE, r.publicKey, OAEP_SPEC)
                 wrapped[r.id] = cipher.doFinal(secret)
             }
-            return EntryKey(secret, noncePrefix, wrapped)
+            return EntryKey(secret, noncePrefix, wrapped, canEncrypt = true)
         }
 
         /**
@@ -124,7 +138,7 @@ class EntryKey private constructor(
                     val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
                     cipher.init(Cipher.DECRYPT_MODE, privateKey, OAEP_SPEC)
                     val secret = cipher.doFinal(w)
-                    return EntryKey(secret, header.noncePrefix, header.recipients)
+                    return EntryKey(secret, header.noncePrefix, header.recipients, canEncrypt = false)
                 } catch (e: Exception) {
                     lastError = e
                 }
@@ -173,13 +187,20 @@ private fun readU8(input: InputStream): Int {
 
 private fun readU16(input: InputStream): Int = (readU8(input) shl 8) or readU8(input)
 
-/** Writes AES-GCM frames of [role] to [out] (positioned after the header), indexed from 0. */
+/**
+ * Writes AES-GCM frames of [role] to [out] (positioned after the header), indexed from 0.
+ * [key] must be one made by [EntryKey.new]: a key from [EntryKey.open] is decrypt-only
+ * (reusing it to write risks a nonce/frame-index collision with what's already on disk),
+ * and [write] throws [IllegalStateException] rather than let that happen.
+ */
 class FrameWriter(private val out: OutputStream, private val key: EntryKey, private val role: Byte) {
     var frames: Long = 0
         private set
 
     fun write(plain: ByteArray) {
+        check(key.canEncrypt) { "EntryKey from open() is decrypt-only; FrameWriter needs a key from new()" }
         val ct = key.encrypt(plain, role, frames)
+        require(ct.size <= MAX_FRAME_CT) { "frame ciphertext ${ct.size} exceeds MAX_FRAME_CT ($MAX_FRAME_CT)" }
         out.write(ByteBuffer.allocate(4).putInt(ct.size).array())
         out.write(ct)
         frames++
@@ -189,7 +210,10 @@ class FrameWriter(private val out: OutputStream, private val key: EntryKey, priv
 /**
  * Reads AES-GCM frames of [role] from [input] (positioned after the header), in order from
  * index 0. Stops cleanly - without throwing - at the first frame that is short (truncated
- * write) or fails authentication (tampering, or frames out of order: the index is in the AAD).
+ * write), out of range (ct_len outside 16..MAX_FRAME_CT: too small to hold a GCM tag, or too
+ * large to trust as an allocation size - a corrupted length prefix is not a reason to try to
+ * allocate gigabytes), or fails authentication (tampering, or frames out of order: the index
+ * is in the AAD).
  */
 class FrameReader(private val input: InputStream, private val key: EntryKey, private val role: Byte) : Iterator<ByteArray> {
     private var index = 0L
@@ -204,7 +228,7 @@ class FrameReader(private val input: InputStream, private val key: EntryKey, pri
             return
         }
         val len = ByteBuffer.wrap(lenBuf).int
-        if (len < 0) {
+        if (len < GCM_TAG_BYTES || len > MAX_FRAME_CT) {
             done = true
             return
         }
@@ -215,10 +239,9 @@ class FrameReader(private val input: InputStream, private val key: EntryKey, pri
         }
         pending = try {
             key.decrypt(ct, role, index)
-        } catch (e: AEADBadTagException) {
-            done = true
-            return
-        } catch (e: javax.crypto.BadPaddingException) {
+        } catch (e: java.security.GeneralSecurityException) {
+            // AEADBadTagException (bad/missing tag) and friends (e.g. Conscrypt's
+            // IllegalBlockSizeException) all mean this frame doesn't decode: stop here.
             done = true
             return
         }
