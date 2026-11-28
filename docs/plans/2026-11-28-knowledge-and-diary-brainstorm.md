@@ -75,6 +75,31 @@ Proposals (not agreed): links point one way, a diary entry may reference a
 project, question or saved item, the knowledge system never sees inside the
 diary; photo links go to Immich.
 
+### A, outcome (2026-11-28, diary thread)
+
+Shaped into `2026-11-28-voice-diary-design.md` (approved), which holds the
+decisions, the rejected options and the reasons. In short:
+
+- Voice first (typing possible, not designed around); entries in mixed
+  Egyptian Arabic and English, mostly through earbuds.
+- Existing entries (paper, notebooks, voice memos, a notes app) come in
+  by a backfill phase: read aloud and photographed, or imported with their
+  original dates. Each entry has two dates: recorded, and what it is about.
+- A weekly review the user tells first, then sees what the week's entries
+  said, then adds to (no model-drafted review).
+- Mood: an optional self-rating tap wins; a local model's guess fills
+  gaps, marked as a guess.
+- Photos link both ways (attach from an entry; "tell this one" from a
+  photo), events group photos and entries inside the diary; Immich holds
+  originals, album mirroring opt-in with neutral names.
+- Links to the knowledge system go one way, by an explicit "send" of
+  selected words.
+- Resurfacing ("a year ago today") shows everything.
+- Daily and weekly nudges are welcome; no streaks.
+- Storage reuses the attention tracker's pattern as a separate system;
+  hiding everyday, a rare deliberate purge; one evening moment shared with
+  the tracker (its chips, the diary's recording).
+
 ## B. Knowledge / media system (user said)
 
 **Inbox as the shape of life.** Every input gets a definite output that

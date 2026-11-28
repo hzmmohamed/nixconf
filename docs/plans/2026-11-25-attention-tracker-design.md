@@ -250,6 +250,9 @@ input (as `phone-app.nix` already passes store paths to Gradle):
   energy −2..2, day shape). Audio is recorded as **PCM frames straight into the frame log**,
   never through `WavWriter`/`DraftStore`; a live preview may run from the in-memory buffer.
   The transcript of record is made by the brain.
+  **Superseded 2026-11-28** by the voice diary (`2026-11-28-voice-diary-design.md`
+  §5.17): one Evening screen; attn keeps the chips only, the recording goes to the diary,
+  and attn stores no check-in audio or transcript.
 
 ### 5.5 Brain: attn-brain on peacelily (Bun + Effect)
 
