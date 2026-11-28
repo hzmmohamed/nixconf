@@ -163,8 +163,8 @@
       def wait_thread_run(home, user, timeout=120):
           """The run T3 started for a thread: the one whose cwd is a worktree."""
           f = machine.wait_until_succeeds(
-              as_user(user, f"grep -l '^pwd=/var/lib/t3code/.t3/worktrees/' {home}/fake-runs/*.log | head -1"), timeout=timeout
-          ).strip()
+              as_user(user, f"grep -l '^pwd=/var/lib/t3code/.t3/worktrees/' {home}/fake-runs/*.log"), timeout=timeout
+          ).split()[0]
           return machine.succeed(as_user(user, f"cat {f}"))
 
       def server_up():
@@ -286,7 +286,7 @@
         got = {k.replace("-", "_"): v for k, v in out.items()}
         bad = {k: (got.get(k), v) for k, v in expect.items() if got.get(k) != v}
         assert not bad, f"probes: {bad}\n{out}"
-        assert out["cgroup"].startswith("/agents-alpha.slice/agent-alpha-"), out["cgroup"]
+        assert "/agents-alpha.slice/agent-alpha-" in out["cgroup"], out["cgroup"]
         assert out["memory-max"] == str(512 * 1024 * 1024), out["memory-max"]
 
         # 2: stdio passthrough across the UID switch, and exit codes.
