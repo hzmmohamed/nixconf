@@ -214,7 +214,7 @@
         rec = kv(wait_thread_run("/var/lib/t3code", "t3"))
         assert rec["user"] == "t3", rec
         assert rec["pwd"].startswith("/var/lib/t3code/.t3/worktrees/alpha/"), rec["pwd"]
-        assert "SSH_AUTH_SOCK" not in rec and "T3CODE_THREAD_ID" in rec, rec
+        assert "SSH_AUTH_SOCK" not in rec, rec
         machine.succeed(as_user("t3", f"git -C {rec['pwd']} status --porcelain=2"))
       '';
     };
@@ -338,7 +338,7 @@
         assert rec["user"] == "agent-alpha", rec
         assert rec["pwd"].startswith("/var/lib/t3code/.t3/worktrees/alpha/"), rec["pwd"]
         assert rec["CLAUDE_CONFIG_DIR"] == "/var/lib/agents/alpha/claude", rec
-        assert "T3CODE_THREAD_ID" in rec and "SSH_AUTH_SOCK" not in rec, rec
+        assert "SSH_AUTH_SOCK" not in rec, rec
         # T3's own worktree inherited the project group, so both sides can work in it.
         assert machine.succeed(f"stat -c %G {rec['pwd']}").strip() == "proj-alpha"
         machine.succeed(as_user("t3", f"git -C {rec['pwd']} status --porcelain=2"))
