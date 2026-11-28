@@ -98,7 +98,7 @@
         # screenshots): an empty tmpfs there with just those subtrees bound.
         "TemporaryFileSystem=${cfg.stateDir}:ro"
       ]
-      ++ map (d: "BindReadOnlyPaths=${cfg.stateDir}/${d}") cfg.stateDirBinds
+      ++ map (d: "BindReadOnlyPaths=-${cfg.stateDir}/${d}") cfg.stateDirBinds
       ++ map (b: "BindPaths=${b}") p.extraBinds
       ++ map (b: "ReadWritePaths=${b}") p.extraBinds
       ++ map (a: "IPAddressAllow=${a}") p.network.allow

@@ -23,9 +23,10 @@
 
     # Stands in for `claude`: records who ran it, then does what $1 says.
     fakeProvider = pkgs.writeShellScript "fake-claude" ''
-      log="$HOME/fake-provider.log"
+      # One record per run: T3 also probes the binary at startup (in its state dir).
       record() {
-        { echo "uid=$(id -u)"; echo "user=$(id -un)"; echo "home=$HOME"; echo "pwd=$PWD"; env | sort; } > "$log"
+        mkdir -p "$HOME/fake-runs"
+        { echo "uid=$(id -u)"; echo "user=$(id -un)"; echo "home=$HOME"; echo "pwd=$PWD"; env | sort; } > "$HOME/fake-runs/$(date +%s%N).log"
       }
       p() { n=$1; shift; if "$@" >/dev/null 2>&1; then echo "$n=ok"; else echo "$n=fail"; fi; }
       case "''${1:-}" in
@@ -156,8 +157,15 @@
               out.setdefault(k, v)
           return out
 
-      def wait_file(path, user="t3", timeout=120):
-          return machine.wait_until_succeeds(as_user(user, f"cat {path}"), timeout=timeout)
+      def latest_run(home, user):
+          return machine.succeed(as_user(user, f"cat \"$(ls -t {home}/fake-runs/*.log | head -1)\""))
+
+      def wait_thread_run(home, user, timeout=120):
+          """The run T3 started for a thread: the one whose cwd is a worktree."""
+          f = machine.wait_until_succeeds(
+              as_user(user, f"grep -l '^pwd=/var/lib/t3code/.t3/worktrees/' {home}/fake-runs/*.log | head -1"), timeout=timeout
+          ).strip()
+          return machine.succeed(as_user(user, f"cat {f}"))
 
       def server_up():
           machine.wait_for_unit("t3code.service")
@@ -203,7 +211,7 @@
         # A thread from the CLI reaches the provider as t3, in a T3-made worktree.
         machine.succeed(as_user("op", "t3ctl project add /var/lib/t3code/projects/alpha"))
         machine.succeed(as_user("op", "t3ctl thread start --provider claudeAgent --model claude-sonnet-5 --worktree main /var/lib/t3code/projects/alpha hello"))
-        rec = kv(wait_file("/var/lib/t3code/fake-provider.log"))
+        rec = kv(wait_thread_run("/var/lib/t3code", "t3"))
         assert rec["user"] == "t3", rec
         assert rec["pwd"].startswith("/var/lib/t3code/.t3/worktrees/alpha/"), rec["pwd"]
         assert "SSH_AUTH_SOCK" not in rec and "T3CODE_THREAD_ID" in rec, rec
@@ -264,7 +272,7 @@
 
         # 1-4, 7, 8: identity, env scrub, filesystem fences, caps, network, in one run.
         out = kv(machine.succeed(brokered("fake-brokered probe")))
-        rec = kv(machine.succeed(as_user("agent-alpha", "cat /var/lib/agents/alpha/fake-provider.log")))
+        rec = kv(latest_run("/var/lib/agents/alpha", "agent-alpha"))
         assert rec["user"] == "agent-alpha" and rec["home"] == "/var/lib/agents/alpha" and rec["pwd"] == wt, rec
         assert "SSH_AUTH_SOCK" not in rec and "GH_TOKEN" not in rec, rec
         assert out["config-dir"] == "/var/lib/agents/alpha/claude", out
@@ -314,7 +322,7 @@
         # beta has no Claude: a run there must not get a config dir.
         out = kv(machine.succeed(brokered("fake-brokered probe", cwd="/var/lib/t3code/projects/beta")))
         assert out["config-dir"] == "unset", out
-        rec = kv(machine.succeed(as_user("agent-beta", "cat /var/lib/agents/beta/fake-provider.log")))
+        rec = kv(latest_run("/var/lib/agents/beta", "agent-beta"))
         assert rec["user"] == "agent-beta", rec
 
         # 10: a T3 terminal is a shell as the project's user.
@@ -323,9 +331,8 @@
 
         # End to end: a T3 thread (CLI → server → wrapper as t3 → broker → unit).
         machine.succeed(as_user("op", "t3ctl project add /var/lib/t3code/projects/alpha"))
-        machine.succeed(as_user("agent-alpha", "rm -f /var/lib/agents/alpha/fake-provider.log"))
         machine.succeed(as_user("op", "t3ctl thread start --provider claudeAgent --model claude-sonnet-5 --worktree main /var/lib/t3code/projects/alpha hello"))
-        rec = kv(wait_file("/var/lib/agents/alpha/fake-provider.log", user="agent-alpha"))
+        rec = kv(wait_thread_run("/var/lib/agents/alpha", "agent-alpha"))
         assert rec["user"] == "agent-alpha", rec
         assert rec["pwd"].startswith("/var/lib/t3code/.t3/worktrees/alpha/"), rec["pwd"]
         assert rec["CLAUDE_CONFIG_DIR"] == "/var/lib/agents/alpha/claude", rec
