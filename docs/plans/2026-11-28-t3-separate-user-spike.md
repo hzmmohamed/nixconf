@@ -520,3 +520,43 @@ if `t3ctl thread launch` turns out to work headlessly (stage-1 test 6).
 - Whether Claude Code honours `CLAUDE_CODE_TMPDIR` for its scratchpad as well as task output.
 - OpenCode v2 external-server auth settings; Codex is not installed here and was read only.
 - Line numbers are against v0.1.13 source; the deployed `t3` is v0.1.9.
+
+---
+
+## 6. Implementation (same branch, 2026-11-28)
+
+Both stages landed as reusable modules with VM tests; no host imports them yet.
+
+- `modules/nixos/features/t3code.nix` → `flake.nixosModules.t3code`, options `services.t3code.*`
+  (§2.1 as written, with `operators`/`operatorsNoPass` for the doas rule and `t3ctl`).
+- `modules/nixos/features/agent-broker.nix` → `flake.nixosModules.agent-broker`, options
+  `services.agent-broker.*` (§3.1/§3.2: registry, `<name>-brokered` wrappers, `t3-terminal-shell`,
+  per-project users/groups/slices/tmpfiles/gitconfig). Broker and client in
+  `modules/nixos/features/agent-broker/{broker,brokered}.py`, policy unit tests in `tests/`
+  (`checks.agent-broker`).
+- `modules/checks/t3code-vm.nix` → `checks.t3code-user` (§2.3) and `checks.t3code-broker` (§3.5),
+  both driving the real `t3 serve` (v0.1.9) with a fake provider pinned by policy, including the
+  end-to-end `t3ctl thread start … --worktree main` → wrapper as `t3` → broker → unit as `agent-alpha`
+  in a T3-created, group-inherited worktree. Both pass on butternut.
+
+What the tests corrected in this document:
+
+- `/api/environment` is public; the token checks use `/api/projects`.
+- `t3 --base-dir` is a per-subcommand flag; `t3ctl` relies on `T3CODE_HOME` (and must call the
+  setuid `/run/wrappers/bin/doas`).
+- T3 probes the provider binary at startup with cwd = its state dir (`Claude capability probe`);
+  the broker refuses that run (unregistered cwd) and T3 just logs a warning. Harmless, but it means
+  the first run of every provider instance is a refusal in the broker's journal.
+- `T3CODE_THREAD_ID` is not in the environment of the first spawn (it is set per query), so a
+  probe-only fake never sees it; the env-scrub assertion is on `SSH_AUTH_SOCK` instead.
+- `browser-artifacts/` does not exist until the first screenshot: bind sources are `-`-prefixed.
+- systemd nests `agents-<p>.slice` under `agents.slice`; the cgroup path is
+  `/agents.slice/agents-alpha.slice/agent-alpha-<id>.service`, and `memory.max` on the project
+  slice is enforced (512M in the test).
+- With a default ACL, `stat %a` shows the ACL mask as the group bits (`2770`), not `2775`.
+- `/bin/sh` resolves to the interactive bash that `t3-terminal-shell` allows, so "not an allowed
+  command" has to be tested with another binary.
+
+Still open from §4, unchanged: `t3.json` commands as `t3`, who pushes, user/home naming, hazel.
+Wiring the hosts (`agent-t3code` on top of `services.t3code`, projects registered with the
+broker, provider logins as `t3`/`agent-<p>`) is the next PR.
