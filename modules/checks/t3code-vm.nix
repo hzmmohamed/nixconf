@@ -318,7 +318,8 @@
         assert status == 125 and "no registered project" in err, (status, err)
         status, err = machine.execute(brokered("CLAUDE_CONFIG_DIR=/var/lib/agents/beta/claude fake-brokered exit 0 2>&1"))
         assert status == 125 and "CLAUDE_CONFIG_DIR" in err, (status, err)
-        status, err = machine.execute(brokered("agent-brokered /bin/sh -c true 2>&1"))
+        # On the agent's PATH but not an allowed command (/bin/sh would be: it is the terminal shell).
+        status, err = machine.execute(brokered("agent-brokered /run/current-system/sw/bin/true 2>&1"))
         assert status == 125 and "not allowed" in err, (status, err)
         status, err = machine.execute(brokered("fake-brokered exit 0 2>&1", user="op"))
         assert status == 126 and "cannot reach the broker" in err, (status, err)
