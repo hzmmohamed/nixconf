@@ -10,7 +10,7 @@ import kotlin.math.roundToInt
 // 16-bit mono PCM WAV, written as it is recorded. The header's sizes stay 0
 // until close(); a file left behind by a killed app is fixed by
 // WavFiles.repair, so flush() (fsync) is all that is needed to keep audio.
-class WavWriter(file: File, private val sampleRate: Int = 16000) {
+class WavWriter(file: File, private val sampleRate: Int = 16000) : PcmSink {
     private val out = RandomAccessFile(file, "rw")
     private var dataBytes = 0L
 
@@ -19,14 +19,14 @@ class WavWriter(file: File, private val sampleRate: Int = 16000) {
         out.write(WavFiles.header(sampleRate))
     }
 
-    fun write(samples: ShortArray, n: Int) {
+    override fun write(samples: ShortArray, n: Int) {
         val buf = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
         buf.asShortBuffer().put(samples, 0, n)
         out.write(buf.array())
         dataBytes += n * 2
     }
 
-    fun flush() = out.fd.sync()
+    override fun flush() = out.fd.sync()
 
     fun close() {
         out.use {

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import nixconf.phone.audio.PcmSink
 import nixconf.phone.audio.WavFiles
 import nixconf.phone.audio.WavWriter
 import nixconf.phone.drafts.Draft
@@ -45,7 +46,7 @@ import nixconf.phone.segment.spaceBefore
  * stop() returns once the last samples went to both.
  */
 interface AudioSource {
-    fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)? = null)
+    fun start(out: PcmSink, tap: ((ShortArray, Int) -> Unit)? = null)
     fun stop()
     val level: StateFlow<Float>
 }

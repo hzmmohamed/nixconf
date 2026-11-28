@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import nixconf.phone.audio.WavFiles
+import nixconf.phone.audio.PcmSink
 import nixconf.phone.audio.WavWriter
 import nixconf.phone.drafts.Draft
 import nixconf.phone.drafts.DraftStatus
@@ -73,9 +74,9 @@ class DictationSessionTest {
         override val level = MutableStateFlow(0f)
         var recording = false
         var failure: Exception? = null
-        private var out: WavWriter? = null
+        private var out: PcmSink? = null
         private var tap: ((ShortArray, Int) -> Unit)? = null
-        override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
+        override fun start(out: PcmSink, tap: ((ShortArray, Int) -> Unit)?) {
             failure?.let { throw it }
             recording = true
             this.out = out

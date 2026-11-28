@@ -27,7 +27,7 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
     @Volatile private var running = false
 
     @SuppressLint("MissingPermission")
-    override fun start(out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
+    override fun start(out: PcmSink, tap: ((ShortArray, Int) -> Unit)?) {
         check(record == null) { "already recording" }
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) throw IOException("microphone does not support $sampleRate Hz mono")
@@ -56,14 +56,18 @@ class Recorder(private val sampleRate: Int = 16000) : AudioSource {
         val rec = record ?: return
         running = false
         rec.stop()
-        thread?.join()
+        // A sink (e.g. DiaryRecording) may call stop() from inside its own
+        // write()/flush() on a storage failure - that runs on this recorder
+        // thread, so joining it here would be a self-join deadlock. Only
+        // join when called from elsewhere (the normal case).
+        if (Thread.currentThread() !== thread) thread?.join()
         rec.release()
         record = null
         thread = null
         mutableLevel.value = 0f
     }
 
-    private fun loop(rec: AudioRecord, out: WavWriter, tap: ((ShortArray, Int) -> Unit)?) {
+    private fun loop(rec: AudioRecord, out: PcmSink, tap: ((ShortArray, Int) -> Unit)?) {
         val buf = ShortArray(sampleRate / 10)
         var lastFlush = SystemClock.elapsedRealtime()
         try {
